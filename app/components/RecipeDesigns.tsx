@@ -320,7 +320,7 @@ export function RecipeDesigns() {
             {uploadingPhoto && <p role="status" className="mt-2 text-xs text-[#d2a273]">Preparing photo…</p>}
           </div>
           <div className="space-y-2">
-            <OpenAIImageControls model={settings.model} value={settings.image} onChange={v=>update("image",v)} disabled={isBusy} quickSettingsOnly/>
+            <OpenAIImageControls model={settings.model} value={settings.image} onChange={image=>setSettings(s=>({...s,image,artworkSize:"selected"}))} disabled={isBusy} quickSettingsOnly/>
             <p className="text-xs text-[#b9aa98]">These settings control the OpenAI request. The finished design download is 1200 × 1500 PNG.</p>
           </div>
           <div className="grid gap-2"><label htmlFor="recipe-design-style" className="text-sm font-medium text-[#e8d9c8]">Professional design style</label><select id="recipe-design-style" className={inputClass} value={settings.styleId} disabled={isBusy} onChange={e=>{update("styleId",e.target.value as DesignSettings["styleId"]);setError("");}}>{RECIPE_STYLE_PRESETS.map(style=><option key={style.id} value={style.id}>{style.name}</option>)}</select><p className="text-xs text-[#b9aa98]">Complete {previewStyle.name} prompt v{activeCopy?.version || previewStyle.version} goes directly to the image model.</p><details className="rounded-lg border border-[#514131] p-3 text-xs text-[#cbb8a2]"><summary className="cursor-pointer">View the exact image prompt</summary><pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words">{recipeDirectPrompt(previewStyleId,title.trim() ? title : "{{TITLE}}",notes,activeCopy,ingredients)}</pre></details></div>

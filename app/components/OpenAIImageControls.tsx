@@ -36,39 +36,41 @@ export function OpenAIImageControls({ model, value, onChange, disabled, countDes
   const qualityLabels: Record<string, string> = { auto: "Auto", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
   const quality = () => field("Quality", "quality", imageQualitiesFor(model).map((q) => [q, qualityLabels[q]]));
   const outputFormat = () => field("Output format", "output_format", [["png", "PNG"], ["jpeg", "JPEG"], ["webp", "WebP"]]);
-  if (quickSettingsOnly) return <div className="grid gap-4 sm:grid-cols-2">{quality()}{outputFormat()}</div>;
+  const socialButton = (platform: "Facebook" | "Pinterest") => {
+    const facebook = platform === "Facebook";
+    const size = facebook ? "1152x1440" : "1024x1536";
+    const selected = value.size === size;
+    return <button type="button" disabled={disabled || (facebook && !facebookSupported)}
+      aria-pressed={selected} title={facebook && !facebookSupported ? "Select GPT Image 2 or later to use this size." : undefined}
+      onClick={() => update("size", size)}
+      className={`inline-flex min-h-9 w-fit max-w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-xs text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a1511] disabled:cursor-not-allowed disabled:opacity-50 ${facebook
+        ? "border-[#1877F2] bg-[#145cbd] hover:bg-[#1877F2]"
+        : "border-[#E60023] bg-[#bd001d] hover:bg-[#E60023]"} ${selected ? "ring-2 ring-white ring-offset-2 ring-offset-[#1a1511]" : ""}`}>
+      <span className="font-semibold">{platform}</span>
+      <span>{facebook ? "1152 × 1440" : "1024 × 1536"}</span>
+      {selected && <span aria-hidden="true">✓</span>}
+    </button>;
+  };
+  const qualityWithPreset = () => <div className="grid content-start gap-3">{quality()}{socialButton("Facebook")}</div>;
+  const outputWithPreset = () => <div className="grid content-start gap-3">{outputFormat()}{socialButton("Pinterest")}</div>;
+  if (quickSettingsOnly) return <div className="grid items-start gap-4 sm:grid-cols-2">{qualityWithPreset()}{outputWithPreset()}</div>;
   return <section className="studio-panel mb-4 rounded-[24px] p-5">
     <h2 className="mb-4 font-semibold text-neutral-100">OpenAI image settings</h2>
     <div className="grid items-start gap-4 sm:grid-cols-2">
       <div className="grid content-start gap-3">
-        <div role="group" aria-label="Social image sizes" className="grid gap-2">
-          <button type="button" disabled={disabled || !facebookSupported} aria-pressed={value.size === "1152x1440"}
-            onClick={() => update("size", "1152x1440")}
-            className={`flex min-h-14 items-center justify-between gap-3 rounded-xl border-2 border-[#1877F2] bg-[#145cbd] px-4 py-3 text-left text-white transition hover:bg-[#1877F2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a1511] disabled:cursor-not-allowed disabled:opacity-50 ${value.size === "1152x1440" ? "ring-2 ring-white ring-offset-2 ring-offset-[#1a1511]" : ""}`}>
-            <span><span className="block font-semibold">Facebook</span><span className="text-sm">1152 × 1440 · 4:5</span></span>
-            {value.size === "1152x1440" && <span className="text-sm font-semibold">Selected</span>}
-          </button>
-          <button type="button" disabled={disabled} aria-pressed={value.size === "1024x1536"}
-            onClick={() => update("size", "1024x1536")}
-            className={`flex min-h-14 items-center justify-between gap-3 rounded-xl border-2 border-[#E60023] bg-[#bd001d] px-4 py-3 text-left text-white transition hover:bg-[#E60023] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a1511] disabled:cursor-not-allowed disabled:opacity-50 ${value.size === "1024x1536" ? "ring-2 ring-white ring-offset-2 ring-offset-[#1a1511]" : ""}`}>
-            <span><span className="block font-semibold">Pinterest</span><span className="text-sm">1024 × 1536 · 2:3</span></span>
-            {value.size === "1024x1536" && <span className="text-sm font-semibold">Selected</span>}
-          </button>
-        </div>
-        {!facebookSupported && <p className="text-xs text-[#b9aa98]">Select GPT Image 2 or later to use the Facebook size.</p>}
         {field("Size & orientation", "size", [
           ["auto", "Auto"], ["1024x1024", "Square (1024×1024)"],
           ...(facebookSupported ? [["1152x1440", "Facebook (1152×1440)"]] as const : []),
           ["1024x1536", "Pinterest (1024×1536)"], ["1536x1024", "Landscape (1536×1024)"],
         ])}
       </div>
-      {!hideQuickSettings && quality()}
+      {!hideQuickSettings && qualityWithPreset()}
       {supportsImageComplexity(model) && field("Complexity", "complexity", [["default", "Default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"]])}
     </div>
     <details className="mt-5 border-t border-[#4a3b2c] pt-4" open>
       <summary className="mb-4 cursor-pointer font-medium">Advanced</summary>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {!hideQuickSettings && outputFormat()}
+        {!hideQuickSettings && outputWithPreset()}
         {field("Background", "background", [["opaque", "Opaque"], ["transparent", "Transparent"], ["auto", "Auto"]])}
         {field("Moderation", "moderation", [["auto", "Auto"], ["low", "Low"]])}
         {!hidePartialImages && field("Partial images", "partial_images", [["0", "None"], ["1", "1 preview"], ["2", "2 previews"], ["3", "3 previews"]])}
