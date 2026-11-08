@@ -5,7 +5,10 @@ export const OPENAI_IMAGE_MODEL_IDS = [
   "gpt-image-2.6-sunburst",
 ] as const;
 export const DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2.5-sunburst";
-export const IMAGE_SIZES = ["auto", "1024x1024", "1024x1536", "1536x1024"] as const;
+export const IMAGE_SIZES = ["auto", "1024x1024", "1152x1440", "1024x1536", "1536x1024"] as const;
+export function imageSizesFor(model: string): readonly (typeof IMAGE_SIZES[number])[] {
+  return model === "gpt-image-1.5" ? IMAGE_SIZES.filter(size => size !== "1152x1440") : IMAGE_SIZES;
+}
 export const IMAGE_QUALITIES = ["auto", "low", "medium", "high", "xhigh", "max"] as const;
 export type OpenAIImageSettings = {
   size: typeof IMAGE_SIZES[number];
@@ -35,7 +38,7 @@ export function validateImageSettings(model: string, value: unknown): OpenAIImag
     throw new Error("Invalid image settings");
   }
   const s = { ...DEFAULT_IMAGE_SETTINGS, ...(value as Partial<OpenAIImageSettings>) };
-  if (!IMAGE_SIZES.includes(s.size)) throw new Error("Unsupported image size");
+  if (!imageSizesFor(model).includes(s.size)) throw new Error("Unsupported image size for this model");
   if (!imageQualitiesFor(model).includes(s.quality)) throw new Error("This image model does not support the selected quality");
   if (!["png", "jpeg", "webp"].includes(s.output_format)) throw new Error("Unsupported output format");
   if (!["auto", "opaque", "transparent"].includes(s.background)) throw new Error("Unsupported background");

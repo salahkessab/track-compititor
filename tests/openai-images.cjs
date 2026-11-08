@@ -14,6 +14,27 @@ afterEach(() => { global.fetch = originalFetch; if (originalKey === undefined) d
 const args = (settings = {}) => ({ model: 'gpt-image-2.5-sunburst', prompt: 'A horse', settings: { ...DEFAULT_IMAGE_SETTINGS, ...settings } });
 const chunks = (text) => new ReadableStream({ start(c) { for (const byte of new TextEncoder().encode(text)) c.enqueue(Uint8Array.of(byte)); c.close(); } });
 
+test('social sizes reach Sunburst 2.6 generation and edit requests unchanged', async () => {
+  process.env.OPENAI_API_KEY = 'unit-test-placeholder';
+  const requests = [];
+  global.fetch = async (url, init) => {
+    requests.push({ url, body: init.body instanceof FormData ? Object.fromEntries(init.body) : JSON.parse(init.body) });
+    return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] });
+  };
+  for (const size of ['1152x1440', '1024x1536']) {
+    for (const references of [[], ['data:image/png;base64,aW1hZ2U=']]) {
+      await generateOpenAIImage({ model: 'gpt-image-2.6-sunburst', prompt: 'Food photo',
+        settings: { ...DEFAULT_IMAGE_SETTINGS, size }, references });
+      assert.equal(requests.at(-1).body.size, size);
+      assert.ok(requests.at(-1).url.endsWith(references.length ? '/edits' : '/generations'));
+    }
+  }
+  assert.throws(() => validateImageSettings('gpt-image-1.5', { size: '1152x1440' }), /Unsupported image size/);
+  for (const size of ['1080x1350', '1000x1500']) {
+    assert.throws(() => validateImageSettings('gpt-image-2.6-sunburst', { size }), /Unsupported image size/);
+  }
+});
+
 test('all screenshot models are available in every workspace; Sunburst defaults', () => {
   assert.equal(DEFAULT_IMAGE_MODEL, 'gpt-image-2.5-sunburst');
   assert.ok(OPENAI_IMAGE_MODEL_IDS.includes('gpt-image-2.6-sunburst'));
