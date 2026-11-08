@@ -309,7 +309,7 @@ export function RecipeDesigns() {
 
   return <div aria-label="Recipe Designs studio" className="space-y-4">
     <section className="studio-panel rounded-[28px] p-5 sm:p-6">
-      <div className="mb-6"><p className="text-xs uppercase tracking-[.2em] text-[#d2a273]">Recipes · Creative studio</p><h1 className="studio-title mt-2 text-3xl">Recipe Designs</h1><p className="mt-2 max-w-3xl text-sm text-[#cbb8a2]">Upload your food photo, enter its title, and choose a style. Select Vintage Ingredients Card to add an ingredient list to your design.</p></div>
+      <div className="mb-6"><h1 className="studio-title text-3xl">Recipe Designs</h1></div>
       {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-200">{error}</div>}
       {notice && <p role="status" className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-950/20 p-3 text-sm text-emerald-100">{notice}</p>}
       {paidLock && !isBusy && <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-950/20 p-4 text-sm text-amber-100"><p>An earlier design request may still be running or its charge may be unknown. You can start another design; check OpenAI billing before repeating the earlier request.</p><button type="button" className={buttonClass+" mt-3"} onClick={()=>void clearPaidLock()}>Dismiss old reservation notice</button></div>}

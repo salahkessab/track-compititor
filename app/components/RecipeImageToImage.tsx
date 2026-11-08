@@ -182,10 +182,7 @@ export function RecipeImageToImage() {
     <div aria-label="Recipe image to image workspace">
       <section className="studio-panel mb-4 rounded-[28px] p-5 sm:p-6">
         <div className="mb-6">
-          <p className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-[#d2a273]">Recipes · Photo variations</p>
           <h1 className="studio-title text-3xl text-[#f7efe5]">Image to Image</h1>
-          <p className="mt-2 text-sm text-[#cbb8a2]">Upload a food photo to create a realistic variation of the same dish.</p>
-          <p className="mt-2 text-xs leading-relaxed text-[#b9aa98]">The app keeps the same food but changes the plate/bowl and background for a fresh realistic photo.</p>
         </div>
         {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/25 bg-red-950/30 p-4 text-sm text-red-200">{error}</div>}
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.75fr)]">

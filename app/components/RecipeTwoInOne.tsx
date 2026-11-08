@@ -124,10 +124,9 @@ export function RecipeTwoInOne() {
 
   return <div aria-label="2 in one image workspace">
     <section className="studio-panel mb-4 rounded-[28px] p-5 sm:p-6">
-      <div className="mb-6"><p className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-[#d2a273]">Recipes · Combined food photos</p>
+      <div className="mb-6">
         <h1 className="studio-title text-3xl text-[#f7efe5]">2 in one image</h1>
-        <p className="mt-2 text-sm text-[#cbb8a2]">Upload two food photos to create one new, realistic image combining the foods from both.</p>
-        <p className="mt-2 text-xs leading-relaxed text-[#b9aa98]">The image model will aim to include the visible ingredients from each photo in a fresh setting. Check the result against both originals.</p></div>
+      </div>
       {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/25 bg-red-950/30 p-4 text-sm text-red-200">{error}</div>}
       <div className="grid gap-6 lg:grid-cols-2">
         <div><p className="mb-3 text-sm font-medium text-[#f3e5d4]">Original food photos · both required</p>
