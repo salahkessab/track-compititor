@@ -315,7 +315,7 @@ export function RecipeImageToImage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {preview && <img src={preview.imageUrl} alt="Enlarged food photo variation" className="max-h-[78vh] w-full object-contain" />}
       </dialog>
-      {filterTarget && <ImageFilterStudio webOptimized source={filterTarget.result.imageUrl} fileName={`recipe-variation-${filterTarget.index + 1}`} onClose={() => setFilterTarget(null)} />}
+      {filterTarget && <ImageFilterStudio webOptimized={filterTarget.result.imageSettings.output_format === "webp"} source={filterTarget.result.imageUrl} fileName={`recipe-variation-${filterTarget.index + 1}`} onClose={() => setFilterTarget(null)} />}
     </div>
   );
 }

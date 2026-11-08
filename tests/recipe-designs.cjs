@@ -96,7 +96,7 @@ test('Recipe Designs sends each full style prompt and original photo to one dire
     assert.equal(form.get('model'),'gpt-image-2.6-sunburst');
     assert.equal(form.get('size'),'1024x1536');
     assert.equal(form.get('quality'),'high');
-    assert.equal(form.get('output_format'),'webp');
+    assert.equal(form.get('output_format'),'png');
     assert.equal(form.getAll('image[]').length,2);
     assert.equal(Buffer.from(await form.getAll('image[]')[0].arrayBuffer()).toString(),'abc');
     return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:5,image_tokens:5}}});
@@ -106,7 +106,7 @@ test('Recipe Designs sends each full style prompt and original photo to one dire
       const ingredients='Potatoes (2 cups)\nBacon (4 slices)';
       const res=await directRoute.POST(request({approved:true,settings:settings({styleId:preset.id,model:'gpt-image-2.6-sunburst',artworkSize:'selected',researchEnabled:false}),title:'Loaded Baked Potato Soup',ingredients,notes:'Make the title bold.',photo:image,references:[image]}));
       assert.equal(res.status,200);
-      const result=await res.json();assert.equal(result.styleId,preset.id);assert.equal(result.image,'data:image/webp;base64,YWJj');
+      const result=await res.json();assert.equal(result.styleId,preset.id);assert.equal(result.image,'data:image/png;base64,YWJj');
       const prompt=calls.at(-1).get('prompt');
       assert.ok(prompt.includes(preset.template.replaceAll('{{TITLE}}','Loaded Baked Potato Soup').replaceAll('{{INGREDIENTS}}',ingredients)));
       assert.match(prompt,/COMPLETE finished recipe graphic/);
@@ -469,7 +469,7 @@ test('fresh research without real images reports a knowledge-based fallback',asy
 test('artwork uses text-to-image only, honors settings, and never receives food or reference pixels',async()=>{
   const original=global.fetch;let calls=0;
   global.fetch=async(url,init)=>{calls++;assert.equal(url,'https://api.openai.com/v1/images/generations');const sent=JSON.parse(init.body);assert.equal(sent.model,'gpt-image-2.5-sunburst');assert.equal(sent.quality,'high');assert.equal(sent.size,'1024x1536');assert.equal(sent.image,undefined);assert.ok(!JSON.stringify(sent).includes(image));assert.match(sent.prompt,/Do not render any food/);return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
-  try {const res=await artRoute.POST(request({approved:true,settings:settings(),plan:{...plan,styleId:'notebook_comfort_food',stylePromptVersion:1},title:'Loaded Baked Potato Soup',noText:false,photo:image,references:[image]}));assert.equal(res.status,200);const data=await res.json();assert.equal(data.artwork,'data:image/webp;base64,YWJj');assert.equal(calls,1);}finally{global.fetch=original;}
+  try {const res=await artRoute.POST(request({approved:true,settings:settings(),plan:{...plan,styleId:'notebook_comfort_food',stylePromptVersion:1},title:'Loaded Baked Potato Soup',noText:false,photo:image,references:[image]}));assert.equal(res.status,200);const data=await res.json();assert.equal(data.artwork,'data:image/png;base64,YWJj');assert.equal(calls,1);}finally{global.fetch=original;}
 });
 test('provider failure is surfaced as uncertain and is not retried',async()=>{
   const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw new Error('network lost');};

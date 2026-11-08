@@ -42,7 +42,7 @@ export type DesignSettings = {
 export const DEFAULT_DESIGN_SETTINGS: DesignSettings = {
   version: 1, mode: "auto", researchEnabled: false, photoAnalysis: true,
   strength: "medium", priority: "food_first", direction: "auto",
-  model: DEFAULT_OPENAI_IMAGE_MODEL, image: { ...DEFAULT_IMAGE_SETTINGS, output_format: "webp" }, count: 1,
+  model: DEFAULT_OPENAI_IMAGE_MODEL, image: { ...DEFAULT_IMAGE_SETTINGS, size: "1024x1536", output_format: "png" }, count: 1,
   styleId: "auto", textModel: RECIPE_DESIGN_TEXT_MODEL, artworkSize: "1280x1600",
 };
 export function selectRecipeStyle(styleId: DesignSettings["styleId"], title: string, recent: readonly string[] = []): RecipeStyleId {

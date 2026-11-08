@@ -153,6 +153,6 @@ export function RecipeTwoInOne() {
       <p className="mt-3 text-xs text-[#b9aa98]">{result.imageModel} · {result.imageCost === null ? "Cost unavailable from provider usage" : "$" + result.cost.toFixed(5) + (result.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
       <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondaryClass} disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : (result.imageSettings.output_format === "webp" ? "Download optimized WebP" : "Download Original · " + result.imageSettings.output_format.toUpperCase())}</button>
       <button type="button" className={secondaryClass} onClick={() => setFilterTarget(result.imageUrl)}>Add Filter</button></div></section>}
-    {filterTarget && <ImageFilterStudio webOptimized source={filterTarget} fileName="two-in-one-food" onClose={() => setFilterTarget(null)} />}
+    {filterTarget && <ImageFilterStudio webOptimized={result?.imageSettings.output_format === "webp"} source={filterTarget} fileName="two-in-one-food" onClose={() => setFilterTarget(null)} />}
   </div>;
 }

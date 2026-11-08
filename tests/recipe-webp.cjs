@@ -23,6 +23,42 @@ function load(file) {
 const { encodeRecipeWebp, compressRecipeWebp, WEBP_TARGET_BYTES } = load(path.resolve(__dirname, '../lib/recipeWebp.ts'));
 const settings = load(path.resolve(__dirname, '../lib/openaiImageSettings.ts'));
 
+test('recipe platform presets select PNG for social and high-quality WebP for WordPress', () => {
+  const { recipePlatformPreset, RECIPE_IMAGE_TO_IMAGE_SETTINGS } = load(path.resolve(__dirname, '../lib/recipeImageToImageSettings.ts'));
+  const { DEFAULT_DESIGN_SETTINGS } = load(path.resolve(__dirname, '../lib/recipeDesigns.ts'));
+  for (const value of [RECIPE_IMAGE_TO_IMAGE_SETTINGS, DEFAULT_DESIGN_SETTINGS.image]) {
+    assert.equal(value.size, '1024x1536'); assert.equal(value.output_format, 'png');
+  }
+  const wordpress = recipePlatformPreset({ ...settings.DEFAULT_IMAGE_SETTINGS, quality: 'low' }, '1536x864');
+  assert.equal(wordpress.quality, 'high'); assert.equal(wordpress.output_format, 'webp');
+  for (const size of ['1024x1536', '1152x1440']) {
+    const social = recipePlatformPreset(wordpress, size);
+    assert.equal(social.size, size); assert.equal(social.output_format, 'png');
+  }
+});
+
+test('PNG downloads preserve original PNG bytes and convert other formats without resizing', async () => {
+  const { prepareRecipeDownload } = load(path.resolve(__dirname, '../lib/recipeWebp.ts'));
+  const png = new Blob(['original'], { type: 'image/png' });
+  assert.equal(await prepareRecipeDownload(png, 'png'), png);
+  const bytes = await sharp({ create: { width: 1152, height: 1440, channels: 4, background: { r: 30, g: 70, b: 120, alpha: 0.5 } } }).webp().toBuffer();
+  const oldDocument = global.document, oldBitmap = global.createImageBitmap;
+  let closed = false, canvas;
+  global.createImageBitmap = async () => ({ width: 1152, height: 1440, close() { closed = true; } });
+  global.document = { createElement() {
+    canvas = { width: 0, height: 0, getContext() { return { drawImage() {} }; },
+      toBlob(callback, type) { assert.equal(type, 'image/png'); sharp(bytes).png().toBuffer().then(output => callback(new Blob([output], { type }))); } };
+    return canvas;
+  } };
+  try {
+    const result = await prepareRecipeDownload(new Blob([bytes], { type: 'image/webp' }), 'png');
+    const meta = await sharp(Buffer.from(await result.arrayBuffer())).metadata();
+    assert.equal(meta.format, 'png'); assert.equal(meta.hasAlpha, true);
+    assert.equal(meta.width, 1152); assert.equal(meta.height, 1440);
+    assert.equal(canvas.width, 1152); assert.equal(canvas.height, 1440); assert.equal(closed, true);
+  } finally { global.document = oldDocument; global.createImageBitmap = oldBitmap; }
+});
+
 test('compression prioritizes high quality over a hard byte limit', async () => {
   const attempts = [];
   const canvas = { toBlob(callback, type, quality) {
@@ -83,7 +119,7 @@ test('WordPress and logos are opt-in and horse defaults stay PNG', () => {
   for (const platform of ['facebook', 'pinterest', 'wordpress']) assert.ok(recipe.includes(`/brand-icons/${platform}.svg`));
   assert.match(recipe, /1536 × 864/);
   const { RECIPE_IMAGE_TO_IMAGE_SETTINGS } = load(path.resolve(__dirname, '../lib/recipeImageToImageSettings.ts'));
-  assert.equal(RECIPE_IMAGE_TO_IMAGE_SETTINGS.output_format, 'webp');
+  assert.equal(RECIPE_IMAGE_TO_IMAGE_SETTINGS.output_format, 'png');
   assert.equal(RECIPE_IMAGE_TO_IMAGE_SETTINGS.quality, 'high');
   assert.throws(() => settings.validateImageSettings('gpt-image-1.5', { size: '1536x864' }), /Unsupported image size/);
 });
