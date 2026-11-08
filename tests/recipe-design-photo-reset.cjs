@@ -70,7 +70,7 @@ test('changing a recipe photo clears the old draft only after a valid upload', a
       recipeEditImage: async photo => `data:image/png;base64,${Buffer.from(photo.name).toString('base64')}`,
       analysisThumbnail: async () => '',
     },
-    '@/lib/recipeDesignOutput': { recipeDesignPng: async () => new Blob(['design'], { type: 'image/png' }) },
+    '@/lib/recipeDesignOutput': { recipeDesignDimensions: () => ({width:1200,height:1500}), recipeDesignPng: async () => new Blob(['design'], { type: 'image/png' }) },
   };
   const { createRoot } = require('react-dom/client');
   const { RecipeDesigns } = loadComponent(path.resolve(__dirname, '../app/components/RecipeDesigns.tsx'), mocks);

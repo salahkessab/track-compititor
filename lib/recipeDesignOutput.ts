@@ -1,11 +1,15 @@
 /** Keep the complete model composition visible when its native ratio is not 4:5. */
-export async function recipeDesignPng(dataUrl: string): Promise<Blob> {
+export function recipeDesignDimensions(size?: string) {
+  return size === "1536x864" ? { width: 1536, height: 864 } : { width: 1200, height: 1500 };
+}
+export async function recipeDesignPng(dataUrl: string, size?: string): Promise<Blob> {
   if (!/^data:image\/(?:png|jpeg|webp);base64,/.test(dataUrl)) throw new Error("OpenAI returned an unsupported image format.");
   const image = await (await fetch(dataUrl)).blob();
   const bitmap = await createImageBitmap(image);
   try {
     const canvas = document.createElement("canvas");
-    canvas.width = 1200; canvas.height = 1500;
+    const dimensions = recipeDesignDimensions(size);
+    canvas.width = dimensions.width; canvas.height = dimensions.height;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("Could not export the design PNG.");
     const cover = Math.max(canvas.width / bitmap.width, canvas.height / bitmap.height);

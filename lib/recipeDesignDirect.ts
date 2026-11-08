@@ -26,17 +26,20 @@ export function validateRecipeEditImage(value: unknown, maxLength: number): stri
   return value;
 }
 
-export function recipeDirectPrompt(styleId: RecipeStyleId, titleValue: unknown, notesValue: unknown, copyValue?: unknown, ingredientsValue?: string): string {
+export function recipeDirectPrompt(styleId: RecipeStyleId, titleValue: unknown, notesValue: unknown, copyValue?: unknown, ingredientsValue?: string, canvasSize?: string): string {
   const { title } = validateTitle(titleValue, false);
   const style = getRecipeStyle(styleId);
   if (!style) throw new Error("Choose a saved Recipe Designs style.");
   if (typeof notesValue !== "string" || notesValue.length > 1000) throw new Error("Invalid extra instructions.");
   const copy = validateRecipePromptCopy(copyValue, styleId) as RecipePromptCopy | undefined;
   const isIngredientsCard = styleId === INGREDIENT_CARD_STYLE_ID;
+  const wordpress = canvasSize === "1536x864";
+  const rawTemplate = copy?.template || style.template;
+  const template = wordpress ? rawTemplate.replaceAll("4:5", "16:9").replaceAll("1200 × 1500", "1536 × 864").replace(/\bvertical\b/gi, "landscape").replace(/\bportrait\b/gi, "landscape") : rawTemplate;
   const fullPrompt = isIngredientsCard
-    ? (copy?.template || style.template).replace(/\{\{(?:TITLE|STYLE_NOTES|INGREDIENTS)\}\}/g, token => token === "{{TITLE}}" ? title : token === "{{STYLE_NOTES}}" ? notesValue : ingredientsValue?.trim() || "[Enter ingredients, one per line]")
-    : (copy?.template || style.template).replaceAll("{{TITLE}}", title).replaceAll("{{STYLE_NOTES}}", notesValue);
-  const directPrompt = `${fullPrompt}\n\nDIRECT IMAGE EDIT INSTRUCTIONS:\nThe first attached image is the owner's original food photograph. Use it as the food source for this finished design. Any later attached images are visual style references only; do not copy their food, title, logo, or finished layout. Produce the COMPLETE finished recipe graphic in this one image, including the exact title \"${title}\"${isIngredientsCard ? " and every supplied ingredient line and amount, with the INGREDIENTS: heading" : ""}. References to a protected photo layer in the style specification mean preserve the source food visually; no later compositor will add the photo or title. Do not leave an empty photo opening, an empty label, or placeholder text. Preserve the food's appearance as faithfully as the image-edit model allows. Keep the complete title and essential composition inside a centered 4:5 safe area so a portrait output can be exported without cutting them off. Do not invent ingredients, slogans, logos, watermarks, or extra copy.`;
+    ? template.replace(/\{\{(?:TITLE|STYLE_NOTES|INGREDIENTS)\}\}/g, token => token === "{{TITLE}}" ? title : token === "{{STYLE_NOTES}}" ? notesValue : ingredientsValue?.trim() || "[Enter ingredients, one per line]")
+    : template.replaceAll("{{TITLE}}", title).replaceAll("{{STYLE_NOTES}}", notesValue);
+  const directPrompt = `${fullPrompt}\n\nDIRECT IMAGE EDIT INSTRUCTIONS:\nThe first attached image is the owner's original food photograph. Use it as the food source for this finished design. Any later attached images are visual style references only; do not copy their food, title, logo, or finished layout. Produce the COMPLETE finished recipe graphic in this one image, including the exact title \"${title}\"${isIngredientsCard ? " and every supplied ingredient line and amount, with the INGREDIENTS: heading" : ""}. References to a protected photo layer in the style specification mean preserve the source food visually; no later compositor will add the photo or title. Do not leave an empty photo opening, an empty label, or placeholder text. Preserve the food's appearance as faithfully as the image-edit model allows. ${wordpress ? "Compose a full-width 1536 × 864 landscape WordPress article image in 16:9. Adapt the chosen style to the wide canvas, with the food dominant and all exact text legible. Keep essential content away from the edges. Do not add portrait panels or blurred sidebars." : "Keep the complete title and essential composition inside a centered 4:5 safe area so a portrait output can be exported without cutting them off."} Do not invent ingredients, slogans, logos, watermarks, or extra copy.`;
   const finishing = DIRECT_STYLE_FINAL_CHECK[styleId];
   return `${directPrompt}${finishing ? `\n\nSTYLE-SPECIFIC FINAL CHECK:\n${finishing}` : ""}${notesValue ? `\n\nAdditional owner instructions: ${notesValue}` : ""}`;
 }

@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { encodeRecipeWebp } from "@/lib/recipeWebp";
 import { applyImageAdjustments, IMAGE_FILTER_PRESETS, ORIGINAL_ADJUSTMENTS, type ImageAdjustments, type ImageFilterPreset } from "@/lib/imageFilters";
 
-export type FilteredImage = { blob: Blob; preset: ImageFilterPreset; adjustments: ImageAdjustments; format: "png" | "jpeg" };
+export type FilteredImage = { blob: Blob; preset: ImageFilterPreset; adjustments: ImageAdjustments; format: "png" | "jpeg" | "webp" };
 
 type Props = {
   source: Blob | string;
   fileName: string;
   onClose: () => void;
   onSave?: (image: FilteredImage) => Promise<void>;
+  webOptimized?: boolean;
 };
 
 const buttonClass = "rounded-xl border border-[#604a36] px-3 py-2 text-sm text-[#ead9c7] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
@@ -34,9 +36,10 @@ function drawFiltered(canvas: HTMLCanvasElement, image: HTMLImageElement, adjust
   }
 }
 
-async function encodeFiltered(image: HTMLImageElement, adjustments: ImageAdjustments, format: "png" | "jpeg"): Promise<Blob> {
+async function encodeFiltered(image: HTMLImageElement, adjustments: ImageAdjustments, format: "png" | "jpeg" | "webp"): Promise<Blob> {
   const canvas = document.createElement("canvas");
   drawFiltered(canvas, image, adjustments);
+  if (format === "webp") return encodeRecipeWebp(canvas);
   if (format === "jpeg") {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Could not prepare the JPEG.");
@@ -60,7 +63,7 @@ async function downloadFiltered(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-export function ImageFilterStudio({ source, fileName, onClose, onSave }: Props) {
+export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimized = false }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const lastSaved = useRef("");
@@ -68,7 +71,7 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave }: Props) 
   const [originalUrl, setOriginalUrl] = useState("");
   const [preset, setPreset] = useState<ImageFilterPreset>("original");
   const [adjustments, setAdjustments] = useState<ImageAdjustments>({ ...ORIGINAL_ADJUSTMENTS });
-  const [format, setFormat] = useState<"png" | "jpeg">("png");
+  const [format, setFormat] = useState<"png" | "jpeg" | "webp">(webOptimized ? "webp" : "png");
   const [compare, setCompare] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -123,7 +126,7 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave }: Props) 
         try { await onSave({ blob, preset, adjustments: { ...adjustments }, format }); lastSaved.current = signature; saved = true; }
         catch { setError("Could not save this copy to Design History. Your original is unchanged."); }
       } else if (onSave) saved = true;
-      if (download) await downloadFiltered(blob, `${fileName}-filtered.${format === "jpeg" ? "jpg" : "png"}`);
+      if (download) await downloadFiltered(blob, `${fileName}-filtered.${format === "jpeg" ? "jpg" : format}`);
       if (saved) setNotice("Filtered copy saved in Design History. Your original is unchanged.");
     } catch (reason) {
       if (!(reason instanceof Error && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "Could not export the filtered image.");
@@ -154,7 +157,7 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave }: Props) 
         <h3 className="mt-5 border-t border-[#514131] pt-4 text-xs font-semibold uppercase tracking-[.16em] text-[#d2a273]">Fine-tune</h3>
         <div className="mt-3 space-y-3">{ranges.map(range => <label key={range.key} className="block text-xs text-[#d7c5b3]"><span className="flex justify-between"><span>{range.label}</span><span>{adjustments[range.key]}</span></span>
           <input type="range" min={range.min} max={range.max} value={adjustments[range.key]} onChange={event => { setAdjustments(current => ({ ...current, [range.key]: Number(event.target.value) })); setNotice(""); }} className="mt-2 w-full accent-[#c97a3d]" /></label>)}</div>
-        <label className="mt-5 block text-xs text-[#d7c5b3]">Download format<select aria-label="Download format" value={format} onChange={event => setFormat(event.target.value as "png" | "jpeg")} className="mt-2 w-full rounded-xl border border-[#514131] bg-[#1d1611] px-3 py-2.5 text-sm text-[#f3e5d4]"><option value="png">PNG</option><option value="jpeg">JPEG · high quality</option></select></label>
+        <label className="mt-5 block text-xs text-[#d7c5b3]">Download format<select aria-label="Download format" value={format} onChange={event => setFormat(event.target.value as "png" | "jpeg" | "webp")} className="mt-2 w-full rounded-xl border border-[#514131] bg-[#1d1611] px-3 py-2.5 text-sm text-[#f3e5d4]">{webOptimized && <option value="webp">WebP · high quality, compressed</option>}<option value="png">PNG</option><option value="jpeg">JPEG · high quality</option></select></label>
         {format === "jpeg" && <p className="mt-2 text-xs text-[#b9aa98]">JPEG uses a white background for transparent areas.</p>}
         {onSave && <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">Downloading also saves a separate copy in Design History.</p>}
         {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-emerald-300">{notice}</p>}

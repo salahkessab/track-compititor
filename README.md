@@ -12,6 +12,14 @@ image model is `gpt-image-2.5-sunburst`; the selector also offers
 
 ## Recipes: Recipe Designs
 
+Recipe tabs offer Facebook (1152×1440), Pinterest (1024×1536), and WordPress
+(1536×864) presets with platform icons. WordPress selects High generation quality
+and WebP. Recipe downloads default to WebP; browser compression keeps the full
+resolution and uses quality 92–88, aiming for 300 KB without enforcing a hard
+size limit. More detailed images may remain larger to preserve quality.
+Recipe Designs exports WordPress at 1536×864 and other designs at 1200×1500;
+its original OpenAI download remains available. Horses settings are unchanged.
+
 Recipe Designs replaces the old Recipe generation panel in the Recipes area;
 the existing recipe API remains available and Image to Image is unchanged. Upload
 the original food photo, enter the exact title or select NO TEXT, and generate.

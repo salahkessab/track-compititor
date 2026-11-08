@@ -21,7 +21,7 @@ test('social sizes reach Sunburst 2.6 generation and edit requests unchanged', a
     requests.push({ url, body: init.body instanceof FormData ? Object.fromEntries(init.body) : JSON.parse(init.body) });
     return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] });
   };
-  for (const size of ['1152x1440', '1024x1536']) {
+  for (const size of ['1152x1440', '1024x1536', '1536x864']) {
     for (const references of [[], ['data:image/png;base64,aW1hZ2U=']]) {
       await generateOpenAIImage({ model: 'gpt-image-2.6-sunburst', prompt: 'Food photo',
         settings: { ...DEFAULT_IMAGE_SETTINGS, size }, references });

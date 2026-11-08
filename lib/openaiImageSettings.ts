@@ -5,9 +5,9 @@ export const OPENAI_IMAGE_MODEL_IDS = [
   "gpt-image-2.6-sunburst",
 ] as const;
 export const DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2.5-sunburst";
-export const IMAGE_SIZES = ["auto", "1024x1024", "1152x1440", "1024x1536", "1536x1024"] as const;
+export const IMAGE_SIZES = ["auto", "1024x1024", "1152x1440", "1024x1536", "1536x1024", "1536x864"] as const;
 export function imageSizesFor(model: string): readonly (typeof IMAGE_SIZES[number])[] {
-  return model === "gpt-image-1.5" ? IMAGE_SIZES.filter(size => size !== "1152x1440") : IMAGE_SIZES;
+  return model === "gpt-image-1.5" ? IMAGE_SIZES.filter(size => size !== "1152x1440" && size !== "1536x864") : IMAGE_SIZES;
 }
 export const IMAGE_QUALITIES = ["auto", "low", "medium", "high", "xhigh", "max"] as const;
 export type OpenAIImageSettings = {

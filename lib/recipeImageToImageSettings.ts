@@ -2,7 +2,7 @@ import { DEFAULT_IMAGE_SETTINGS, type OpenAIImageSettings } from "./openaiImageS
 
 export const RECIPE_IMAGE_TO_IMAGE_MODEL = "gpt-image-2.6-sunburst";
 export const RECIPE_IMAGE_TO_IMAGE_SETTINGS: OpenAIImageSettings = {
-  ...DEFAULT_IMAGE_SETTINGS, complexity: "default",
+  ...DEFAULT_IMAGE_SETTINGS, output_format: "webp", complexity: "default",
 };
 export const MAX_EXTRA_INSTRUCTIONS = 4000;
 // Leave room for JSON and settings under the deployment's request-body limit.

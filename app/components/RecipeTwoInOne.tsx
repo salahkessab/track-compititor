@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- previews and generated data URLs are runtime images. */
 
 import { useRef, useState } from "react";
+import { compressRecipeWebp } from "@/lib/recipeWebp";
 import { OpenAIImageControls } from "./OpenAIImageControls";
 import { ImageFilterStudio } from "./ImageFilterStudio";
 import { OPENAI_IMAGE_MODEL_IDS, imageQualitiesFor, supportsImageComplexity, type OpenAIImageSettings } from "@/lib/openaiImageSettings";
@@ -111,7 +112,8 @@ export function RecipeTwoInOne() {
     try {
       const url = result.imageUrl.startsWith("data:") ? result.imageUrl : "/api/download?url=" + encodeURIComponent(result.imageUrl);
       const response = await fetch(url); if (!response.ok) throw new Error("Could not download the image.");
-      const blob = await response.blob();
+      const original = await response.blob();
+      const blob = result.imageSettings.output_format === "webp" ? await compressRecipeWebp(original) : original;
       const extension = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
       const file = new File([blob], `two-in-one-food.${extension}`, { type: blob.type });
       if (window.matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; }
@@ -133,7 +135,7 @@ export function RecipeTwoInOne() {
           <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">Drop one photo in each box, or select two together. JPG, PNG, or WebP · up to 25 MB each.</p>
           {photos.some(Boolean) && <p className="mt-1 text-xs text-[#b9aa98]">Changing or removing an existing photo clears the extra instructions and current result.</p>}
           {uploading && <p role="status" className="mt-2 text-xs text-[#d2a273]">Preparing photos…</p>}
-          <div className="mt-4"><OpenAIImageControls model={model} value={settings} onChange={setSettings} disabled={loading} quickSettingsOnly /></div>
+          <div className="mt-4"><OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} quickSettingsOnly /></div>
         </div>
         <div className="flex flex-col"><label className="grid gap-2 text-sm text-[#cbb8a2]">Extra instructions <span className="sr-only">(optional)</span>
           <textarea className={inputClass + " min-h-[152px] resize-y"} rows={5} value={extraInstructions} maxLength={MAX_EXTRA_INSTRUCTIONS} disabled={loading || uploading} placeholder="Optional: describe how the foods should be arranged, or name any ingredients that must be visible." onChange={event => setExtraInstructions(event.target.value)} /></label>
@@ -143,14 +145,14 @@ export function RecipeTwoInOne() {
         </div>
       </div>
     </section>
-    <OpenAIImageControls model={model} value={settings} onChange={setSettings} disabled={loading} hideQuickSettings countDescription="Both original food photos are used as references for one image. Partial images show progress before the finished image." />
+    <OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} hideQuickSettings countDescription="Both original food photos are used as references for one image. Partial images show progress before the finished image." />
     {loading && <p role="status" aria-live="polite" className="mb-4 text-sm text-[#cbb8a2]">Creating one food photo from both references…</p>}
     {partial && <div className="studio-panel mb-4 rounded-2xl p-4"><p className="mb-3 text-sm text-[#b9aa98]">Preview · still generating</p><img src={partial} alt="Combined food photo in progress" className="max-h-[440px] w-full rounded-xl object-contain" /></div>}
     {result && <section aria-label="Combined food photo" className="studio-panel mt-6 overflow-hidden rounded-[24px] p-4"><h2 className="studio-title mb-4 text-2xl">Your combined image</h2>
       <img src={result.imageUrl} alt="Food photo combining both references" className="max-h-[600px] w-full rounded-xl bg-[#120f0d] object-contain" />
       <p className="mt-3 text-xs text-[#b9aa98]">{result.imageModel} · {result.imageCost === null ? "Cost unavailable from provider usage" : "$" + result.cost.toFixed(5) + (result.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
-      <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondaryClass} disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : "Download Original · " + result.imageSettings.output_format.toUpperCase()}</button>
+      <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondaryClass} disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : (result.imageSettings.output_format === "webp" ? "Download optimized WebP" : "Download Original · " + result.imageSettings.output_format.toUpperCase())}</button>
       <button type="button" className={secondaryClass} onClick={() => setFilterTarget(result.imageUrl)}>Add Filter</button></div></section>}
-    {filterTarget && <ImageFilterStudio source={filterTarget} fileName="two-in-one-food" onClose={() => setFilterTarget(null)} />}
+    {filterTarget && <ImageFilterStudio webOptimized source={filterTarget} fileName="two-in-one-food" onClose={() => setFilterTarget(null)} />}
   </div>;
 }

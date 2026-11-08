@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { compressRecipeWebp } from "@/lib/recipeWebp";
 import { OpenAIImageControls } from "./OpenAIImageControls";
 import { ImageFilterStudio } from "./ImageFilterStudio";
 import { OPENAI_IMAGE_MODEL_IDS, imageQualitiesFor, supportsImageComplexity, type OpenAIImageSettings } from "@/lib/openaiImageSettings";
@@ -158,7 +159,8 @@ export function RecipeImageToImage() {
       const url = result.imageUrl.startsWith("data:") ? result.imageUrl : "/api/download?url=" + encodeURIComponent(result.imageUrl);
       const response = await fetch(url);
       if (!response.ok) throw new Error("Could not download the image.");
-      const blob = await response.blob();
+      const original = await response.blob();
+      const blob = result.imageSettings.output_format === "webp" ? await compressRecipeWebp(original) : original;
       const extension = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
       const file = new File([blob], "recipe-variation-" + (index + 1) + "." + extension, { type: blob.type });
       if (window.matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
@@ -222,7 +224,7 @@ export function RecipeImageToImage() {
             </div>
             {photo && <p className="mt-2 text-xs text-[#b9aa98]">Changing or removing this photo clears the extra instructions and current result.</p>}
             <div className="mt-4">
-              <OpenAIImageControls model={model} value={settings} onChange={setSettings} disabled={loading} quickSettingsOnly />
+              <OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} quickSettingsOnly />
             </div>
           </div>
           <div className="flex flex-col">
@@ -276,7 +278,7 @@ export function RecipeImageToImage() {
               <p className="mt-2 text-xs text-[#b9aa98]">{selectedResult.imageCost === null ? "Cost unavailable from provider usage" : "$" + selectedResult.cost.toFixed(5) + (selectedResult.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" className={secondaryClass} disabled={downloading !== null} onClick={() => void download(selectedResult, selectedIndex)}>
-                  {downloading === selectedResult.id ? "Downloading…" : "Download Original · " + selectedResult.imageSettings.output_format.toUpperCase()}
+                  {downloading === selectedResult.id ? "Downloading…" : (selectedResult.imageSettings.output_format === "webp" ? "Download optimized WebP" : "Download Original · " + selectedResult.imageSettings.output_format.toUpperCase())}
                 </button>
                 <button type="button" className={secondaryClass} onClick={() => setFilterTarget({ result: selectedResult, index: selectedIndex })}>Add Filter</button>
               </div>
@@ -301,7 +303,7 @@ export function RecipeImageToImage() {
         </div>
       </section>
 
-      <OpenAIImageControls model={model} value={settings} onChange={setSettings} disabled={loading} hideQuickSettings
+      <OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} hideQuickSettings
         countDescription="Each variation uses your original food photo. Partial images show progress before each finished image." />
 
       <dialog ref={dialog} aria-label="Food variation preview" onCancel={() => setPreview(null)}
@@ -313,7 +315,7 @@ export function RecipeImageToImage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {preview && <img src={preview.imageUrl} alt="Enlarged food photo variation" className="max-h-[78vh] w-full object-contain" />}
       </dialog>
-      {filterTarget && <ImageFilterStudio source={filterTarget.result.imageUrl} fileName={`recipe-variation-${filterTarget.index + 1}`} onClose={() => setFilterTarget(null)} />}
+      {filterTarget && <ImageFilterStudio webOptimized source={filterTarget.result.imageUrl} fileName={`recipe-variation-${filterTarget.index + 1}`} onClose={() => setFilterTarget(null)} />}
     </div>
   );
 }
