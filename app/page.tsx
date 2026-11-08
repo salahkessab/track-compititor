@@ -258,7 +258,7 @@ export default function Page() {
   const workflow: Workflow = "openai";
   const [openaiModel, setOpenaiModel] = useState<string>(OPENAI_MODELS[0]);
   const [imageModel, setImageModel] = useState<string>(DEFAULT_IMAGE_MODEL);
-  const [imageSettings, setImageSettings] = useState<OpenAIImageSettings>({ ...DEFAULT_IMAGE_SETTINGS });
+  const [imageSettings, setImageSettings] = useState<OpenAIImageSettings>({ ...DEFAULT_IMAGE_SETTINGS, size: "1152x1440" });
   const [partialPreview, setPartialPreview] = useState<string | null>(null);
   const openAIImage = isOpenAIImageModel(imageModel);
   useEffect(() => {
