@@ -1,0 +1,35 @@
+{
+  "name": "horse-image-generator",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "tsc lib/openaiImageSettings.ts lib/openaiImages.ts lib/imagePricing.ts lib/costLedger.ts lib/generationResponse.ts lib/config.ts lib/openaiPrompt.ts lib/horseSceneGuidance.ts lib/sceneSeed.ts lib/recipeDesigns.ts lib/recipeDesignRenderer.ts --outDir .test-build --module commonjs --target ES2022 --skipLibCheck --esModuleInterop && node --test tests/*.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@fal-ai/client": "^1.2.0",
+    "@fontsource-variable/archivo-narrow": "^5.3.0",
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/rokkitt": "^5.3.0",
+    "@fontsource/special-elite": "^5.3.0",
+    "fabric": "^7.4.0",
+    "next": "^15.5.29",
+    "openai": "^4.73.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "26.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5"
+  }
+}
