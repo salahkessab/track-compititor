@@ -146,6 +146,23 @@ test('changing a recipe photo clears the old draft only after a valid upload', a
     assert.equal(title().value, 'New title before upload');
     assert.equal(ingredients().value, 'Garlic (1 clove)');
     assert.equal(requests.length, 1, 'changing photos must never start another paid request');
+
+    const original = [...stores.history.values()][0];
+    for (let i = 1; i <= 25; i++) stores.history.set(`saved-${i}`, { ...original, id: `saved-${i}`, title: `Saved design ${i}` });
+    await React.act(async () => root.unmount());
+    const reopened = createRoot(document.getElementById('root'));
+    try {
+      await React.act(async () => { reopened.render(React.createElement(RecipeDesigns)); await settle(); });
+      assert.match(document.body.textContent, /Your OpenAI design will appear here/, 'reopening starts with an empty preview');
+      assert.equal(stores.history.size, 26, 'reopening must not delete saved designs');
+      const history = [...document.querySelectorAll('button')].find(button => button.textContent === 'Design History (26)');
+      assert.ok(history, 'history count includes all saved designs');
+      await React.act(async () => history.click());
+      const oldest = [...document.querySelectorAll('button')].find(button => button.textContent.includes('Saved design 25'));
+      assert.ok(oldest, 'designs beyond the first 20 remain accessible');
+      await React.act(async () => oldest.click());
+      assert.ok(document.querySelector('img[alt="Recipe design preview"]'), 'selecting history opens the saved design');
+    } finally { await React.act(async () => reopened.unmount()); }
   } finally {
     await React.act(async () => root.unmount()); dom.window.close();
     URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke;
