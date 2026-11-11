@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prepareRoot, storagePath } from "./paths";
 import { normalizeSite, normalizeUrl, sameSite } from "./urls";
 import type { Candidate, ScanItem, Site, SiteStatus, TaskKind } from "./types";
-import { CURRENT_SCHEMA, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5 } from "./migrations";
+import { CURRENT_SCHEMA, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6 } from "./migrations";
 
 const SCHEMA = `
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -109,6 +109,10 @@ export class IntelligenceStore {
       if (Number(db.pragma("user_version", { simple: true })) < 5) {
         if (version > 0) await db.backup(storagePath(root, "backups", `before-migration-5-${Date.now()}-${randomUUID()}.sqlite`));
         db.transaction(() => { if (Number(db.pragma("user_version", { simple: true })) < 5) db.exec(MIGRATION_5); }).immediate();
+      }
+      if (Number(db.pragma("user_version", { simple: true })) < 6) {
+        if (version > 0) await db.backup(storagePath(root, "backups", `before-migration-6-${Date.now()}-${randomUUID()}.sqlite`));
+        db.transaction(() => { if (Number(db.pragma("user_version", { simple: true })) < 6) db.exec(MIGRATION_6); }).immediate();
       }
       db.pragma("journal_mode = WAL"); db.pragma("synchronous = FULL");
       const store = new IntelligenceStore(db, root);

@@ -1,21 +1,23 @@
-# Recipe Intelligence Capture 2.0.3
+# Recipe Intelligence Capture 2.1.0
 
-Capture a recipe article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch. This version replaces the supplied Article Rewriter Studio extension's URL-only handoff.
+Capture a recipe article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
 
-Version 2.0.3 displays the running extension version on every capture page and marks resumed captures from earlier versions. It includes the v2.0.2 filter: exclude images linking to other articles and nested recommendation sections, prefer the article container over the whole page, correctly read image URLs containing commas, and group different crops of the same photo. These changes apply to new captures; existing imports and generation jobs are unchanged.
+Version 2.1.0 remembers the connected app address and storage folder, shows connection status before importing, and can reopen a closed app tab. A changed launcher port is detected from an open app tab for the same workspace. Captures are saved before connecting, so an offline app does not lose the pending import. The recipe photo filters and saved generation history are unchanged.
 
 **Open generation screen** brings the local app's Chrome window to the front and restores it if minimized. The Generate button is in that local app, where the estimate is approved.
 
 ## Install once
 
+Download the ZIP from **Recipe Intelligence → Use a recipe URL → Capture recipes with the Chrome extension**, or use this repository folder directly.
+
 1. Open `chrome://extensions` in Chrome and enable **Developer mode**.
 2. Choose **Load unpacked** and select this folder (the folder containing `manifest.json`). If using the ZIP, extract it first.
 3. Pin **Recipe Intelligence Capture** from Chrome's Extensions menu. Disable the older Article Rewriter Studio extension if you no longer need it.
-4. Open **Recipe Intelligence** with the desktop shortcut in the same Chrome profile.
+4. Open **Recipe Intelligence** with the desktop shortcut in the same Chrome profile. Click the extension while on the local app page to connect. It remembers the workspace without capturing that page.
 
 After updating files in this folder, click **Reload** on the extension's card and close old capture tabs before starting a new capture.
 
-Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.0.3** at the top. Old capture tabs and resumed imports keep their previously captured photos.
+Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.1.0** at the top. Old capture tabs and resumed imports keep their previously captured photos. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
 
 ## Use
 
@@ -27,7 +29,7 @@ Chrome uses the exact folder selected during **Load unpacked**, which may be a D
 
 No AI requests or charges occur during capture or import. The extension never approves a generation job.
 
-If the app disconnects, reopen it with the desktop shortcut and click **Resume import and see estimate**. After closing a capture tab, open the extension again and choose **Resume previous import**. Only the last started capture is stored for recovery. Repeating an interrupted import reuses its saved article and deduplicates identical photos.
+If the app disconnects, reopen it with the desktop shortcut and click **Reconnect**, then **Resume import and see estimate**. After closing a capture tab, open the extension again and choose **Resume previous import**. Only the last submitted capture is stored for recovery, including an import submitted while offline. Repeating an interrupted import uses the same capture ID, reuses its saved article, and skips photos already acknowledged by the app. A completed capture keeps its estimate ID; **Open generation screen** does not create another job or approve spending.
 
 ## What is captured
 
@@ -41,7 +43,11 @@ A webpage must be readable in Chrome. The extension does not solve access challe
 
 ## Connection and permissions
 
-The extension finds authenticated Recipe Intelligence tabs at `http://127.0.0.1`. No fixed port, API key or copied launcher token is needed. Keep the local app open in the same Chrome profile. If multiple local workspaces are open, choose the intended destination.
+The extension finds authenticated Recipe Intelligence tabs at `http://127.0.0.1`. No fixed port, API key or copied launcher token is needed. It stores only the verified app origin and storage folder. Queries, fragments, launch tokens and credentials are never saved as connection settings. If multiple local workspaces are open without a remembered match, choose the intended destination. An interrupted capture remains bound to its original folder.
+
+**Connection settings** also accepts the local app address shown inside Recipe Intelligence. The extension can reopen a remembered app tab while the local application is running. If the application is stopped or the browser session expires, start it with the Windows shortcut in the same Chrome profile. Chrome cannot start the Windows worker through this extension. A changed port can be recovered after the launcher opens the app at its new address.
+
+The hosted site can supply the extension download and setup instructions. Processing still uses the local Windows worker and SQLite storage; entering the hosted website as the connection address is not supported.
 
 HTTP/HTTPS host access allows photographs to be fetched from the page's image CDN and lets the extension find the local app. There are no automatically running content scripts, remote executable scripts, analytics, third-party upload services, cookie permissions or externally callable extension endpoints. Direct photo downloads omit credentials and reject redirects. A fallback may copy an already rendered image only when Chrome permits canvas access.
 
@@ -51,4 +57,6 @@ Chrome documentation: [script injection](https://developer.chrome.com/docs/exten
 
 ## Development checks
 
-From the repository root, run `npm test`. Capture tests cover sanitized DOM extraction, JSON-LD and plain HTML recipes, source URL validation, bounded downloads, authenticated transfer of actual image bytes, incomplete imports, recovery, duplicate handling, cost estimates, UI progress and the absence of paid calls before approval. The extension needs no build step or external dependencies.
+From the repository root, run `npm test`. Capture tests cover sanitized DOM extraction, JSON-LD and plain HTML recipes, source URL validation, bounded downloads, authenticated transfer of actual image bytes, incomplete imports, recovery, duplicate handling, cost estimates, UI progress and the absence of paid calls before approval. Connection tests cover closed tabs, changed ports, ambiguous workspaces, expired sessions, offline captures and secret-free settings. Package tests verify every required file and icon in the downloadable ZIP. The extension needs no build step or external dependencies.
+
+The connection flow takes inspiration from the owner's [Article Rewriter Studio extension](https://github.com/salahkessab/rewrite-articles-flippa/tree/main/extension): remember the app, reuse its tab, retain a handoff until receipt, and open the exact destination. This implementation retains Recipe Intelligence's authenticated local API and idempotent import receipts instead of adding an all-pages message bridge.

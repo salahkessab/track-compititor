@@ -89,6 +89,21 @@ test('duplicate images and simultaneous export requests make a single media uplo
   assert.equal((f.wp.plan(f.item.id, c.id).html.match(/wp-image-1/g) || []).length, 2);
 });
 
+test('featured-image selection follows article order rather than filenames or media upload order', async t => {
+  const f = await fixture(t, 3), c = await f.connect(); const original = f.wp.plan(f.item.id, c.id);
+  for (const image of original.images) await upload(f, c, original, image);
+  const oldIds = f.wp.plan(f.item.id, c.id).mediaIds;
+  const row = f.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name='article.html'").get(f.item.id);
+  const html = f.artifacts.read(row.id).data.toString(); const figures = html.match(/<figure>[\s\S]*?<\/figure>/g);
+  assert.equal(figures.length, 3);
+  let index = 0; const order = [2, 0, 1];
+  f.artifacts.put(f.item, 'article.html', html.replace(/<figure>[\s\S]*?<\/figure>/g, () => figures[order[index++]]), 'text/html');
+  const reordered = f.wp.plan(f.item.id, c.id);
+  assert.deepEqual(reordered.mediaIds, [oldIds[2], oldIds[0], oldIds[1]]);
+  assert.equal(reordered.images[0].name, 'pinterest.jpg');
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 3, 'existing media reused');
+});
+
 test('uncertain uploads reconcile by stable slug without retrying POST, while other images continue', async t => {
   const f = await fixture(t); const c = await f.connect(); const p = f.wp.plan(f.item.id, c.id);
   f.behavior.timeout = true; await assert.rejects(upload(f, c, p, p.images[0]), /could not be confirmed/);
@@ -152,9 +167,9 @@ test('unsafe destinations and credentials fail before requests; authentication e
 
 test('version 4 migration backs up existing articles and adds an independent WordPress ledger', async t => {
   const f = await fixture(t, 1); const hashes = f.store.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all();
-  f.store.db.exec('DROP TABLE wordpress_media; PRAGMA user_version=4'); f.store.close();
+  f.store.db.exec('DROP TABLE wordpress_exports; DROP TABLE wordpress_media; PRAGMA user_version=4'); f.store.close();
   const updated = await IntelligenceStore.open(f.root); t.after(() => updated.close());
-  assert.equal(updated.db.pragma('user_version', { simple: true }), 5);
+  assert.equal(updated.db.pragma('user_version', { simple: true }), 6);
   assert.deepEqual(updated.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all(), hashes);
   const backup = fs.readdirSync(path.join(f.root, 'backups')).find(n => n.startsWith('before-migration-5'));
   assert.ok(backup); const db = new (require('better-sqlite3'))(path.join(f.root, 'backups', backup), { readonly: true });

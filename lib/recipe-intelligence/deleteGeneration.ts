@@ -13,7 +13,8 @@ function itemRow(store: IntelligenceStore, id: string): any {
 }
 export function deletionAvailability(store: IntelligenceStore, item: any) {
   const busy = store.db.prepare("SELECT 1 FROM content_stages WHERE item_id=? AND state='running'").get(item.id)
-    || store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id IN (SELECT id FROM content_stages WHERE item_id=?) AND state IN ('reserved','dispatched')").get(item.id);
+    || store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id IN (SELECT id FROM content_stages WHERE item_id=?) AND state IN ('reserved','dispatched')").get(item.id)
+    || store.db.prepare("SELECT 1 FROM wordpress_exports WHERE item_id=? AND state='sending'").get(item.id);
   if (busy || item.state === "running") return { allowed: false, reason: "Wait for this recipe's current request to finish before deleting it." };
   if (!["completed", "failed", "partial", "deleted"].includes(item.state) && !removing.has(item.state) && item.batch_status !== "cancelled") return { allowed: false, reason: "Finish generation or cancel pending work before deleting this recipe." };
   return { allowed: true, reason: "" };
@@ -39,6 +40,16 @@ function plan(store: IntelligenceStore, id: string) {
   if (!availability.allowed) throw new Error(availability.reason);
   if (item.state === "deleted") throw new Error("This recipe has already been deleted.");
   const roots = [path.join("articles", id)];
+  const exports = store.db.prepare("SELECT export_id,receipt_path FROM wordpress_exports WHERE item_id=? AND receipt_path IS NOT NULL").all(id) as { export_id: string; receipt_path: string }[];
+  for (const row of exports) {
+    if (!/^exports\/wordpress-receipts\/[a-f0-9]{32}\/post-[a-f0-9]{64}-[a-f0-9-]{36}\.json$/.test(row.receipt_path)) throw new Error("Invalid WordPress receipt path.");
+    if (!/^[a-f0-9]{64}$/.test(row.export_id)) throw new Error("Invalid WordPress export ID.");
+    const receiptDirectory = path.dirname(row.receipt_path);
+    const receiptFolder = checkedPath(store.root, receiptDirectory);
+    if (fs.existsSync(receiptFolder)) for (const name of fs.readdirSync(receiptFolder)) {
+      if (name.startsWith(`post-${row.export_id}-`) && /^[a-z0-9.-]+\.json(?:\.[a-f0-9-]+\.tmp)?$/.test(name)) roots.push(path.join(receiptDirectory, name));
+    }
+  }
   const addMatching = (directory: string, matches: (name: string) => boolean) => {
     const target = checkedPath(store.root, directory);
     if (fs.existsSync(target)) for (const name of fs.readdirSync(target)) if (matches(name)) roots.push(path.join(directory, name));
@@ -96,6 +107,7 @@ export function deleteGeneration(store: IntelligenceStore, id: string, confirmed
         try { fs.rmdirSync(target); } catch (error: any) { if (error.code !== "ENOENT") throw error; }
       }
       store.db.prepare("DELETE FROM artifacts WHERE item_id=?").run(id);
+      store.db.prepare("DELETE FROM wordpress_exports WHERE item_id=?").run(id);
       store.db.prepare("DELETE FROM content_photos WHERE item_id=?").run(id);
       // Keep tiny billing records, including unknown charges, so deleting an
       // output can never refund or increase another item's approved budget.

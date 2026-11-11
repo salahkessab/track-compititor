@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 const button = "rounded-xl border border-[#424a60] bg-[#202537] px-3 py-2 text-sm text-[#e9e4df] disabled:cursor-not-allowed disabled:opacity-40";
 const input = "w-full rounded-xl border border-[#424a60] bg-[#101421] px-3 py-2 text-sm text-[#e9e4df]";
 type RequestFn = <T = any>(route: string, method?: string, data?: unknown) => Promise<T>;
-type Connection = { id: string; siteUrl: string; username: string; displayName: string; mediaLibraryUrl: string };
+type BridgeProfile = { recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string };
+type Connection = { id: string; siteUrl: string; username: string; displayName: string; mediaLibraryUrl: string; bridge?: BridgeProfile };
 type Status = { connections: Connection[]; suggestedSiteUrl?: string };
 
 export function WordPressConnections({ status, request, refresh }: { status?: Status; request: RequestFn; refresh: () => Promise<unknown> }) {
@@ -16,7 +17,7 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
   async function connect(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     const applicationPassword = password; setPassword("");
-    try { await request("wordpress/connect", "POST", { siteUrl, username, applicationPassword }); await refresh(); setMessage("Website connected. Choose it beside your article to upload images and copy."); setSiteUrl(""); setUsername(""); }
+    try { await request("wordpress/connect", "POST", { siteUrl, username, applicationPassword }); await refresh(); setMessage("Website connected. Choose it beside your article to send a draft, publish, or copy."); setSiteUrl(""); setUsername(""); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not connect to WordPress."); } finally { setBusy(false); }
   }
   async function disconnect(id: string) {
@@ -24,10 +25,18 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
     try { await request(`wordpress/${id}`, "DELETE", {}); await refresh(); setMessage("Local connection removed. Previously uploaded images stay in WordPress."); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not disconnect."); } finally { setBusy(false); }
   }
+  async function sync(id: string) {
+    setBusy(true); setError(""); setMessage("");
+    try { const profile = await request<BridgeProfile>(`wordpress/${id}/sync`, "POST", {}); setMessage(profile.ready ? `Synced default recipe card: ${profile.recipeCardLabel}.` : "Choose a supported default recipe card in WordPress Settings, then sync again."); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not sync website settings."); }
+    finally { await refresh(); setBusy(false); }
+  }
   return <section className="studio-panel space-y-4 rounded-2xl border p-5" aria-label="WordPress websites">
     <h2 className="text-lg">WordPress websites</h2>
-    <p className="text-sm text-[#a6acbd]">Connect any of your WordPress sites. Choose a destination for each article; its finished images upload to that site's Media Library before copying.</p>
-    {!!status?.connections.length && <ul className="space-y-3">{status.connections.map(c => <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#424a60] p-3"><div className="min-w-0 text-sm"><p className="break-all">{c.siteUrl}</p><p className="text-[#a6acbd]">Connected as {c.username}</p><a className="text-[#deb589] underline" href={c.mediaLibraryUrl} target="_blank" rel="noreferrer">Open Media Library</a></div><button type="button" className={button} disabled={busy} onClick={() => void disconnect(c.id)}>Disconnect</button></li>)}</ul>}
+    <p className="text-sm text-[#a6acbd]">Connect your WordPress websites and choose a destination per article. Install the bridge plugin to send drafts or publish live with the site's default recipe card.</p>
+    <a className={`${button} inline-block`} href="/api/recipe-wordpress-plugin" download>Download WordPress plugin</a>
+    <p className="text-sm text-[#a6acbd]">WordPress → Plugins → Add New → Upload Plugin. Activate Recipe Intelligence Bridge, then choose your default recipe card in Settings → Recipe Intelligence. Supports WP Recipe Maker and the built-in Recipe Intelligence card.</p>
+    {!!status?.connections.length && <ul className="space-y-3">{status.connections.map(c => <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#424a60] p-3"><div className="min-w-0 text-sm"><p className="break-all">{c.siteUrl}</p><p className="text-[#a6acbd]">Connected as {c.username}</p><p>Recipe card: {c.bridge?.recipeCardLabel || "Bridge not synced"}{c.bridge && !c.bridge.ready ? " — setup required" : ""}</p><div className="flex gap-3"><a className="text-[#deb589] underline" href={c.mediaLibraryUrl} target="_blank" rel="noreferrer">Open Media Library</a>{c.bridge && <a className="text-[#deb589] underline" href={c.bridge.settingsUrl} target="_blank" rel="noreferrer">Recipe-card settings</a>}</div></div><div className="flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => void sync(c.id)}>Sync website settings</button><button type="button" className={button} disabled={busy} onClick={() => void disconnect(c.id)}>Disconnect</button></div></li>)}</ul>}
     <details open={!status?.connections.length}><summary className="cursor-pointer text-sm">{status?.connections.length ? "Connect another website or update credentials" : "Connect your WordPress website"}</summary>
       <form className="mt-4 space-y-4" onSubmit={connect} autoComplete="off">
         <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">WordPress website URL<input className={`${input} mt-1`} type="text" inputMode="url" required maxLength={2048} placeholder="https://your-website.com" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} disabled={busy} /></label><label className="text-sm">WordPress username<input className={`${input} mt-1`} required maxLength={100} value={username} onChange={e => setUsername(e.target.value)} disabled={busy} autoComplete="off" /></label></div>
@@ -44,6 +53,8 @@ export function WordPressCopy({ itemId, connections, request }: { itemId: string
   const [target, setTarget] = useState(connections.length === 1 ? connections[0].id : "");
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   const [prepared, setPrepared] = useState<{ html: string; text: string; siteUrl: string; connectionId: string } | null>(null);
+  const [review, setReview] = useState<any>(null); const [sent, setSent] = useState<any>(null);
+  const [publishConfirmed, setPublishConfirmed] = useState(false);
   const lock = useRef(false);
   useEffect(() => { if (target && !connections.some(c => c.id === target)) { setTarget(""); setPrepared(null); } }, [connections, target]);
   async function copy(value: { html: string; text: string; siteUrl: string }) {
@@ -74,6 +85,37 @@ export function WordPressCopy({ itemId, connections, request }: { itemId: string
     } catch (e) { setMessage(""); setError(e instanceof Error ? e.message : "Could not prepare the WordPress article."); }
     finally { lock.current = false; setBusy(false); }
   }
+  async function prepareSend() {
+    if (lock.current) return; lock.current = true; setBusy(true); setError(""); setReview(null); setSent(null); setPublishConfirmed(false);
+    try {
+      setMessage("Checking the website's default recipe card…");
+      const plan = await request(`items/${itemId}/wordpress-publish?connectionId=${encodeURIComponent(target)}`);
+      if (!plan.profile.ready) throw new Error("Choose a supported default recipe card in WordPress Settings → Recipe Intelligence, then prepare again.");
+      for (let i = 0; i < plan.images.length; i++) {
+        const image = plan.images[i]; if (image.state === "ready") continue;
+        setMessage(`Saving image ${i + 1} of ${plan.images.length} to WordPress…`);
+        await request(`items/${itemId}/wordpress`, "POST", { connectionId: target, documentHash: plan.documentHash, sha256: image.sha256 });
+      }
+      const final = await request(`items/${itemId}/wordpress-publish?connectionId=${encodeURIComponent(target)}`);
+      if (plan.documentHash !== final.documentHash || !final.ready) throw new Error("The article changed during preparation. Prepare again; saved images will be reused.");
+      setReview(final); setSent(final.previous?.result || null); setMessage("Ready to send. Review the destination and recipe card below.");
+    } catch (e) { setMessage(""); setError(e instanceof Error ? e.message : "Could not prepare article."); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  async function send(status: "draft" | "publish") {
+    if (!review || lock.current) return; lock.current = true; setBusy(true); setError(""); setMessage("");
+    try {
+      const saved = await request(`items/${itemId}/wordpress-publish`, "POST", { connectionId: target, reviewHash: review.reviewHash, status, confirmPublish: status === "publish" && publishConfirmed });
+      setSent(saved); setMessage(saved.status === "publish" ? "Article published with hosted images and its recipe card." : "Article saved in WordPress with hosted images and its recipe card.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not confirm the send. Check saved post."); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  async function checkSent() {
+    setBusy(true); setError("");
+    try { setSent(await request(`items/${itemId}/wordpress-check`, "POST", { connectionId: target })); setMessage("Saved post confirmed."); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not confirm the saved post."); }
+    finally { setBusy(false); }
+  }
   function download() {
     if (!prepared) return;
     const url = URL.createObjectURL(new Blob([`<!doctype html><html lang="en"><meta charset="utf-8"><body>${prepared.html}</body></html>`], { type: "text/html" }));
@@ -81,9 +123,11 @@ export function WordPressCopy({ itemId, connections, request }: { itemId: string
   }
   if (!connections.length) return null;
   return <div className="space-y-3 rounded-xl border border-[#424a60] p-3" aria-label="Upload article images to WordPress">
-    <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">WordPress destination<select className={`${input} mt-1`} value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setPrepared(null); setMessage(""); setError(""); }}><option value="">Choose a website</option>{connections.map(c => <option key={c.id} value={c.id}>{c.siteUrl}</option>)}</select></label><button className={button} disabled={busy || !target} onClick={() => void uploadAndCopy()}>{busy ? "Uploading images…" : "Upload images and copy"}</button></div>
+    <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">WordPress destination<select className={`${input} mt-1`} value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setPrepared(null); setReview(null); setSent(null); setPublishConfirmed(false); setMessage(""); setError(""); }}><option value="">Choose a website</option>{connections.map(c => <option key={c.id} value={c.id}>{c.siteUrl}</option>)}</select></label><button className={button} disabled={busy || !target} onClick={() => void prepareSend()}>Prepare WordPress post</button><button className={button} disabled={busy || !target} onClick={() => void uploadAndCopy()}>{busy ? "Working…" : "Upload images and copy"}</button></div>
     <p className="text-xs text-[#a6acbd]">Uploads the finished images and copies the article with permanent image URLs. Existing uploads on this destination are reused.</p>
     {message && <p role="status" className="text-sm text-emerald-200">{message}</p>}{error && <p role="alert" className="text-sm text-red-200">{error}</p>}
+    {review && <div className="space-y-3 rounded-xl border border-[#424a60] p-3"><p className="text-sm">{review.title} → {review.siteUrl}</p><p className="text-sm">Recipe card: <strong>{review.profile.recipeCardLabel}</strong> · {review.images.length} hosted images</p><p className="text-xs text-[#a6acbd]">Uses saved recipe facts. No new AI request. Changing the default card in WordPress requires preparing again.</p><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => void send("draft")}>Save draft</button><button className={button} disabled={busy} onClick={() => void checkSent()}>Check saved post</button></div>{review.profile.canPublish && sent?.status !== "publish" && <div className="space-y-2"><label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy} checked={publishConfirmed} onChange={e => setPublishConfirmed(e.target.checked)} />Publish this article publicly on {new URL(review.siteUrl).host} now.</label><button className={button} disabled={busy || !publishConfirmed} onClick={() => void send("publish")}>Publish live</button></div>}</div>}
+    {sent && <div className="flex flex-wrap gap-3 text-sm"><span>{sent.status === "publish" ? "Published" : "Saved"} · Post {sent.postId}</span><a className="text-[#deb589] underline" href={sent.editUrl} target="_blank" rel="noreferrer">Open in WordPress</a>{sent.status === "publish" && <a className="text-[#deb589] underline" href={sent.postUrl} target="_blank" rel="noreferrer">View live article</a>}</div>}
     {prepared && <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => void copy(prepared).catch(e => setError(e.message))}>Copy uploaded article</button><button className={button} disabled={busy} onClick={download}>Download WordPress HTML</button></div>}
   </div>;
 }

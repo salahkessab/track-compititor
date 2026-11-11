@@ -89,6 +89,8 @@ test('inactive workspace makes no requests; hosted mode offers the local launche
   await React.act(async () => root.render(React.createElement(Component, { active: true })));
   assert.deepEqual(calls, ['/api/recipe-intelligence/capabilities']);
   assert.match(document.body.textContent, /Double-click Start Recipe Intelligence/);
+  assert.equal(document.querySelector('a[download="recipe-intelligence-capture.zip"]').getAttribute('href'),'/api/recipe-capture-extension');
+  assert.match(document.body.textContent,/processing and storage run in the local Windows app/);
 });
 
 test('Start a recipe shows four photos unchecked and saves only selected photos before a free estimate', async t => {
@@ -100,6 +102,8 @@ test('Start a recipe shows four photos unchecked and saves only selected photos 
   const {root,Component,click}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=start');
   await React.act(async()=>root.render(React.createElement(Component,{active:true})));
   assert.match(document.body.textContent,/Start a recipe/);
+  const setup=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='Capture recipes with the Chrome extension');
+  assert.ok(setup);assert.equal(setup.open,false);assert.match(setup.textContent,/http:\/\/127\.0\.0\.1:34567/);
   const select=[...document.querySelectorAll('select')].find(s=>s.parentElement.textContent.startsWith('Saved preparations'));
   await React.act(async()=>{select.value='import-ui';select.dispatchEvent(new window.Event('change',{bubbles:true}));});
   const region=document.querySelector('[aria-label="Photo selection"]');assert.ok(region);const checkboxes=[...region.querySelectorAll('input[type=checkbox]')];assert.equal(checkboxes.length,4);assert.ok(checkboxes.every(c=>!c.checked));

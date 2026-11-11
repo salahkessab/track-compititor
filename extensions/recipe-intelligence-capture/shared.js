@@ -16,7 +16,7 @@
     if (location.protocol !== 'http:' || location.hostname !== '127.0.0.1' || location.origin !== message.origin) return { error: 'The local app tab changed. Reopen Recipe Intelligence.', status: 409 };
     const uuid = /^[a-f0-9-]{36}$/i;
     async function api(route, method = 'GET', data, headers = {}) {
-      const response = await fetch(`/api/recipe-intelligence/${route}`, { method, credentials:'same-origin', cache:'no-store', signal:AbortSignal.timeout(45000), headers:{'X-Recipe-Intelligence':'1', ...(data instanceof Uint8Array ? {} : {'Content-Type':'application/json'}), ...headers}, ...(data === undefined ? {} : {body:data instanceof Uint8Array ? data : JSON.stringify(data)}) });
+      const response = await fetch(`/api/recipe-intelligence/${route}`, { method, credentials:'same-origin', cache:'no-store', signal:AbortSignal.timeout(message.op === 'probe' ? 3000 : 45000), headers:{'X-Recipe-Intelligence':'1', ...(data instanceof Uint8Array ? {} : {'Content-Type':'application/json'}), ...headers}, ...(data === undefined ? {} : {body:data instanceof Uint8Array ? data : JSON.stringify(data)}) });
       const result = await response.json();
       if (!response.ok) { const error = new Error(result.error || 'The local app could not finish this request.'); error.status = response.status; throw error; }
       return result;

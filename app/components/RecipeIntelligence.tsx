@@ -15,6 +15,24 @@ const input = "w-full rounded-xl border border-[#424a60] bg-[#101421] px-3 py-2 
 const running = (status: string) => ["running", "queued"].includes(status);
 const label = (value: string) => value.replace(/_/g, " ");
 
+function CaptureSetup({ local = false }: { local?: boolean }) {
+  return <details className="rounded-xl border border-[#424a60]/70 p-4">
+    <summary className="cursor-pointer text-sm">Capture recipes with the Chrome extension</summary>
+    <div className="mt-4 space-y-3 text-sm text-[#a6acbd]">
+      <p>Bring the article and photos from the recipe page you have open into Recipe Intelligence.</p>
+      <a className={`${button} inline-block`} href="/api/recipe-capture-extension" download="recipe-intelligence-capture.zip">Download Chrome extension</a>
+      <ol className="list-decimal space-y-2 pl-5">
+        <li>Extract the ZIP. In Chrome, open <code>chrome://extensions</code>, enable Developer mode, and choose Load unpacked. Select the extracted folder containing <code>manifest.json</code>.</li>
+        <li>Open Recipe Intelligence with the Windows shortcut in the same Chrome profile. Click the extension on that page to connect once.</li>
+        <li>Open a recipe website, click the extension, and choose Import and see estimate. Review the cost in the app before generating.</li>
+      </ol>
+      {local && <p>Local app address: <code className="break-all text-[#e9e4df]">{typeof window !== "undefined" ? window.location.origin : ""}</code>. The extension remembers this workspace and can reopen its tab.</p>}
+      {!local && <p>Recipe processing and storage run in the local Windows app. Start it before connecting the extension.</p>}
+      <p>Already installed? Replace the files in your installed extension folder, click Reload in Chrome, and close old capture tabs. Capture and import make no paid AI requests.</p>
+    </div>
+  </details>;
+}
+
 async function request<T>(route: string, method = "GET", data?: unknown, key?: string): Promise<T> {
   const response = await fetch(`/api/recipe-intelligence/${route}`, {
     method, cache: "no-store", credentials: "same-origin",
@@ -130,7 +148,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
     {error && <div role="alert" className="rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-100">{error}{snapshot && <button className={`${button} ml-3`} disabled={busy} onClick={() => void act(reload)}>Reconnect</button>}</div>}
     {notice && <div role="status" className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 p-4 text-sm text-emerald-100">{notice}</div>}
     {enabled === null && !error && <p className="text-sm text-[#a6acbd]">Checking local connection…</p>}
-    {enabled === false && <div className="studio-panel rounded-2xl border p-6"><h2 className="text-lg">Open the local application</h2><p className="mt-2 text-sm text-[#a6acbd]">Double-click Start Recipe Intelligence on your Windows PC. The launcher lets you choose a storage folder and opens this workspace. Your hosted recipe tools remain available here.</p></div>}
+    {enabled === false && <><div className="studio-panel rounded-2xl border p-6"><h2 className="text-lg">Open the local application</h2><p className="mt-2 text-sm text-[#a6acbd]">Double-click Start Recipe Intelligence on your Windows PC. The launcher lets you choose a storage folder and opens this workspace. Your hosted recipe tools remain available here.</p></div><CaptureSetup /></>}
     {enabled && snapshot && <>
       <nav aria-label="Recipe Intelligence navigation" className="flex flex-wrap gap-2">
         {[["start", "Use a recipe URL"], ["batches", "My articles"], ["websites", "Tracked websites"], ["reports", "Find recipes"], ["settings", "Settings"]].map(([id, title]) => <a key={id} href={`/?tab=recipe-intelligence&view=${id}`} aria-current={view === id ? "page" : undefined}
@@ -139,6 +157,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
             event.preventDefault(); const target = new URL(window.location.href); target.searchParams.set("view", id); window.history.pushState(null, "", target); setView(id);
           }}>{title}</a>)}
       </nav>
+      {["start", "settings"].includes(view) && <CaptureSetup local />}
       <IntelligenceContent view={view} snapshot={snapshot} request={request} refresh={reload} navigate={navigate} active={active} />
       {view === "websites" && <>
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg">Your websites</h2><p className="mt-1 text-sm text-[#a6acbd]">Scan when you want, then use Find recipes to choose a publication date. Both steps are free.</p></div><button className={primary} disabled={busy || !snapshot.worker.online || !snapshot.sites.some(site => site.status === "active")} onClick={() => void scan()}>Scan all active websites</button></div>

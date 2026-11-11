@@ -180,7 +180,7 @@ test('extension manifest runs on click only and bundles no external app endpoint
   const manifest=JSON.parse(fs.readFileSync(path.join(extension,'manifest.json'),'utf8'));
   assert.equal(manifest.manifest_version,3); assert.equal(manifest.content_scripts,undefined); assert.equal(manifest.externally_connectable,undefined);
   assert.equal(manifest.action.default_popup,undefined);
-  for(const name of ['background.js','content.js','shared.js','capture.js']) {
+  for(const name of ['background.js','content.js','shared.js','connection.js','capture.js']) {
     const code=fs.readFileSync(path.join(extension,name),'utf8'); new (require('node:vm').Script)(code,{filename:name});
     assert.doesNotMatch(code,/scrape-roan|vercel\.app|api\.openai|eval\(/);
   }

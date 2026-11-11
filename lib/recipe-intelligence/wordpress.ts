@@ -9,7 +9,8 @@ import { storagePath } from "./paths";
 import { windowsSecrets, type SecretProtection } from "./local-secrets";
 import { mediaMultipart, wordpressRequest, wordpressSite, type WordPressTransport, type WordPressResponse } from "./wordpress-http";
 
-type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string };
+export type WordPressProfile = { version: string; protocol: 1; recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string };
+type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string; bridge?: WordPressProfile };
 type Media = { id: number; sourceUrl: string };
 type Image = { sha256: string; name: string; alt: string; bytes: Buffer; source: string };
 const CONNECTION_PREFIX = "wordpress_connection:";
@@ -42,7 +43,7 @@ export class WordPressStore {
     const rows = this.store.db.prepare("SELECT value FROM settings WHERE key LIKE ? ORDER BY key").all(CONNECTION_PREFIX + "%") as { value: string }[];
     return { connections: rows.map(row => {
       const c: Connection = JSON.parse(row.value);
-      return { id: c.id, siteUrl: c.siteUrl, username: c.username, displayName: c.displayName, checkedAt: c.checkedAt, mediaLibraryUrl: new URL("wp-admin/upload.php", c.siteUrl).href };
+      return { id: c.id, siteUrl: c.siteUrl, username: c.username, displayName: c.displayName, checkedAt: c.checkedAt, bridge: c.bridge, mediaLibraryUrl: new URL("wp-admin/upload.php", c.siteUrl).href };
     }), suggestedSiteUrl: (this.store.db.prepare("SELECT value FROM settings WHERE key='wordpress_suggested_site'").get() as any)?.value || "" };
   }
   suggest(input: unknown) {
@@ -62,6 +63,8 @@ export class WordPressStore {
     if (!Number.isSafeInteger(user?.id) || user.id <= 0 || user.capabilities?.upload_files !== true) throw new Error("This WordPress account needs permission to upload media. Use an account with that permission.");
     const c: Connection = { id: digest(siteUrl).slice(0, 32), siteUrl, username, userId: user.id, displayName: String(user.name || username).slice(0, 160), protectedPassword, checkedAt: now() };
     this.store.db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(CONNECTION_PREFIX + c.id, JSON.stringify(c));
+    // The older media-only connection still works without the optional bridge.
+    await this.sync(c.id).catch(() => {});
     return this.status();
   }
   disconnect(id: string) {
@@ -71,6 +74,30 @@ export class WordPressStore {
   }
   private async authorization(c: Connection) {
     return `Basic ${Buffer.from(`${c.username}:${await this.secrets.unprotect(c.protectedPassword)}`).toString("base64")}`;
+  }
+  async bridgeRequest(id: string, route: "profile" | "exports" | `exports/${string}`, payload?: unknown) {
+    if (!/^(?:profile|exports(?:\/[a-f0-9]{64})?)$/.test(route)) throw new Error("Invalid WordPress bridge operation.");
+    const c = this.connection(id);
+    return this.transport(new URL(`wp-json/recipe-intelligence/v1/${route}`, c.siteUrl).href, {
+      method: payload === undefined ? "GET" : "POST", authorization: await this.authorization(c),
+      ...(payload === undefined ? {} : { contentType: "application/json", body: Buffer.from(JSON.stringify(payload)) }),
+    });
+  }
+  async sync(id: string): Promise<WordPressProfile> {
+    const c = this.connection(id);
+    // Clear stale capabilities if the plugin was removed or access was revoked.
+    delete c.bridge;
+    this.store.db.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(c), CONNECTION_PREFIX + id);
+    const response = await this.bridgeRequest(id, "profile");
+    if (response.status === 404) throw new Error("Install and activate Recipe Intelligence Bridge on this website, then select its default recipe card in WordPress Settings.");
+    const data = readJson(response);
+    if (data.protocol !== 1 || typeof data.version !== "string" || !/^[a-f0-9]{64}$/.test(data.revision) || typeof data.recipeCard !== "string" || typeof data.recipeCardLabel !== "string") throw new Error("Update the WordPress bridge to a compatible version.");
+    const bridge: WordPressProfile = { protocol: 1, version: data.version.slice(0, 30), recipeCard: data.recipeCard.slice(0, 50), recipeCardLabel: data.recipeCardLabel.slice(0, 100), revision: data.revision,
+      ready: data.ready === true && ["builtin", "wprm"].includes(data.recipeCard), canPublish: data.canPublish === true,
+      settingsUrl: new URL("wp-admin/options-general.php?page=recipe-intelligence", c.siteUrl).href };
+    c.bridge = bridge; c.checkedAt = now();
+    this.store.db.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(c), CONNECTION_PREFIX + id);
+    return bridge;
   }
   private document(itemId: string) {
     if (!this.store.db.prepare("SELECT 1 FROM content_items WHERE id=? AND state NOT IN ('deleted','deleting','delete_failed')").get(itemId)) throw new Error("This recipe has been deleted or is waiting for deletion to finish.");
@@ -82,13 +109,15 @@ export class WordPressStore {
     const $ = cheerio.load(article.data.toString("utf8")); const root = $("article").first();
     if (!root.length) throw new Error("The saved article has no copyable content.");
     root.find("script,style,iframe,object,embed,form,input,button,svg,link,meta").remove();
+    // Preserve a known card boundary for replacing it with the destination's native card.
+    root.find('[data-ri-recipe-card]').each((_i, e) => { const node = $(e); node.before('<!--ri-card-start-->'); node.after('<!--ri-card-end-->'); });
     const allowedTags = new Set("h1 h2 h3 h4 h5 h6 p strong b em i u ul ol li figure figcaption img br table thead tbody tr th td blockquote a".split(" "));
     root.find("*").each((_i, element) => {
       if (!("name" in element)) return;
       const node = $(element); const tag = element.name;
       if (!allowedTags.has(tag)) { node.replaceWith(node.contents()); return; }
       const attrs = element.attribs;
-      for (const name of Object.keys(attrs)) if (!(tag === "img" && ["src", "alt", "width", "height"].includes(name)) && !(tag === "a" && name === "href")) node.removeAttr(name);
+      for (const name of Object.keys(attrs)) if (!(tag === "img" && ["src", "alt", "width", "height"].includes(name)) && !(tag === "a" && name === "href") && !(tag === "ol" && name === "start" && /^[1-9]\d{0,3}$/.test(attrs[name]))) node.removeAttr(name);
       if (tag === "a") { try { publicUrl(node.attr("href") || ""); } catch { node.removeAttr("href"); } }
     });
     for (const name of Object.keys(root.attr() || {})) root.removeAttr(name);
@@ -129,7 +158,7 @@ export class WordPressStore {
       });
     }
     return { connectionId: c.id, siteUrl: c.siteUrl, mediaLibraryUrl: new URL("wp-admin/upload.php", c.siteUrl).href, documentHash: doc.documentHash, images, ready,
-      html: ready ? doc.$.html(doc.root) : null, text: doc.root.text() };
+      html: ready ? doc.$.html(doc.root) : null, text: doc.root.text(), mediaIds: ready ? doc.images.map(image => this.row(c.siteUrl, image.sha256).media_id as number) : [] };
   }
   async upload(itemId: string, input: Record<string, unknown>): Promise<Media> {
     const c = this.connection(String(input.connectionId || ""));

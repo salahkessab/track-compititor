@@ -1,5 +1,5 @@
 // Additive migrations preserve the original discovery index and its checkpoints.
-export const CURRENT_SCHEMA = 5;
+export const CURRENT_SCHEMA = 6;
 export const MIGRATION_2 = `
 ALTER TABLE recipe_records ADD COLUMN publication_json TEXT;
 ALTER TABLE recipe_records ADD COLUMN verification_reason TEXT;
@@ -125,4 +125,16 @@ CREATE TABLE wordpress_media (
  updated_at TEXT NOT NULL, PRIMARY KEY(site_url,sha256)
 );
 PRAGMA user_version=5;
+`;
+
+export const MIGRATION_6 = `
+CREATE TABLE wordpress_exports (
+ site_url TEXT NOT NULL, item_id TEXT NOT NULL REFERENCES content_items(id),
+ export_id TEXT NOT NULL UNIQUE, document_hash TEXT NOT NULL,
+ profile_json TEXT NOT NULL, payload_json TEXT NOT NULL,
+ state TEXT NOT NULL CHECK(state IN ('sending','ready','uncertain')),
+ result_json TEXT, receipt_path TEXT, error TEXT, updated_at TEXT NOT NULL,
+ PRIMARY KEY(site_url,item_id)
+);
+PRAGMA user_version=6;
 `;

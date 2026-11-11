@@ -1,4 +1,5 @@
 const {publicImageUrl,appBridge,renderedPhoto,fetchPhoto} = CaptureHelpers;
+const connection = CaptureConnection.createConnection(chrome,appBridge);
 const $ = id => document.getElementById(id);
 const extensionVersion = chrome.runtime.getManifest().version;
 $('version').textContent = `Capture v${extensionVersion} · Recipe photo filter enabled`;
@@ -8,31 +9,28 @@ const status = text => { $('status').textContent = text; };
 const showError = error => { $('error').hidden = false; $('error').textContent = error.message || String(error); };
 const clearError = () => { $('error').hidden = true; $('error').textContent = ''; };
 const save = () => chrome.storage.local.set({lastCapture:job});
-async function bridge(target, message) {
-  const [injection] = await chrome.scripting.executeScript({target:{tabId:target.id}, world:'ISOLATED', func:appBridge, args:[{...message,origin:target.origin}]});
-  const result = injection?.result;
-  if (!result || result.error) { const error = new Error(result?.error || 'The local workspace tab could not be reached.'); error.status = result?.status || 0; throw error; }
-  return result;
+const bridge = (target,message) => connection.bridge(target,message);
+function connectionControls(disabled) {
+  for (const id of ['connect','open-app','save-connection','workspace','app-url']) $(id).disabled=disabled;
 }
-async function findApp() {
-  const tabs = await chrome.tabs.query({url:'http://127.0.0.1/*'}), ready = [], seen = new Set(); let problem = '';
-  for (const tab of tabs) {
-    const origin = new URL(tab.url).origin;
-    if (seen.has(origin)) continue;
-    try { const probe = await bridge({id:tab.id,origin},{op:'probe'}); ready.push({id:tab.id,origin,root:probe.root}); seen.add(origin); }
-    catch (e) { problem = e.message; }
-  }
-  $('workspace').replaceChildren();
-  for (const target of ready) { const option = document.createElement('option'); option.value = target.id; option.textContent = `${target.root} · ${target.origin}`; $('workspace').append(option); }
-  $('connection').hidden = ready.length === 1;
-  if (!ready.length) throw new Error(problem || 'Open Recipe Intelligence using the desktop shortcut, then click Import again.');
-  if (ready.length > 1) {
-    $('workspace').onchange = () => { app = ready.find(t => t.id === Number($('workspace').value)); };
-    if (!app || !ready.some(t => t.id === app.id)) { app = ready[0]; throw new Error('More than one local workspace is open. Choose the destination below, then click Import.'); }
-  }
-  app = ready.find(t => t.id === app?.id) || ready[0];
-  $('workspace').value = app.id;
-  return app;
+async function findApp(options={}) {
+  $('connection-status').textContent='Connecting to your workspace…'; $('connection-error').hidden=true;
+  $('connection').hidden=true; connectionControls(true);
+  try {
+    app=await connection.connect({root:job?.workspaceRoot,...options});
+    $('connection-status').textContent=`Connected · ${app.root}`;
+    $('app-url').value=app.origin; $('connect').textContent='Reconnect'; $('open-app').hidden=false;
+    return app;
+  } catch (error) {
+    app=null; $('connection-status').textContent='Not connected'; $('open-app').hidden=true;
+    $('connection-error').hidden=false; $('connection-error').textContent=error.message;
+    if (error.targets?.length) {
+      $('connection').hidden=false; $('connection-settings').open=true; $('workspace').replaceChildren();
+      const placeholder=document.createElement('option'); placeholder.value=''; placeholder.textContent='Choose a workspace…'; $('workspace').append(placeholder);
+      for (const target of error.targets) { const option=document.createElement('option'); option.value=target.origin; option.textContent=`${target.root} · ${target.origin}`; $('workspace').append(option); }
+    }
+    throw error;
+  } finally { connectionControls(busy); }
 }
 function render() {
   const capture = job.capture;
@@ -55,13 +53,20 @@ function render() {
   if (!capture.images.length) warn('No source photos were found. The app can estimate new images from the recipe text.');
   for (const failed of job.failed || []) warn(`Photo ${failed.index+1}: ${failed.message}`);
   $('import').disabled = false;
+  $('import').hidden = !!job.done; $('open').hidden = !job.done; $('next').hidden = !job.done;
   $('import').textContent = job.started ? 'Resume import and see estimate' : 'Import and see estimate';
 }
 function warn(message) { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); }
 async function capturePage() {
   clearError(); status('Reading the open page…'); $('retry').hidden = true;
   try {
-    const tab = await chrome.tabs.get(sourceTab); publicImageUrl(tab.url);
+    const tab = await chrome.tabs.get(sourceTab);
+    if (new URL(tab.url).hostname === '127.0.0.1') {
+      await findApp({origin:tab.url,allowOpen:false});
+      status('Connected. Open a recipe website and click the extension to capture it.');
+      return;
+    }
+    publicImageUrl(tab.url);
     const [result] = await chrome.scripting.executeScript({target:{tabId:sourceTab}, files:['content.js']});
     const capture = result?.result;
     if (!capture || capture.text.length < 40) throw new Error('No readable article found. Open the article itself, let it load, then capture it again.');
@@ -106,6 +111,8 @@ async function importRecipe() {
   try {
     await navigator.locks.request('recipe-intelligence-import',{ifAvailable:true},async lock => {
       if (!lock) throw new Error('Another capture tab is importing. Let it finish first.');
+      // Persist even when the app is offline, before trying any connection.
+      job.pending = true; await save();
       status('Connecting to your local workspace…'); await findApp();
       if (job.workspaceRoot && job.workspaceRoot !== app.root) throw new Error('This capture belongs to another storage folder. Open the original workspace to resume it.');
       // Save before the first request, so any interrupted import can be resumed.
@@ -129,31 +136,32 @@ async function importRecipe() {
       status('Calculating the estimate…');
       const batch = await bridge(app,{op:'estimate',id:job.id});
       if (!/^[a-f0-9-]{36}$/i.test(batch.id)) throw new Error('The app returned an invalid estimate.');
-      job.batchId = batch.id; job.appOrigin = app.origin; job.done = true; await save(); render();
+      job.batchId = batch.id; job.appOrigin = app.origin; job.done = true; job.pending = false; await save(); render();
       $('result').textContent = `Saved the recipe and ${imported.photos.filter(p=>p.state==='ready').length} photos. Estimated cost: $${Number(batch.quote.estimated).toFixed(4)}. No generation has started.`;
       status('Imported. Your estimate is ready.'); $('open').hidden = false; $('next').hidden = false; $('import').hidden = true;
       await openEstimate();
     });
   } catch (e) { status('Import needs your attention. Your saved progress is kept.'); showError(e); }
-  finally { busy = false; $('import').disabled = false; $('resume').disabled = false; }
+  finally { busy = false; $('import').disabled = false; $('resume').disabled = false; connectionControls(false); }
 }
 async function openEstimate() {
   if (!job?.batchId) return;
   await findApp();
   if (app.root !== job.workspaceRoot) throw new Error('Open the workspace that received this capture.');
-  const tab = await chrome.tabs.update(app.id,{url:`${app.origin}/?tab=recipe-intelligence&view=batches&batchId=${encodeURIComponent(job.batchId)}`,active:true});
-  // Activating a tab does not focus its Chrome window. The launcher may have
-  // opened the app in a separate window, including one that is minimized.
-  const windowId = tab?.windowId ?? (await chrome.tabs.get(app.id)).windowId;
-  const targetWindow = await chrome.windows.get(windowId);
-  await chrome.windows.update(windowId,{focused:true,...(targetWindow.state === 'minimized' ? {state:'normal'} : {})});
+  await connection.focus(app,`${app.origin}/?tab=recipe-intelligence&view=batches&batchId=${encodeURIComponent(job.batchId)}`);
 }
+$('connect').onclick = () => void findApp().catch(()=>{});
+$('save-connection').onclick = () => void findApp({origin:$('app-url').value}).catch(()=>{});
+$('workspace').onchange = () => { if ($('workspace').value) void findApp({origin:$('workspace').value}).catch(()=>{}); };
+$('open-app').onclick = () => void findApp().then(target=>connection.focus(target)).catch(showError);
 $('import').onclick = () => void importRecipe();
 $('retry').onclick = () => void capturePage();
 $('open').onclick = () => void openEstimate().catch(showError);
 $('resume').onclick = () => { job = previous; render(); $('resume').hidden = true; status('Previous capture restored. Click Resume import to continue.'); };
 (async () => {
   previous = (await chrome.storage.local.get('lastCapture')).lastCapture;
-  if (previous?.capture && previous.started && !previous.done) $('resume').hidden = false;
+  if (previous?.capture && (previous.started || previous.pending) && !previous.done) $('resume').hidden = false;
+  const saved=await connection.readSaved(); if (saved) $('app-url').value=saved.origin;
   await capturePage();
+  if (!app) await findApp({allowOpen:false}).catch(()=>{});
 })();

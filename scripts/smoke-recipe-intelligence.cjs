@@ -15,8 +15,8 @@ async function main(){let current;const children=[];try{
   const duplicate=launch();children.push(duplicate);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Duplicate launcher did not reuse the healthy instance.')),10000);duplicate.on('exit',code=>{clearTimeout(timer);code===0?resolve():reject(new Error('Duplicate launch failed.'));});});
   const reused=await healthy();assert.equal(reused.health.instanceId,current.health.instanceId);assert.deepEqual(reused.health.children,current.health.children);
   await stop(current.instance);current=null;children.push(launch(false));current=await healthy();assert.equal(current.health.root,root);assert.ok((await api('snapshot')).imports.some(i=>i.id===prepared.id));
-  const db=new(require('better-sqlite3'))(path.join(root,'database','recipe-intelligence.sqlite'),{readonly:true});try{assert.equal(db.pragma('user_version',{simple:true}), 5);assert.equal(db.prepare('SELECT count(*) n FROM api_calls').get().n,0);assert.deepEqual(db.pragma('foreign_key_check'),[]);}finally{db.close();}
+  const db=new(require('better-sqlite3'))(path.join(root,'database','recipe-intelligence.sqlite'),{readonly:true});try{assert.equal(db.pragma('user_version',{simple:true}), 6);assert.equal(db.prepare('SELECT count(*) n FROM api_calls').get().n,0);assert.deepEqual(db.pragma('foreign_key_check'),[]);}finally{db.close();}
   await stop(current.instance);current=null;
-  console.log(JSON.stringify({passed:true,selectedFolder:true,persistedImports:true,duplicateWorkerPrevented:true,controlledShutdown:true,schema:5,paidCalls:0,logs:base},null,2));
+  console.log(JSON.stringify({passed:true,selectedFolder:true,persistedImports:true,duplicateWorkerPrevented:true,controlledShutdown:true,schema:6,paidCalls:0,logs:base},null,2));
 }finally{if(current)await stop(current.instance).catch(()=>{});for(const child of children)if(child.exitCode===null)child.kill();}}
 main().catch(e=>{console.error(e.message);process.exitCode=1;});

@@ -114,9 +114,11 @@ export function articleDocument(article: Article, recipe: RecipeSnapshot, images
     section("Storage and Reheating", blog.storage);
     section("Substitutions and Variations", blog.variations);
     if (blog.faqs.length) { heading("Frequently Asked Questions"); for (const faq of blog.faqs) { heading(faq.question, 3); paragraphs(faq.text); } }
+    html.push('<section data-ri-recipe-card="1">');
     heading("Complete Recipe Card"); heading(title, 3); paragraphs(article.metaDescription);
     facts(); heading("Ingredients", 3); list(recipe.ingredients);
     heading("Instructions", 3); list(article.instructions, true);
+    html.push('</section>');
   } else {
     heading(recipe.title, 1); photograph("featured"); references("hero"); if (blog) heading("Introduction"); paragraphs(article.introduction);
     if (blog) section("Why make this recipe", blog.whyMake, true); else facts();

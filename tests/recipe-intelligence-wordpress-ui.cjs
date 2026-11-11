@@ -76,3 +76,21 @@ test('connection form accepts any site and clears its private password after sub
   assert.equal(calls[0].data.siteUrl, 'https://third.example'); assert.equal(calls[0].data.applicationPassword, 'abcdefghijklmnopqrstuvwx');
   assert.equal(document.querySelector('input[type=password]').value, ''); assert.equal(window.localStorage.length, 0); assert.doesNotMatch(document.body.textContent, /abcdefghijklmnopqrstuvwx/);
 });
+
+test('publishing requires a reviewed destination and explicit live choice, while draft is the default', async t => {
+  const ui = await setup(t), calls = [];
+  const request = async (route, method = 'GET', body) => {
+    calls.push({ route, method, body });
+    if (method === 'POST') return { postId: 7, status: body.status, editUrl: 'https://first.example/wp-admin/post.php?post=7', postUrl: 'https://first.example/soup' };
+    return { title: 'Soup', siteUrl: sites[0].siteUrl, documentHash: 'hash', reviewHash: 'review', ready: true, images: [], profile: { ready: true, recipeCardLabel: 'WP Recipe Maker', canPublish: true } };
+  };
+  await React.act(async () => ui.root.render(React.createElement(ui.WordPressCopy, { itemId: 'recipe', connections: sites, request })));
+  assert.ok(ui.control('Prepare WordPress post').disabled); assert.equal(ui.control('Publish live'), undefined);
+  await ui.choose(sites[0].id); await ui.click('Prepare WordPress post');
+  assert.match(document.body.textContent, /WP Recipe Maker/); assert.ok(ui.control('Publish live').disabled);
+  assert.equal(calls.filter(c => c.method === 'POST').length, 0);
+  await ui.click('Save draft'); assert.equal(calls.at(-1).body.status, 'draft'); assert.equal(calls.at(-1).body.confirmPublish, false);
+  await React.act(async () => document.querySelector('input[type=checkbox]').click()); await ui.click('Publish live');
+  assert.equal(calls.at(-1).body.status, 'publish'); assert.equal(calls.at(-1).body.confirmPublish, true); assert.equal(calls.at(-1).body.reviewHash, 'review');
+  await ui.choose(sites[1].id); assert.equal(ui.control('Publish live'), undefined); assert.equal(ui.control('Save draft'), undefined);
+});

@@ -9,6 +9,7 @@ import { atomicWrite } from "./artifacts";
 import { ImportStore, MAX_PHOTO_BYTES } from "./imports";
 import { prepareReferenceBatch, prepareImportEstimate, reviewPhoto } from "./referenceWorkflow";
 import { WordPressStore } from "./wordpress";
+import { WordPressPublisher } from "./wordpress-publish";
 import { beginBrowserCapture, finishBrowserCapture, MAX_CAPTURE_BYTES } from "./browserCapture";
 import { publicUrl } from "./urls";
 import { deleteGeneration, previewGenerationDeletion } from "./deleteGeneration";
@@ -80,10 +81,15 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     const reports = new ReportStore(database); const batches = new BatchStore(database); const imports = new ImportStore(database);
     const [area, id, child] = segments;
     const wordpress = new WordPressStore(database);
+    const publisher = new WordPressPublisher(wordpress);
     if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: !!process.env.OPENAI_API_KEY, wordpress: wordpress.status() });
     if (area === "wordpress" && !id && request.method === "GET") return json(wordpress.status());
     if (area === "wordpress" && id === "target" && request.method === "POST") return json(wordpress.suggest((await body(request)).siteUrl));
     if (area === "wordpress" && id === "connect" && request.method === "POST") return json(await wordpress.connect(await body(request)));
+    if (area === "wordpress" && id && child === "sync" && request.method === "POST") { await body(request); return json(await wordpress.sync(id)); }
+    if (area === "items" && id && child === "wordpress-publish" && request.method === "GET") { const { payload, ...review } = await publisher.prepare(id, url.searchParams.get("connectionId") || ""); return json(review); }
+    if (area === "items" && id && child === "wordpress-publish" && request.method === "POST") return json(await publisher.send(id, await body(request)));
+    if (area === "items" && id && child === "wordpress-check" && request.method === "POST") return json(await publisher.check(id, String((await body(request)).connectionId || "")));
     if (area === "wordpress" && id && request.method === "DELETE") { await body(request); return json(wordpress.disconnect(id)); }
     if (area === "items" && id && child === "wordpress" && request.method === "GET") return json(wordpress.plan(id, url.searchParams.get("connectionId") || ""));
     if (area === "items" && id && child === "wordpress" && request.method === "POST") return json(await wordpress.upload(id, await body(request)));
