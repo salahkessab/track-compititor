@@ -39,6 +39,7 @@ test('navigation links open their sections and keep the current draft during in-
     './components/RecipeDesigns': { RecipeDesigns: () => React.createElement('div', { 'data-workspace': 'designs' }, React.createElement('input', { 'aria-label': 'Test draft' })) },
     './components/RecipeImageToImage': { RecipeImageToImage: () => React.createElement('div', { 'data-workspace': 'image-to-image' }) },
     './components/RecipeTwoInOne': { RecipeTwoInOne: () => React.createElement('div', { 'data-workspace': 'two-in-one' }) },
+    './components/RecipeIntelligence': { RecipeIntelligence: () => React.createElement('div', { 'data-workspace': 'intelligence' }) },
   };
   const { createRoot } = require('react-dom/client');
   const Page = loadPage(path.resolve(__dirname, '../app/page.tsx'), mocks).default;
@@ -69,6 +70,10 @@ test('navigation links open their sections and keep the current draft during in-
     await React.act(async () => link('2 in one image').click());
     assert.equal(visible('two-in-one'), true);
     assert.equal(window.location.search, '?tab=two-in-one');
+    await React.act(async () => link('Recipe Intelligence').click());
+    assert.equal(visible('intelligence'), true);
+    assert.equal(window.location.search, '?tab=recipe-intelligence');
+    assert.equal(workspace('designs').querySelector('input').value, 'draft stays here');
   } finally {
     await React.act(async () => root.unmount()); dom.window.close();
     for (const name of globals) {

@@ -6,6 +6,21 @@ node_modules
 *.tsbuildinfo
 
 .test-build
+.intelligence-build
+.local-next
+
+.vercel
+.env*
+!.env.example
+
+# Local experiments, generated exports, and private runtime data
+/work/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.pem
+*.key
 
 .vercel
 .env*

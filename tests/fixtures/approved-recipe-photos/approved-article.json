@@ -1,0 +1,316 @@
+{
+  "article": {
+    "seoTitle": "Marry Me Chicken Pasta Recipe",
+    "metaDescription": "Creamy Marry Me Chicken Pasta with seasoned chicken, rigatoni, sun-dried tomatoes, Parmesan, and a rich garlic cream sauce.",
+    "slug": "marry-me-chicken-pasta",
+    "introduction": "Marry Me Chicken Pasta fills the kitchen with the smell of garlic and browned chicken before the first spoonful of cream reaches the pan. Sun-dried tomatoes bring a concentrated tomato flavor, while Parmesan helps the sauce cling to the ridges of the pasta. Each forkful has a little of that creamy sauce and a bite of golden chicken.\n\nThis recipe makes six servings and uses the chicken skillet again for the sauce, keeping those flavorful browned bits in the dish. It is a comforting dinner to bring to the table on a busy evening, with enough richness to feel special when you have company.",
+    "instructions": [
+      "Sprinkle 1 lb of cubed chicken with 1 tsp salt and 1/2 tsp pepper, distributing the seasoning over the pieces.",
+      "Put 1/2 cup all purpose flour, 1 1/2 tsp Italian seasoning, 1 tsp onion powder, 1 tsp garlic powder, and 1/2 tsp paprika into a gallon-sized resealable bag. Shake the chicken in this mixture to coat it, then lift it out and shake away loose flour. Keep 1 tablespoon of the flour mixture for the sauce.",
+      "Warm 2 tbsp olive oil and 2 tbsp butter together in a large skillet. Brown the chicken on the first side for about 3-4 minutes, then turn the pieces. Continue cooking until the other side is browned and the chicken’s internal temperature reaches 165 degrees Fahrenheit.",
+      "Transfer the cooked chicken from the skillet to a plate and leave it there while you prepare the sauce.",
+      "Prepare 10 oz rigatoni following the cooking directions on its package. Drain the pasta and set it aside.",
+      "Return to the chicken skillet and add 2 tbsp olive oil with 2 cloves minced garlic. Saute for 1-2 minutes, until the garlic smells fragrant.",
+      "Stir in 1/2 cup drained sun-dried tomatoes, 2 tbsp tomato paste, 1 cup chicken broth, and 1 cup heavy whipping cream until combined.",
+      "Mix 1 tsp Italian seasoning, 1/2 tsp parsley, 1/2 tsp salt, and red chili flakes to taste into the sauce.",
+      "In a small bowl, work 1 tablespoon of the reserved flour mixture together with 3 tablespoons of sauce from the skillet to make a paste. Stir this back into the pan, then add ½ cup of Parmesan. Keep stirring as the sauce thickens.",
+      "Fold the drained rigatoni through the sauce and stir for 1 minute, or until the pasta is warm throughout.",
+      "Return the chicken to the skillet and add the remaining ½ cup of Parmesan. Stir everything together and cook uncovered for another few minutes, allowing the sauce to finish thickening.",
+      "Spoon the creamy pasta and chicken into serving bowls and bring them to the table while warm."
+    ],
+    "tips": [],
+    "storage": [],
+    "format": "blog_1000_1200_v1",
+    "blog": {
+      "whyMake": [
+        {
+          "text": "It comes together in one skillet for the sauce, which keeps the cooking straightforward and helps the browned chicken bits flavor the cream sauce.",
+          "evidenceIds": [
+            "S3",
+            "E3"
+          ]
+        },
+        {
+          "text": "The combination of sun-dried tomatoes, garlic, Parmesan, and cream creates a rich sauce that coats the rigatoni well.",
+          "evidenceIds": [
+            "S7",
+            "S9",
+            "S11"
+          ]
+        },
+        {
+          "text": "It works for both a quick weeknight meal and a more dressed-up dinner because the finished dish feels creamy and polished without complicated steps.",
+          "evidenceIds": [
+            "D1",
+            "F_Prep_time",
+            "F_Cook_time"
+          ]
+        }
+      ],
+      "ingredientNotes": [
+        {
+          "text": "The chicken is cut into bite-sized pieces before cooking, which helps it brown quickly and evenly.",
+          "evidenceIds": [
+            "I1",
+            "S2",
+            "S3"
+          ],
+          "ingredientIndex": 0
+        },
+        {
+          "text": "The flour mixture includes Italian seasoning, onion powder, garlic powder, and paprika, and a tablespoon is reserved for thickening the sauce later on.",
+          "evidenceIds": [
+            "I4",
+            "I5",
+            "I6",
+            "I7",
+            "I8",
+            "S2",
+            "S9"
+          ],
+          "ingredientIndex": 3
+        },
+        {
+          "text": "Two separate olive oil measurements are listed in the recipe, one for browning the chicken and one for the sauce base.",
+          "evidenceIds": [
+            "I9",
+            "I12",
+            "S3",
+            "S6"
+          ],
+          "ingredientIndex": 8
+        },
+        {
+          "text": "The Parmesan is divided, with part stirred into the sauce and the rest added at the end for a richer finish.",
+          "evidenceIds": [
+            "I22",
+            "S9",
+            "S11"
+          ],
+          "ingredientIndex": 21
+        }
+      ],
+      "timeNote": [
+        {
+          "text": "These are the source recipe’s preparation and cooking times. Have the ingredients ready before starting, then follow the package directions for the rigatoni while working through the skillet steps.",
+          "evidenceIds": [
+            "F_Prep_time",
+            "F_Cook_time",
+            "S5"
+          ]
+        }
+      ],
+      "variations": [
+        {
+          "text": "For more vegetables, add cooked asparagus, broccoli, spinach, tomatoes, or green beans. Roast or saute vegetables before adding them so they are cooked through when they meet the pasta.",
+          "evidenceIds": [
+            "E4",
+            "E9"
+          ]
+        },
+        {
+          "text": "Change the pasta shape if you like. The recipe also suggests tortellini or ravioli; follow the cooking directions for whichever pasta you choose.",
+          "evidenceIds": [
+            "E7",
+            "S5"
+          ]
+        }
+      ],
+      "serving": [
+        {
+          "text": "Serve the pasta warm in bowls, making sure each helping has chicken as well as sauce-coated rigatoni. A little fresh parsley or basil is an optional finishing touch supported by the recipe. Bring the skillet to the table for a relaxed meal together.",
+          "evidenceIds": [
+            "S10",
+            "S11",
+            "S12",
+            "E4"
+          ]
+        }
+      ],
+      "storage": [
+        {
+          "text": "Keep leftovers in an airtight container in the refrigerator for up to three days, or freeze them for up to two months. The cream sauce may separate during reheating. Add a splash of milk and stir often as it warms to help bring the sauce back together.",
+          "evidenceIds": [
+            "E8"
+          ]
+        }
+      ],
+      "proTips": [
+        {
+          "text": "Use a meat thermometer to check the chicken. The target is 165 degrees Fahrenheit; a browned surface alone does not tell you the internal temperature.",
+          "evidenceIds": [
+            "E10",
+            "S3"
+          ]
+        },
+        {
+          "text": "Keep the skillet’s browned bits for the sauce. They add flavor when the broth and cream join the pan.",
+          "evidenceIds": [
+            "E3",
+            "S7"
+          ]
+        },
+        {
+          "text": "Make the reserved flour and sauce into a paste in the separate bowl before stirring it back into the skillet. Follow that sequence when thickening the sauce.",
+          "evidenceIds": [
+            "S9"
+          ]
+        },
+        {
+          "text": "Adjust the consistency before serving. Cook a little longer for a thicker sauce, or loosen it with cream, broth, or a splash of water.",
+          "evidenceIds": [
+            "E1"
+          ]
+        }
+      ],
+      "faqs": [
+        {
+          "text": "Yes. Another pasta shape can work, and tortellini or ravioli are suggested variations. Cook your chosen pasta according to its package before mixing it into the sauce.",
+          "evidenceIds": [
+            "E7",
+            "S5"
+          ],
+          "question": "Can I use a different pasta?"
+        },
+        {
+          "text": "Stir in more cream, chicken broth, or a splash of water to loosen it. If it becomes too thin, let it cook a little longer until it coats the pasta as you like.",
+          "evidenceIds": [
+            "E1"
+          ],
+          "question": "How do I stop the sauce from getting too thick?"
+        },
+        {
+          "text": "Use the skillet you cooked the chicken in. The browned bits left in the pan contribute flavor to the sauce, so there is no need to start with a separate clean skillet.",
+          "evidenceIds": [
+            "E3"
+          ],
+          "question": "Do I need a clean skillet for the sauce?"
+        },
+        {
+          "text": "Yes, the recipe allows freezing for up to two months. The creamy sauce can separate when reheated; a splash of milk and frequent stirring can help restore its consistency.",
+          "evidenceIds": [
+            "E8"
+          ],
+          "question": "Can I freeze Marry Me Chicken Pasta?"
+        }
+      ],
+      "conclusion": "Set the warm bowls on the table and enjoy the creamy rigatoni with its golden chicken and tangy sun-dried tomatoes. This is a generous, comforting meal to share, with a sauce you can adjust to your own taste."
+    },
+    "wordCount": 1191
+  },
+  "source": {
+    "url": "https://thedomesticspoon.com/marry-me-chicken-pasta/",
+    "title": "Marry Me Chicken Pasta",
+    "ingredients": [
+      "1 lb chicken breast (cubed into bite-sized pieces)",
+      "1 tsp Salt",
+      "½ tsp Pepper",
+      "½ cup All purpose flour",
+      "1 ½ tsp Italian Seasoning",
+      "1 tsp Onion Powder",
+      "1 tsp Garlic Powder",
+      "½ tsp Paprika",
+      "2 tbsp Olive oil",
+      "2 tbsp Butter",
+      "10 oz Rigatoni (Uncooked)",
+      "2 tbsp olive oil",
+      "2 cloves garlic (minced)",
+      "½ cup sun-dried tomatoes (drained)",
+      "2 tbsp tomato paste",
+      "1 cup chicken broth",
+      "1 cup heavy whipping cream",
+      "1 tsp Italian seasoning",
+      "½ tsp dried parsley",
+      "½ tsp Salt (more or less to taste)",
+      "Red Chili Flakes (to taste)",
+      "1 cup Parmesan Cheese (grated, divided)"
+    ],
+    "instructions": [
+      "Season 1 lb chicken with 1 tsp salt and 1/2 tsp pepper.",
+      "In a gallon-sized resealable plastic bag, combine 1/2 cup all purpose flour with the 1 1/2 tsp Italian seasoning, 1 tsp onion powder, 1 tsp garlic powder, and 1/2 tsp paprika. Place the cubed chicken in the flour and shake the bag to coat evenly. Remove the chicken from the flour and shake off any excess. Reserve 1 tablespoon of the flour mixture.",
+      "In a large skillet, melt 2 tbsp olive oil and 2 tbsp butter. Add the chicken into the skillet and allow it to cook until it browns on one side (about 3-4 minutes). Then turn it and cook until it browns on the other side and the chicken reaches an internal temperature of 165 degrees Fahrenheit.",
+      "Once cooked, remove the chicken to a separate plate and set aside.",
+      "Cook 10 oz rigatoni according to the box instructions. Drain, then set aside.",
+      "In your skillet add the 2 tbsp olive oil and 2 cloves minced garlic and saute for 1-2 minutes or until fragrant.",
+      "Add 1/2 cup sun-dried tomatoes, 2 tbsp tomato paste, 1 cup chicken broth, and 1 cup heavy whipping cream. Stir to combine.",
+      "Add the 1 tsp Italian seasoning, 1/2 tsp parsley, 1/2 tsp salt and red chili flakes to taste. Stir to combine again.",
+      "In a small, separate bowl, combine 1 tablespoon of the reserved flour mixture with 3 tablespoons of the sauce mixture from the pan. Stir until a paste is formed, then add that paste back into the saucepan along with ½ cup of parmesan cheese. Stir until the sauce thickens up.",
+      "Add the cooked rigatoni into the pan and stir for 1 minute or until everything is warm.",
+      "Add the chicken back into the skillet and top with the remaining ½ cup of parmesan. Mix to combine and allow it to cook, uncovered, for another few minutes until fully thickened into a sauce.",
+      "Serve and enjoy!"
+    ],
+    "yield": "6",
+    "prepTime": "PT5M",
+    "cookTime": "PT25M",
+    "totalTime": "",
+    "description": "Pasta so flavorful it’s sure to elicit a marriage proposal! This creamy, delicious pasta is easy to make and gets rave reviews every time. Whip it up for a quick weeknight meal or a fancy date night!",
+    "imageDescription": "",
+    "tips": [],
+    "storage": [],
+    "retrievedAt": "2026-11-10T20:25:57.725Z",
+    "evidenceVersion": 1,
+    "supportingEvidence": [
+      {
+        "id": "E1",
+        "kind": "tip",
+        "heading": "Expert Tips",
+        "text": "You can easily adjust how thick or thin your sauce is to your preference. If you prefer a thicker sauce just allow the moisture to cook out of it for a little longer. If you feel like your sauce is too thick, add more cream, chicken broth or a splash of water to thin it out."
+      },
+      {
+        "id": "E2",
+        "kind": "tip",
+        "heading": "Expert Tips",
+        "text": "Feel free to taste and adjust your sauce as you go. You may decide it needs a bit more salt, pepper, or cream. Don’t be afraid to test it out."
+      },
+      {
+        "id": "E3",
+        "kind": "tip",
+        "heading": "Expert Tips",
+        "text": "You can use the same skillet for the chicken and the sauce. Those little brown bits at the bottom of the pan after cooking the chicken add excellent flavor to the creamy sauce."
+      },
+      {
+        "id": "E4",
+        "kind": "variation",
+        "heading": "Recipe Variations",
+        "text": "Try Different Vegetables: The flavors in this recipe pair perfectly with so many fresh or roasted vegetables. Try adding asparagus, broccoli, spinach, tomatoes or green beans. You could also garnish with colorful fresh herbs like parsley or fresh basil."
+      },
+      {
+        "id": "E5",
+        "kind": "variation",
+        "heading": "Recipe Variations",
+        "text": "Add Protein: While this recipe already has great protein from the chicken you can add a little more savory flavor with some bacon, some sausage, or a lighter flavor like shrimp."
+      },
+      {
+        "id": "E6",
+        "kind": "variation",
+        "heading": "Recipe Variations",
+        "text": "Vegan Option: This recipe revolves around the richness of cream, so making it completely vegan is a challenge but not impossible. You will just need to select your favorite vegan substitutes for cream and parmesan. You can leave the chicken out completely or replace it with vegetables or tofu."
+      },
+      {
+        "id": "E7",
+        "kind": "variation",
+        "heading": "Recipe Variations",
+        "text": "Experiment with Different Pasta: Different pastas add a whole new twist on this recipe. Try it with a stuffed pasta like tortellini (then you’d have my Marry Me Chicken Tortellini!) or ravioli, or simply use whatever shape of pasta you have on hand. If you really want to impress your guests, try adding Homemade Pasta or Italian Ravioli."
+      },
+      {
+        "id": "E8",
+        "kind": "storage",
+        "heading": "How to Store This Recipe",
+        "text": "Store this Marry Me Chicken Pasta in an airtight container in the refrigerator for up to three days or frozen for up to two months. Sometimes the cream in this recipe may separate when it is reheated. I recommend adding a splash of milk before reheating and stirring often as it reheats."
+      },
+      {
+        "id": "E9",
+        "kind": "variation",
+        "heading": "Can I Add Vegetables to This Dish?",
+        "text": "Vegetables are a welcome addition to this dish and there are so many that would compliment the flavors perfectly. Try adding spinach, mushrooms, asparagus or green beans. I recommend roasting your vegetables or sauteing them in your pan after your chicken to ensure they are cooked to perfection."
+      },
+      {
+        "id": "E10",
+        "kind": "tip",
+        "heading": "How Do I Know When My Chicken is Done?",
+        "text": "Chicken is done when it reaches an internal temperature of 165 degrees Fahrenheit. If you always get nervous about your chicken, try using a meat thermometer to be sure!"
+      }
+    ]
+  },
+  "wordCount": 1191
+}

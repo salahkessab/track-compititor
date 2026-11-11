@@ -30,7 +30,7 @@ test('reported image usage includes text inputs, reference inputs, and output', 
   const usage = {input_tokens:100, output_tokens:1372, input_tokens_details:{text_tokens:60, image_tokens:40}};
   assert.equal(openAIImageCostFromUsage('gpt-image-2.5-sunburst', usage), .04178);
   assert.equal(openAIImageCostFromUsage('gpt-image-2.6-sunburst', usage), .04178);
-  assert.equal(estimateOpenAIImageOutput('gpt-image-2.6-sunburst', '1024x1536', 'high'), null);
+  assert.equal(estimateOpenAIImageOutput('gpt-image-2.6-sunburst', '1024x1536', 'high'), 1372 * 30 / 1e6);
   assert.equal(openAIImageCostFromUsage('gpt-image-1.5', usage), .044524);
   assert.equal(openAIImageCostFromUsage('gpt-image-2', {...usage, input_tokens_details: undefined}), null);
   assert.equal(openAIImageCostFromUsage('gpt-image-2', {...usage, input_tokens:101}), null);

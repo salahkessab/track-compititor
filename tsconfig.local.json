@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "plugins": [{ "name": "next" }] },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".local-next/types/**/*.ts"],
+  "exclude": ["node_modules", ".intelligence-build", ".next"]
+}

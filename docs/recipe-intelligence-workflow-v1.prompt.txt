@@ -1,0 +1,89 @@
+Generated with the built-in image_gen tool. No Recipe Intelligence API batch was started for this diagram.
+
+Create one polished, highly readable educational workflow infographic for the owner of a local recipe application. This is a diagram explaining an EXISTING workflow, not an app mockup or food photograph. Use a large portrait poster, approximately 2400 x 3200 if supported, with crisp typeset English text, plenty of spacing, strong hierarchy, and clearly numbered steps with arrows. Warm ivory background, muted blue, dark charcoal text, soft green for FREE steps, warm amber for approval, blue for PAID steps. Elegant, practical, friendly. Use simple restrained line icons for links, document, photos, approval, cooking pan, storage and download. No decorative unreadable text.
+
+Title exactly: "RECIPE INTELLIGENCE"
+Subtitle: "From recipe URL to finished article and edited photos"
+Small legend: "FREE = no paid AI call   |   PAID = uses your approved API budget"
+
+MAIN FLOW: a single clearly numbered downward sequence, organized so all text remains comfortably legible. Use two wide columns only if the numbered arrows unmistakably show the order. Put these eight cards in the following exact order:
+
+1. "START A RECIPE" [FREE]
+"Recipe URL • Uploaded photos • Historical report"
+"Choose: article + images, article only, or images only."
+"An article needs a recipe source. Uploads alone support images only."
+
+2. "PREPARE AND SELECT" [FREE]
+"Extract ingredients, quantities, times, servings and method."
+"Find source photos; review duplicates and unrelated images."
+"1–3 usable photos: auto-selected, editable."
+"4+ photos: you choose. Three is not a generation limit."
+
+3. "SETTINGS AND COST APPROVAL"
+"Recipe basis: Keep Original (default) or Choose Best Complete."
+"Modes: Full Automatic • Review Before Articles • Review Before Images"
+"Choose models, image controls and one palette per recipe."
+"Review the estimate and approve this job's spending limit."
+"Freeze selected source, photos, settings and prompt versions."
+Visually mark this as the boundary: "NO PAID PROCESSING BEFORE APPROVAL"
+
+4. "CHOOSE THE RECIPE SOURCE"
+"Keep Original: preserve its facts; research is off by default."
+"Optional research: choose a clearly stronger complete source."
+"Ambiguous source: hold only that recipe for review."
+"If the source changes, review its photos and refresh the estimate."
+
+5. "WRITE AND SAVE THE ARTICLE" [PAID]
+Show exact skill name prominently: "recipe-article-writer"
+"Model: GPT-5.5"
+"Target: 1,000–1,200 words, original English and SEO fields."
+"Humanizer instructions are embedded; no separate paid stage."
+"Preserve recipe facts. Include only supported advice."
+"Advisory checks; at most one budgeted AI correction."
+"SAVE THE ARTICLE BEFORE IMAGES."
+A neat small line of article sections:
+"Intro • Benefits • Ingredients • Timing • Method • Variations"
+"Serving • Storage • Pro tips • FAQs • Conclusion"
+
+6. "UNDERSTAND THE SELECTED PHOTOS" [PAID]
+"GPT-5.5 • high-detail image input • cached groups of up to 10"
+"Identify ingredients, cooking stage, vessel, readable labels and placement."
+"Types: ingredients • cooking steps • served dish"
+"Unclear context holds only that image for review."
+
+7. "EDIT EACH ORIGINAL PHOTO" [PAID]
+Show exact skill name prominently: "recipe-photo-editor"
+"Model: gpt-image-2.6-sunburst"
+"High quality • 1536 × 864 • opaque • auto moderation"
+"Complexity omitted • no partial previews"
+"Each edit uses its own ORIGINAL photo."
+Two concise inner rule groups:
+"Cooking / serving: preserve food, stage, vessel type, materials, utensils, arrangement and angle. Change suitable cookware color and surface color."
+"Ingredients: preserve every ingredient and group. Rearrange containers; add correct small paper labels."
+"Default palette: muted blue cookware + warm beige surface."
+"Keep glass clear, metal metallic and wood wooden."
+
+8. "ASSEMBLE, REVIEW AND DOWNLOAD" [FREE]
+"Place ingredient images beside ingredients and cooking images by supported steps."
+"Put unmapped photos in a separate gallery."
+"Refresh HTML locally without rewriting the article."
+"Deliver: HTML + Markdown, recipe/SEO/source JSON, JPEG + PNG, original/edited gallery, prompts, manifest and ZIP."
+"Show actual API usage cost when finished."
+
+BOTTOM SUPPORT BAND titled "WHAT KEEPS IT RELIABLE"
+"Next.js interface → Node.js worker → local SQLite queue → your chosen storage folder"
+"Save provider receipts before file exports. Reuse completed stages after restart."
+"Retry only the affected stage. A failed photo does not stop the others."
+"Never automatically repeat an uncertain paid call. Keep its budget reservation."
+"Canonical versioned prompts run inside the app; skill files document the same rules."
+Tiny code references: "Writing: prompts.ts  |  Photos: photoProfile.ts"
+
+BOTTOM SMALL COST EXAMPLE PANEL titled "BAKED MAC AND CHEESE TEST — ACTUAL USAGE COST"
+"Writing + correction: $0.1836"
+"Photo understanding: $0.0921"
+"Seven image edits: $0.3046"
+Bold total: "TOTAL $0.580344 ≈ $0.58"
+Small context: "Approved budget: $2.13. Future jobs need their own approval."
+Small honest note: "This test also included assistant review of labels and article wording at no extra API charge."
+
+Accuracy requirements: both exact skill names must be spelled correctly. Do not add another paid rewriting, Humanizer or quality-scoring stage. Do not imply photos run before the article is saved. Do not promise copyright clearance. Do not imply every future job costs $0.58. Do not omit the photo-selection rule, source change handling, spending gate, receipt reuse, or outputs. Avoid dense decorative borders. Prioritize perfect readable spelling and an easy-to-follow flow over decoration.

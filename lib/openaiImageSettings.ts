@@ -2,7 +2,7 @@
 export const OPENAI_IMAGE_MODEL_IDS = [
   "gpt-image-1.5", "gpt-image-2", "gpt-image-2-2026-04-21",
   "gpt-image-2.5-flare", "gpt-image-2.5-flare-2026-09-08", "gpt-image-2.5-sunburst",
-  "gpt-image-2.6-sunburst",
+  "gpt-image-2.6-sunburst", "gpt-image-2.6-flare",
 ] as const;
 export const DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 export const IMAGE_SIZES = ["auto", "1024x1024", "1152x1440", "1024x1536", "1536x1024", "1536x864"] as const;
@@ -27,10 +27,10 @@ export function isOpenAIImageModel(model: string): boolean {
   return (OPENAI_IMAGE_MODEL_IDS as readonly string[]).includes(model);
 }
 export function imageQualitiesFor(model: string) {
-  return model.startsWith("gpt-image-2.5-") ? IMAGE_QUALITIES : IMAGE_QUALITIES.slice(0, 4);
+  return /^gpt-image-2\.[56]-/.test(model) ? IMAGE_QUALITIES : IMAGE_QUALITIES.slice(0, 4);
 }
 export function supportsImageComplexity(model: string): boolean {
-  return model === "gpt-image-2.6-sunburst";
+  return model === "gpt-image-2.6-sunburst" || model === "gpt-image-2.6-flare";
 }
 export function validateImageSettings(model: string, value: unknown): OpenAIImageSettings {
   if (!isOpenAIImageModel(model)) throw new Error("Unsupported OpenAI image model");

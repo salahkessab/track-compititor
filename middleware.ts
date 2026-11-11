@@ -5,6 +5,8 @@ import { NextResponse, type NextRequest } from "next/server";
 // Username can be anything; password must match APP_PASSWORD.
 
 export function middleware(req: NextRequest) {
+  // These local-only routes enforce their own launch session and origin checks.
+  if (process.env.RECIPE_INTELLIGENCE_LOCAL === "1" && !process.env.VERCEL && req.nextUrl.pathname.startsWith("/api/recipe-intelligence/")) return NextResponse.next();
   const password = process.env.APP_PASSWORD;
   if (!password) return NextResponse.next(); // no password set → app is open
 

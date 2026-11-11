@@ -1,0 +1,98 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { temporary } = require('./helpers/recipe-fixtures.cjs');
+const { handleIntelligence } = require('../.intelligence-build/lib/recipe-intelligence/api.js');
+
+test('local API requires launcher credentials, exact loopback origin and CSRF headers; disabled mode never creates a database', async t => {
+  const root = temporary(t); const keys = ['RECIPE_INTELLIGENCE_ROOT', 'RECIPE_INTELLIGENCE_LOCAL', 'RECIPE_INTELLIGENCE_TOKEN', 'RECIPE_INTELLIGENCE_ORIGIN', 'VERCEL'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  t.after(async () => {
+    for (const promise of globalThis.recipeIntelligenceStores?.values() || []) (await promise).close();
+    globalThis.recipeIntelligenceStores?.clear();
+    for (const key of keys) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+  });
+  const origin = 'http://127.0.0.1:34567';
+  function request(route, method = 'GET', body, headers = {}) {
+    return handleIntelligence(new Request(`${origin}/api/recipe-intelligence/${route}`, { method, headers: { Host: '127.0.0.1:34567', Origin: origin, 'Content-Type': 'application/json', 'X-Recipe-Intelligence': '1', ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }));
+  }
+  process.env.RECIPE_INTELLIGENCE_ROOT = root; delete process.env.RECIPE_INTELLIGENCE_LOCAL; delete process.env.VERCEL;
+  assert.deepEqual(await (await request('capabilities')).json(), { enabled: false, phase: 5 });
+  assert.equal((await request('snapshot')).status, 503);
+  assert.equal(fs.existsSync(path.join(root, 'database')), false);
+  Object.assign(process.env, { RECIPE_INTELLIGENCE_LOCAL: '1', RECIPE_INTELLIGENCE_TOKEN: 'test-session-secret', RECIPE_INTELLIGENCE_ORIGIN: origin });
+  assert.equal((await request('snapshot')).status, 401);
+  assert.equal((await request('snapshot', 'GET', undefined, { Host: 'attacker.example' })).status, 403);
+  assert.equal((await request('session', 'POST', {}, { Origin: 'https://attacker.example', 'X-RI-Key': 'test-session-secret' })).status, 403);
+  assert.equal(fs.existsSync(path.join(root, 'database')), false);
+  const session = await request('session', 'POST', {}, { 'X-RI-Key': 'test-session-secret' });
+  assert.equal(session.status, 200); assert.match(session.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+  const auth = { Cookie: 'ri_session=test-session-secret' };
+  assert.equal((await request('wordpress/target', 'POST', { siteUrl: 'https://site.example' }, { ...auth, Origin: 'https://attacker.example' })).status, 403);
+  assert.equal((await request('wordpress/connect', 'POST', {}, { ...auth, 'X-Recipe-Intelligence': '' })).status, 403);
+  assert.equal((await request('items/recipe/wordpress', 'POST', {}, { ...auth, 'X-Recipe-Intelligence': '' })).status, 403);
+  assert.equal((await request('wordpress/target', 'POST', { siteUrl: 'http://localhost' }, auth)).status, 400);
+  assert.equal((await request('wordpress/target', 'POST', { siteUrl: 'https://site.example' }, auth)).status, 200);
+  assert.deepEqual(await (await request('wordpress', 'GET', undefined, auth)).json(), { connections: [], suggestedSiteUrl: 'https://site.example/' });
+  assert.equal((await request('items/recipe/wordpress?connectionId=missing', 'GET', undefined, auth)).status, 400);
+  const created = await request('sites', 'POST', { name: 'Food', url: 'https://food.example/' }, auth);
+  assert.equal(created.status, 201); const site = (await created.json()).site;
+  assert.equal((await request('sites', 'POST', { url: 'http://127.0.0.1' }, auth)).status, 400);
+  assert.equal((await request('sites', 'POST', { url: 'https://other.example' }, { ...auth, 'X-Recipe-Intelligence': '' })).status, 403);
+  const queued = await request('scans', 'POST', { siteIds: [site.id] }, auth);
+  assert.equal(queued.status, 202); assert.equal((await queued.json()).runIds.length, 1);
+  assert.equal((await request(`sites/${site.id}`, 'DELETE', {}, auth)).status, 400);
+  assert.equal((await request(`sites/${site.id}`, 'DELETE', { confirmed: true }, auth)).status, 200);
+  assert.equal((await (await request('snapshot', 'GET', undefined, auth)).json()).sites.length, 0);
+  assert.equal((await request('settings', 'PATCH', { timezone: 'made-up' }, auth)).status, 400);
+  assert.equal((await request('sites', 'POST', { name: 'x'.repeat(17000), url: 'https://huge.example' }, auth)).status, 400);
+  process.env.VERCEL = '1'; assert.equal((await request('snapshot', 'GET', undefined, auth)).status, 503);
+});
+
+test('reports and batches share local authorization; downloads have sandboxed previews and paid approval checks', async t => {
+  const root = temporary(t); const keys = ['RECIPE_INTELLIGENCE_ROOT', 'RECIPE_INTELLIGENCE_LOCAL', 'RECIPE_INTELLIGENCE_TOKEN', 'RECIPE_INTELLIGENCE_ORIGIN', 'VERCEL', 'OPENAI_API_KEY'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]])); const originalFetch = global.fetch;
+  t.after(async () => { global.fetch = originalFetch; for (const promise of globalThis.recipeIntelligenceStores?.values() || []) (await promise).close(); globalThis.recipeIntelligenceStores?.clear(); for (const key of keys) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; });
+  Object.assign(process.env, { RECIPE_INTELLIGENCE_ROOT: root, RECIPE_INTELLIGENCE_LOCAL: '1', RECIPE_INTELLIGENCE_TOKEN: 'local-test-key', RECIPE_INTELLIGENCE_ORIGIN: 'http://127.0.0.1:34567', OPENAI_API_KEY: 'provider-test-key' }); delete process.env.VERCEL;
+  const request = (route, method = 'GET', data, extra = {}) => handleIntelligence(new Request(`http://127.0.0.1:34567/api/recipe-intelligence/${route}`, { method, headers: { Host: '127.0.0.1:34567', Origin: 'http://127.0.0.1:34567', 'X-RI-Key': 'local-test-key', 'X-Recipe-Intelligence': '1', 'Content-Type': 'application/json', ...extra }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) }));
+  const site = (await (await request('sites', 'POST', { url: 'https://food.example' })).json()).site;
+  const store = await [...globalThis.recipeIntelligenceStores.values()][0]; const run = store.createScan(site.id);
+  store.recordCandidates({ site_id: site.id, run_id: run, url: site.url + 'feed/' }, [{ url: site.url + 'soup' }]);
+  const record = store.db.prepare('SELECT * FROM recipe_records').get();
+  const { ReportStore } = require('../.intelligence-build/lib/recipe-intelligence/reports.js'); const { extractArticle } = require('../.intelligence-build/lib/recipe-intelligence/article.js');
+  const source = { '@type': 'Recipe', name: 'Soup', datePublished: '2020-01-02', recipeIngredient: ['1 carrot'], recipeInstructions: ['Cook the carrot.'] };
+  new ReportStore(store).record({ site_id: site.id, recipe_id: record.id, url: record.canonical_url }, extractArticle(`<script type="application/ld+json">${JSON.stringify(source)}</script>`, record.canonical_url));
+  const reportResponse = await request('reports', 'POST', { siteIds: [site.id], from: '2020-01-01', to: '2020-01-03' }); assert.equal(reportResponse.status, 202); const reportId = (await reportResponse.json()).jobId;
+  assert.equal((await (await request(`reports/${reportId}`)).json()).matches, 1);
+  const exported = await request(`reports/${reportId}/export`); assert.match(exported.headers.get('content-disposition'), /attachment/); assert.ok(fs.existsSync(path.join(root, 'reports', `${reportId}.json`)));
+  assert.equal((await request('batches', 'POST', { selections: [{ recipeId: record.id }], settings: { images: false, imageWorkflow: 'legacy', textModel: 'gpt-5.4-mini' } }, { Origin: 'https://other.example' })).status, 403);
+  const batch = await (await request('batches', 'POST', { selections: [{ recipeId: record.id }], settings: { images: false, imageWorkflow: 'legacy', textModel: 'gpt-5.4-mini' } })).json();
+  assert.equal(batch.status, 'awaiting_cost_approval'); assert.equal((await request(`batches/${batch.id}/approve`, 'POST', { limit: 1, quoteVersion: batch.quote.createdAt })).status, 400);
+  const calls = []; global.fetch = async (url, init = {}) => { calls.push({ url, method: init.method }); return new Response(url.includes('api.openai.com') ? '{}' : '<main>gpt-5.4-mini $0.75 $4.50</main>'); };
+  assert.equal((await request('model-check', 'POST', { images: false, imageWorkflow: 'legacy', textModel: 'gpt-5.4-mini' })).status, 200);
+  assert.equal((await request(`batches/${batch.id}/approve`, 'POST', { limit: 1, quoteVersion: batch.quote.createdAt })).status, 200);
+  assert.equal(calls.some(c => c.method === 'POST'), false); assert.equal(store.db.prepare('SELECT count(*) n FROM api_calls').get().n, 0);
+  const { ArtifactStore } = require('../.intelligence-build/lib/recipe-intelligence/artifacts.js'); const artifacts = new ArtifactStore(store); const item = store.db.prepare('SELECT * FROM content_items').get();
+  artifacts.put(item, 'article.html', '<article>Saved soup</article>', 'text/html'); const file = store.db.prepare('SELECT * FROM artifacts').get();
+  const preview = await request(`artifacts/${file.id}?preview=1`); assert.equal(preview.status, 200); assert.match(preview.headers.get('content-security-policy'), /sandbox; default-src 'none'/);
+  assert.equal((await request(`artifacts/${file.id}`, 'GET', undefined, { 'X-RI-Key': '' })).status, 401);
+  assert.equal((await request('reports', 'POST', { siteIds: [site.id], from: 'today', to: 'tomorrow' })).status, 400);
+});
+
+test('import upload, originals, selection and ZIP APIs retain local authentication and make no paid preparation calls', async t => {
+  const root=temporary(t),origin='http://127.0.0.1:34567';const keys=['RECIPE_INTELLIGENCE_ROOT','RECIPE_INTELLIGENCE_LOCAL','RECIPE_INTELLIGENCE_TOKEN','RECIPE_INTELLIGENCE_ORIGIN','VERCEL'];const saved=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+  t.after(async()=>{for(const promise of globalThis.recipeIntelligenceStores?.values()||[])(await promise).close();globalThis.recipeIntelligenceStores?.clear();for(const k of keys)if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];});
+  Object.assign(process.env,{RECIPE_INTELLIGENCE_ROOT:root,RECIPE_INTELLIGENCE_LOCAL:'1',RECIPE_INTELLIGENCE_TOKEN:'test-upload-session',RECIPE_INTELLIGENCE_ORIGIN:origin});delete process.env.VERCEL;
+  const request=(route,method='GET',data,extra={})=>handleIntelligence(new Request(`${origin}/api/recipe-intelligence/${route}`,{method,headers:{Host:'127.0.0.1:34567',Origin:origin,'X-RI-Key':'test-upload-session','X-Recipe-Intelligence':'1','Content-Type':'application/json',...extra},...(data===undefined?{}:{body:Buffer.isBuffer(data)?data:JSON.stringify(data)})}));
+  assert.equal((await request('imports','POST',{},{'X-Recipe-Intelligence':''})).status,403);assert.equal((await request('imports','POST',{url:'http://localhost/private'})).status,400);
+  const row=await(await request('imports','POST',{})).json();const original=fs.readFileSync(path.join(__dirname,'fixtures/approved-recipe-photos/08-skillet.jpg'));
+  assert.equal((await request(`imports/${row.id}/upload`,'POST',original,{'Content-Type':'image/jpeg','X-RI-Key':''})).status,401);
+  const uploaded=await request(`imports/${row.id}/upload`,'POST',original,{'Content-Type':'image/jpeg','X-File-Name':'../../outside.jpg'});assert.equal(uploaded.status,201);const data=await uploaded.json();assert.equal(data.photos.length,1);assert.equal(data.photos[0].selected,1);
+  const photo=await request(`references/${data.photos[0].id}`);assert.equal(photo.status,200);assert.equal(photo.headers.get('content-type'),'image/jpeg');assert.ok(Buffer.from(await photo.arrayBuffer()).equals(original));
+  assert.equal((await request(`references/${data.photos[0].id}`,'GET',undefined,{'X-RI-Key':''})).status,401);
+  assert.equal((await request(`imports/${row.id}/selection`,'POST',{photoIds:['unknown']})).status,400);
+  const batch=await(await request('batches','POST',{selections:[{importId:row.id}],settings:{output:'images_only'}})).json();assert.equal(batch.items[0].photos.length,1);
+  const zip=await request(`items/${batch.items[0].id}/zip`);assert.equal(zip.status,200);assert.equal(zip.headers.get('content-type'),'application/zip');assert.equal((await request(`items/${batch.items[0].id}/zip`,'GET',undefined,{'X-RI-Key':''})).status,401);
+  const store=await [...globalThis.recipeIntelligenceStores.values()][0];assert.equal(store.db.prepare('SELECT count(*) n FROM api_calls').get().n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM tracked_sites').get().n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM recipe_records').get().n,0);
+});

@@ -28,21 +28,42 @@ export type ImageUsage = {
 
 function imageOutputRate(model: string): number | null {
   // https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst (2026-11-05)
-  if (model === "gpt-image-2.6-sunburst") return 30;
+  if (model === "gpt-image-2.6-sunburst" || model === "gpt-image-2.6-flare") return 30;
   if (model === "gpt-image-1.5") return 32;
   if (model === "gpt-image-2" || model.startsWith("gpt-image-2-2026-") || model.startsWith("gpt-image-2.5-")) return 30;
   return null;
 }
 
 export function estimateOpenAIImageOutput(model: string, size: string, quality: string): number | null {
-  // Do not apply an older model's output-token table to 2.6. Use reported usage.
-  if (model === "gpt-image-2.6-sunburst") return null;
+  // The 2.6 calculator has its own low/medium multipliers. Never use the 2.5 table.
+  // Official image-generation calculator checked 2026-11-10; actual usage can differ.
+  if (/^gpt-image-2\.6-(sunburst|flare)$/.test(model)) {
+    const [width, height] = size.split("x").map(Number);
+    const edge = ({ low: 16, medium: 24, high: 48, xhigh: 64, max: 96 } as Record<string, number>)[quality];
+    if (!edge || !width || !height || width % 16 || height % 16 || width * height < 655360 || width * height > 8294400 || Math.max(width, height) > 3840 || Math.max(width, height) / Math.min(width, height) > 3) return null;
+    const short = edge * Math.min(width, height) / Math.max(width, height);
+    const floor = Math.floor(short);
+    const rounded = short - floor === 0.5 ? floor + floor % 2 : Math.round(short);
+    const base = Math.ceil(edge * rounded * (2_000_000 + width * height) / 4_000_000);
+    const multiplier = quality === "low" ? 4.2 : quality === "medium" ? 3.3 : 1;
+    return Math.round(base * multiplier) * 30 / 1_000_000;
+  }
   const rates = imageOutputRate(model);
   if (rates === null || size === "auto" || quality === "auto") return null;
   const tables: Record<string, Record<string, number>> = model === "gpt-image-1.5"
     ? TOKENS_15 : model.startsWith("gpt-image-2.5-") ? TOKENS_25 : TOKENS_2;
   const tokens = tables[size]?.[quality];
-  return typeof tokens === "number" ? tokens * rates / 1_000_000 : null;
+  if (typeof tokens === "number") return tokens * rates / 1_000_000;
+  // The same official calculator accepts additional supported native dimensions.
+  if (model !== "gpt-image-1.5") {
+    const [w, h] = size.split("x").map(Number);
+    const edge = (model.startsWith("gpt-image-2.5-") ? { low: 16, medium: 24, high: 48, xhigh: 64, max: 96 } : { low: 16, medium: 48, high: 96 })[quality as "low" | "medium" | "high"];
+    if (!edge || !w || !h || w % 16 || h % 16 || w * h < 655360 || w * h > 8294400 || Math.max(w, h) > 3840 || Math.max(w, h) / Math.min(w, h) > 3) return null;
+    const short = edge * Math.min(w, h) / Math.max(w, h); const floor = Math.floor(short);
+    const rounded = short - floor === .5 ? floor + floor % 2 : Math.round(short);
+    return Math.ceil(edge * rounded * (2e6 + w * h) / 4e6) * rates / 1e6;
+  }
+  return null;
 }
 
 export function openAIOutputExamples(model: string, settings: OpenAIImageSettings): { low: number; high: number } | null {

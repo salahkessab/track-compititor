@@ -7,6 +7,7 @@ import { OpenAIImageControls } from "./components/OpenAIImageControls";
 import { RecipeImageToImage } from "./components/RecipeImageToImage";
 import { RecipeTwoInOne } from "./components/RecipeTwoInOne";
 import { RecipeDesigns } from "./components/RecipeDesigns";
+import { RecipeIntelligence } from "./components/RecipeIntelligence";
 import { ImageFilterStudio } from "./components/ImageFilterStudio";
 import { DEFAULT_IMAGE_SETTINGS, isOpenAIImageModel, imageQualitiesFor, supportsImageComplexity, type OpenAIImageSettings } from "@/lib/openaiImageSettings";
 import { readGenerationResponse } from "@/lib/generationResponse";
@@ -102,6 +103,7 @@ const MAIN_TABS = [
   { id: "recipe-designs", label: "Recipe Designs", contentType: "recipes", workflow: "designs" },
   { id: "image-to-image", label: "Image to Image", contentType: "recipes", workflow: "imageToImage" },
   { id: "two-in-one", label: "2 in one image", contentType: "recipes", workflow: "twoInOne" },
+  { id: "recipe-intelligence", label: "Recipe Intelligence", contentType: "recipes", workflow: "intelligence" },
 ] as const;
 const RECIPE_MODES: { value: string; label: string }[] = [
   { value: "dessert", label: "Desserts & sweets" },
@@ -275,7 +277,7 @@ export default function Page() {
   const [count, setCount] = useState<number>(1);
   const [countRaw, setCountRaw] = useState<string>("1");
   const [contentType, setContentType] = useState<ContentType>("horses");
-  const [recipeWorkflow, setRecipeWorkflow] = useState<"designs" | "imageToImage" | "twoInOne">("designs");
+  const [recipeWorkflow, setRecipeWorkflow] = useState<"designs" | "imageToImage" | "twoInOne" | "intelligence">("designs");
   const showRecipeImageToImage = contentType === "recipes" && recipeWorkflow === "imageToImage";
   const [modes, setModes] = useState<Set<string>>(new Set(DEFAULT_HORSE_MODES));
   const [customSubject, setCustomSubject] = useState<string>("");
@@ -889,6 +891,9 @@ export default function Page() {
       </div>
       <div hidden={contentType !== "recipes" || recipeWorkflow !== "designs"}>
         <RecipeDesigns />
+      </div>
+      <div hidden={contentType !== "recipes" || recipeWorkflow !== "intelligence"}>
+        <RecipeIntelligence active={contentType === "recipes" && recipeWorkflow === "intelligence"} />
       </div>
       <div hidden={contentType === "recipes"}>
       <section className="studio-panel mb-4 grid gap-4 rounded-[28px] p-5 sm:p-6 sm:grid-cols-2 md:grid-cols-4">

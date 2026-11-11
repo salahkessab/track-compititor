@@ -1,14 +1,35 @@
-# Horse Studio v2
+# Recipe Intelligence and Creative Studio
+
+The application includes the local Recipe Intelligence workflow and the existing
+horse, recipe-design, and image-editing tools. See the
+[GitHub and Vercel deployment guide](docs/deployment.md) for hosted setup and the
+distinction between hosted tools and the Windows worker.
+
+## Recipe Intelligence
+
+On Windows with Node.js 24 LTS, double-click **Start Recipe Intelligence.cmd**.
+Choose a local storage folder on first setup, then add websites in the new Recipe
+Intelligence tab and request manual scans or historical publication-date reports.
+Select verified recipes to prepare an article/image batch with a cost estimate,
+per-recipe source choices, Humanizer writing instructions, and optional review steps.
+**Stop Recipe Intelligence.cmd** stops only this launcher's processes. Discovery
+and reports make no paid AI calls. Content processing requires an explicit batch
+spending limit. The hosted studio and its existing tools still work.
+
+See [setup, scan controls, backups, and diagnostics](docs/recipe-intelligence.md).
+Use **Start a recipe** for a URL or uploaded photographs. See the
+[writing and reference-photo workflow](docs/recipe-reference-workflow.md) for
+photo selection, budget approval, downloads, and the two reusable project skills.
 
 ## Local setup
 
-Use Node.js 22 or later. Run `npm ci`, copy `.env.example` to `.env.local`,
+Use Node.js 24 LTS. Run `npm ci`, copy `.env.example` to `.env.local`,
 set `OPENAI_API_KEY`, then run `npm run dev`. Keys remain on the server.
 Set `APP_PASSWORD` to protect the UI and API when hosting the application.
 
 OpenAI is the default image provider for horses, recipes and fashion. The default
 image model is `gpt-image-2.5-sunburst`; the selector also offers
-`gpt-image-2.6-sunburst`. Access depends on the configured OpenAI project.
+`gpt-image-2.6-sunburst` and `gpt-image-2.6-flare`. Access depends on the configured OpenAI project.
 
 ## Recipes: Recipe Designs
 
