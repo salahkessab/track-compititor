@@ -50,6 +50,37 @@ async function ui(t, fetcher, url) {
   } };
 }
 
+test('finished recipe deletion previews disk space, requires confirmation, and removes the library entry', async t => {
+  const settings = require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+  const id='c9aed563-3187-416e-854e-662afcc959cc', itemId='1bb20f40-0482-45d9-a25b-0fc033ea5a38';
+  let deleted=false, fail=true; const calls=[];
+  const item={id:itemId,title:'Carrot soup',state:'completed',source:null,files:[],photos:[],warnings:[],stages:[],deletion:{allowed:true,reason:''}};
+  const batch={id,settings,status:'completed',approved_at:'2026-11-11T12:00:00Z',limit_usd:1,quote:{estimated:.1,recommendedLimit:1,pending:0,lines:[]},budget:{actual:.1,held:0,uncertain:0,remaining:.9},items:[item],calls:[]};
+  const fetcher=async(url,init={})=>{
+    calls.push({url,init});
+    if(url.endsWith('/capabilities'))return Response.json({enabled:true});
+    if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{root:'E:\\Recipes',timezone:'Africa/Casablanca'},contentSettings:settings,imports:[],batches:deleted?[]:[{id,title:'Carrot soup',created_at:'2026-11-11T12:00:00Z',count:1,status:'completed'}]});
+    if(url.endsWith('/batches/'+id))return Response.json(batch);
+    if(url.endsWith('/delete-preview'))return Response.json({id:itemId,title:'Carrot soup',bytes:5*1024*1024,sharedSource:true});
+    if(init.method==='DELETE'){
+      assert.equal(url,'/api/recipe-intelligence/items/'+itemId);assert.deepEqual(JSON.parse(init.body),{confirmed:true});
+      if(fail){fail=false;item.state='delete_failed';return Response.json({deleted:false,error:'Close the open file and retry deletion.'});}
+      deleted=true;return Response.json({deleted:true,bytesFreed:5*1024*1024,batchEmpty:true,batchId:id});
+    }
+    throw new Error('Unexpected '+url);
+  };
+  const {root,Component,click}=await ui(t,fetcher,`http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches&batchId=${id}`);
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  await click('Delete from computer');
+  const dialog=document.querySelector('[role=dialog]');assert.ok(dialog);assert.match(dialog.textContent,/5\.0 MB/);assert.match(dialog.textContent,/used by another saved recipe/);assert.equal(document.activeElement.textContent,'Keep recipe');
+  assert.equal(calls.filter(c=>c.init.method==='DELETE').length,0);
+  await click('Keep recipe');assert.equal(document.querySelector('[role=dialog]'),null);assert.equal(deleted,false);
+  await click('Delete from computer');await click('Delete permanently');
+  assert.match(document.querySelector('[role=dialog]').textContent,/Close the open file/);assert.equal(deleted,false);
+  await click('Keep recipe');await click('Retry deletion');await click('Delete permanently');
+  assert.equal(deleted,true);assert.equal(document.querySelector('[role=dialog]'),null);assert.match(document.body.textContent,/Recipe deleted from this computer\. Freed 5\.0 MB/);assert.ok(!window.location.search.includes('batchId'));assert.ok(!document.body.textContent.includes('Saved work · 1'));
+});
+
 test('inactive workspace makes no requests; hosted mode offers the local launcher without opening storage', async t => {
   const calls = [];
   const { root, Component } = await ui(t, async (url) => { calls.push(url); return Response.json({ enabled: false }); });

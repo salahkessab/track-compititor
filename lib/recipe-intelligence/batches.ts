@@ -13,6 +13,7 @@ import type { DiscoveryFetcher } from "./types";
 import { ImportStore } from "./imports";
 import { PHOTO_PROFILE_VERSION, ANALYSIS_PROFILE_VERSION } from "./photoProfile";
 import { createReferenceBatch, prepareReferenceBatch, validateReferenceApproval, nextReferenceStage, processReferenceStage, isPhotoStage } from "./referenceWorkflow";
+import { deletionAvailability } from "./deleteGeneration";
 
 const now = () => new Date().toISOString();
 const IMAGE_STAGES = ["featured", "alternate", "pinterest"];
@@ -43,8 +44,8 @@ export function selectRecipe(original: RecipeSnapshot, alternatives: ResearchSou
 export class BatchStore {
   artifacts: ArtifactStore;
   constructor(public store: IntelligenceStore) { this.artifacts = new ArtifactStore(store); }
-  get(id: string): any { const r = this.store.db.prepare("SELECT * FROM content_batches WHERE id=?").get(id) as any; if (!r) throw new Error("Batch not found."); return r; }
-  item(id: string): any { const r = this.store.db.prepare("SELECT * FROM content_items WHERE id=?").get(id) as any; if (!r) throw new Error("Recipe item not found."); return r; }
+  get(id: string): any { const r = this.store.db.prepare("SELECT * FROM content_batches WHERE id=? AND status<>'deleted'").get(id) as any; if (!r) throw new Error("Batch not found."); return r; }
+  item(id: string): any { const r = this.store.db.prepare("SELECT * FROM content_items WHERE id=? AND state<>'deleted'").get(id) as any; if (!r) throw new Error("Recipe item not found."); if (["deleting", "delete_failed"].includes(r.state)) throw new Error("Deletion is pending. Retry deletion to finish removing this recipe."); return r; }
   create(selections: Selection[], input: Partial<ContentSettings>) {
     if ((input.imageWorkflow || contentSettings(this.store).imageWorkflow) === "reference" || selections?.some(s => s.importId)) return createReferenceBatch(this, selections, input);
     if (!Array.isArray(selections) || !selections.length || selections.length > 20) throw new Error("Select between 1 and 20 verified recipes.");
@@ -110,8 +111,9 @@ export class BatchStore {
   }
   detail(id: string) {
     const b = this.get(id);
-    const items = (this.store.db.prepare("SELECT i.*,COALESCE(r.title,m.title) title FROM content_items i LEFT JOIN recipe_records r ON r.id=i.recipe_id LEFT JOIN recipe_imports m ON m.id=i.import_id WHERE batch_id=? ORDER BY i.rowid").all(id) as any[]).map(i => ({
+    const items = (this.store.db.prepare("SELECT i.*,COALESCE(r.title,m.title) title FROM content_items i LEFT JOIN recipe_records r ON r.id=i.recipe_id LEFT JOIN recipe_imports m ON m.id=i.import_id WHERE batch_id=? AND i.state<>'deleted' ORDER BY i.rowid").all(id) as any[]).map(i => ({
       ...i, source: i.source_json ? JSON.parse(i.source_json) : null, research: JSON.parse(i.research_json), warnings: JSON.parse(i.warnings_json), article: i.article_json ? JSON.parse(i.article_json) : null,
+      deletion: deletionAvailability(this.store, { ...i, batch_status: b.status }),
       stages: this.store.db.prepare("SELECT id,kind,state,error,attempt FROM content_stages WHERE item_id=? ORDER BY id").all(i.id),
       files: this.store.db.prepare("SELECT id,name,size_bytes,media_type FROM artifacts WHERE item_id=? ORDER BY name").all(i.id),
       photos: (this.store.db.prepare("SELECT p.*,s.state FROM content_photos p LEFT JOIN content_stages s ON s.item_id=p.item_id AND s.kind='photo:'||p.reference_id WHERE p.item_id=? ORDER BY p.position").all(i.id) as any[]).map(p => ({ ...p, relative_path: undefined, analysis: p.analysis_json ? JSON.parse(p.analysis_json) : null })),
@@ -122,10 +124,10 @@ export class BatchStore {
   list() { return (this.store.db.prepare(`SELECT b.id,b.status,b.created_at,
     (SELECT COALESCE(r.title,m.title,'Recipe') FROM content_items i
       LEFT JOIN recipe_records r ON r.id=i.recipe_id LEFT JOIN recipe_imports m ON m.id=i.import_id
-      WHERE i.batch_id=b.id ORDER BY i.rowid LIMIT 1) AS title,
-    (SELECT count(*) FROM content_items i WHERE i.batch_id=b.id) AS count,
+      WHERE i.batch_id=b.id AND i.state<>'deleted' ORDER BY i.rowid LIMIT 1) AS title,
+    (SELECT count(*) FROM content_items i WHERE i.batch_id=b.id AND i.state<>'deleted') AS count,
     (SELECT count(*) FROM content_items i WHERE i.batch_id=b.id AND i.state='completed') AS completed
-    FROM content_batches b ORDER BY b.created_at DESC LIMIT 100`).all() as any[]).map(b => ({ ...b, budget: this.budget(b.id) })); }
+    FROM content_batches b WHERE b.status<>'deleted' ORDER BY b.created_at DESC LIMIT 100`).all() as any[]).map(b => ({ ...b, budget: this.budget(b.id) })); }
   stage(itemId: string, kind: string, state: string, result: unknown = null, error: string | null = null) {
     this.store.db.prepare("UPDATE content_stages SET state=?,result_json=?,error=?,owner=NULL,updated_at=? WHERE item_id=? AND kind=?")
       .run(state, result === null ? null : JSON.stringify(result), error, now(), itemId, kind);
@@ -218,7 +220,7 @@ export class BatchStore {
   refresh() {
     for (const row of this.store.db.prepare("SELECT DISTINCT b.id FROM content_batches b JOIN content_items i ON i.batch_id=b.id WHERE b.approved_at IS NULL AND i.state IN ('preparing','photo_selection')").all() as any[]) prepareReferenceBatch(this, row.id);
     for (const batch of this.store.db.prepare("SELECT id FROM content_batches WHERE status='running'").all() as any[]) {
-      const states = (this.store.db.prepare("SELECT state FROM content_items WHERE batch_id=?").all(batch.id) as any[]).map(i => i.state);
+      const states = (this.store.db.prepare("SELECT state FROM content_items WHERE batch_id=? AND state<>'deleted'").all(batch.id) as any[]).map(i => i.state);
       if (!states.some(s => ["queued", "running"].includes(s))) {
         const status = states.includes("budget_wait") ? "budget_wait" : states.some(s => ["review", "photo_selection", "preparing", "awaiting_item_approval"].includes(s)) ? "needs_review" : states.every(s => s === "completed") ? "completed" : "partial";
         this.store.db.prepare("UPDATE content_batches SET status=? WHERE id=?").run(status, batch.id);

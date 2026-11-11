@@ -73,6 +73,7 @@ export class WordPressStore {
     return `Basic ${Buffer.from(`${c.username}:${await this.secrets.unprotect(c.protectedPassword)}`).toString("base64")}`;
   }
   private document(itemId: string) {
+    if (!this.store.db.prepare("SELECT 1 FROM content_items WHERE id=? AND state NOT IN ('deleted','deleting','delete_failed')").get(itemId)) throw new Error("This recipe has been deleted or is waiting for deletion to finish.");
     const artifacts = new ArtifactStore(this.store);
     const articleRow = this.store.db.prepare("SELECT id,size_bytes FROM artifacts WHERE item_id=? AND name='article.html'").get(itemId) as any;
     if (!articleRow) throw new Error("Save the article before copying it to WordPress.");

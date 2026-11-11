@@ -11,6 +11,7 @@ import { prepareReferenceBatch, prepareImportEstimate, reviewPhoto } from "./ref
 import { WordPressStore } from "./wordpress";
 import { beginBrowserCapture, finishBrowserCapture, MAX_CAPTURE_BYTES } from "./browserCapture";
 import { publicUrl } from "./urls";
+import { deleteGeneration, previewGenerationDeletion } from "./deleteGeneration";
 
 const state = globalThis as typeof globalThis & { recipeIntelligenceStores?: Map<string, Promise<IntelligenceStore>> };
 function enabled() { return process.env.RECIPE_INTELLIGENCE_LOCAL === "1" && !process.env.VERCEL && !!process.env.RECIPE_INTELLIGENCE_TOKEN; }
@@ -131,6 +132,8 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "model-check" && request.method === "GET") return json({ configured: !!process.env.OPENAI_API_KEY, checks: (database.db.prepare("SELECT * FROM model_checks").all() as any[]).map(r => ({ ...JSON.parse(r.metadata_json), productionConfirmedAt: r.production_confirmed_at })) });
     if (area === "batches" && !id && request.method === "POST") { const data = await body(request); return json(batches.create(data.selections, data.settings || {}), 201); }
     if (area === "batches" && id && !child && request.method === "GET") return json(batches.detail(id));
+    if (area === "items" && id && child === "delete-preview" && request.method === "GET") return json(previewGenerationDeletion(database, id));
+    if (area === "items" && id && !child && request.method === "DELETE") { const data = await body(request); return json(deleteGeneration(database, id, data.confirmed)); }
     if (area === "batches" && id && child === "approve" && request.method === "POST") { const data = await body(request); batches.approve(id, data.limit, data.quoteVersion); return json({ approved: true }); }
     if (area === "batches" && id && child === "action" && request.method === "POST") { const data = await body(request); batches.action(id, data.action); return json({ updated: true }); }
     if (area === "items" && id && child === "approve" && request.method === "POST") { const data = await body(request); batches.approveItem(id, data.sourceUrl); return json({ approved: true }); }

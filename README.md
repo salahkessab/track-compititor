@@ -21,6 +21,8 @@ spending limit. The hosted studio and its existing tools still work.
 The default URL workflow is **paste URL → Get estimate → Generate article + images**.
 Photos are selected automatically. Blocked websites show a clear error and a paste-recipe-text fallback; unfinished preparation never appears as a $0 runnable estimate.
 
+Finished recipes have a **Delete from computer** button in **My articles**. It shows the space to free, then permanently removes the recipe's local files after confirmation. Shared source photos are protected.
+
 See [setup, scan controls, backups, and diagnostics](docs/recipe-intelligence.md).
 Use **Start a recipe** for a URL or uploaded photographs. See the
 [writing and reference-photo workflow](docs/recipe-reference-workflow.md) for

@@ -80,9 +80,9 @@ export function discoverPhotos(html: string, pageUrl: string) {
 
 export class ImportStore {
   constructor(public store: IntelligenceStore) {}
-  get(id: string): any { const row = this.store.db.prepare("SELECT * FROM recipe_imports WHERE id=?").get(id) as any; if (!row) throw new Error("Import not found."); return row; }
+  get(id: string): any { const row = this.store.db.prepare("SELECT * FROM recipe_imports WHERE id=? AND status<>'deleted'").get(id) as any; if (!row) throw new Error("Import not found. It may have been deleted."); return row; }
   detail(id: string) { const row = this.get(id); return { ...row, error: row.error ? preparationError(row.error) : null, recipe: row.recipe_json ? JSON.parse(row.recipe_json) : null, photos: this.store.db.prepare("SELECT id,source_url,name,position,caption,state,selected,width,height,mime_type,error FROM reference_photos WHERE import_id=? ORDER BY position").all(id) }; }
-  list() { return this.store.db.prepare("SELECT id,title,url,kind,status,error,selection_confirmed,revision FROM recipe_imports ORDER BY created_at DESC LIMIT 100").all(); }
+  list() { return this.store.db.prepare("SELECT id,title,url,kind,status,error,selection_confirmed,revision FROM recipe_imports WHERE status<>'deleted' ORDER BY created_at DESC LIMIT 100").all(); }
   create(url?: string) { const normalized = url ? publicUrl(normalizeUrl(url)).href : null; const id = randomUUID(); this.store.db.prepare("INSERT INTO recipe_imports(id,kind,url,title,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").run(id, normalized ? "url" : "upload", normalized, normalized || "Uploaded photographs", normalized ? "queued" : "ready", now(), now()); return this.detail(id); }
   createFromText(url: string, text: string) {
     const recipe = recipeFromText(url, text);

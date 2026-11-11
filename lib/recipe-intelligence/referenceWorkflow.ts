@@ -26,7 +26,7 @@ export function prepareImportEstimate(b: BatchStore, importId: string, input: Pa
     else if (!imported.selection_confirmed) imports.select(importId, usable.map((p: any) => p.id));
   }
   // A repeated estimate request reuses the same unpaid draft instead of creating duplicates.
-  const candidates = b.store.db.prepare("SELECT DISTINCT b.id,b.settings_json FROM content_batches b JOIN content_items i ON i.batch_id=b.id WHERE i.import_id=? AND b.approved_at IS NULL AND b.status='awaiting_cost_approval'").all(importId) as any[];
+  const candidates = b.store.db.prepare("SELECT DISTINCT b.id,b.settings_json FROM content_batches b JOIN content_items i ON i.batch_id=b.id WHERE i.import_id=? AND i.state NOT IN ('deleted','deleting','delete_failed') AND b.approved_at IS NULL AND b.status='awaiting_cost_approval'").all(importId) as any[];
   const existing = candidates.find(c => JSON.stringify(validateContentSettings(JSON.parse(c.settings_json))) === JSON.stringify(settings));
   const batch = existing ? prepareReferenceBatch(b, existing.id) : b.create([{ importId }], settings);
   if (batch.quote.pending || !batch.quote.lines.length) throw new Error(batch.items.find((i: any) => i.error)?.error || "Choose at least one image, or select article only.");
@@ -52,6 +52,8 @@ export function createReferenceBatch(b: BatchStore, selections: Selection[], inp
   b.store.db.transaction(() => {
     b.store.db.prepare("INSERT INTO content_batches(id,created_at,status,settings_json,quote_json) VALUES(?,?,'awaiting_cost_approval',?,?)").run(id, now(), JSON.stringify(settings), JSON.stringify({ createdAt: now(), lines: [], estimated: 0, recommendedLimit: 0, pending: choices.length }));
     for (const c of choices) {
+      // A source can be deleted while choices are prepared outside this lock.
+      imports.get(c.imported.id);
       const itemId = randomUUID();
       b.store.db.prepare("INSERT INTO content_items(id,batch_id,recipe_id,import_id,basis,independent_research,state,source_json,research_json) VALUES(?,?,?,?,?,?,'preparing',?,?)").run(itemId, id, c.recipeId || null, c.imported.id, c.basis, Number(c.independentResearch === true), c.source ? JSON.stringify(c.source) : null, JSON.stringify((c.alternativeUrls || []).slice(0, 5).map(url => ({ url, recipe: null }))));
     }
@@ -62,7 +64,7 @@ export function prepareReferenceBatch(b: BatchStore, id: string) {
   const batch = b.get(id), settings: ContentSettings = JSON.parse(batch.settings_json); const db = b.store.db;
   if (settings.imageWorkflow !== "reference" && !(db.prepare("SELECT 1 FROM content_items WHERE batch_id=? AND import_id IS NOT NULL").get(id))) return;
   const lines: any[] = []; let pending = 0; let changed = false;
-  for (const item of db.prepare("SELECT * FROM content_items WHERE batch_id=?").all(id) as any[]) {
+  for (const item of db.prepare("SELECT * FROM content_items WHERE batch_id=? AND state NOT IN ('deleted','deleting','delete_failed')").all(id) as any[]) {
     const config = item.config_json ? JSON.parse(item.config_json) : null;
     const hasCalls = !!db.prepare("SELECT 1 FROM api_calls WHERE stage_id IN (SELECT id FROM content_stages WHERE item_id=?)").get(item.id);
     if (config && !["preparing", "photo_selection"].includes(item.state) && (hasCalls || config.importRevision === new ImportStore(b.store).get(item.import_id).revision)) { lines.push(...config.lines); continue; }
@@ -105,7 +107,7 @@ export function prepareReferenceBatch(b: BatchStore, id: string) {
   return b.detail(id);
 }
 export function validateReferenceApproval(b: BatchStore, id: string) {
-  const items = b.store.db.prepare("SELECT * FROM content_items WHERE batch_id=?").all(id) as any[];
+  const items = b.store.db.prepare("SELECT * FROM content_items WHERE batch_id=? AND state NOT IN ('deleted','deleting','delete_failed')").all(id) as any[];
   if (!items.some(i => i.config_json)) throw new Error(items.find(i => i.error)?.error || "The recipe is still being prepared. Wait for the estimate before generating.");
   for (const item of items) if (item.config_json && ["queued", "awaiting_item_approval"].includes(item.state) && !b.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id IN (SELECT id FROM content_stages WHERE item_id=?)").get(item.id)) {
     if (JSON.parse(item.config_json).importRevision !== new ImportStore(b.store).get(item.import_id).revision) throw new Error("Photo selection changed. Refresh the estimate before approving.");

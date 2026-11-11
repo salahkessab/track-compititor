@@ -75,6 +75,12 @@ The root contains `database`, `reports`, `research`, `articles`, `images`, `expo
 
 Writes use temporary files and atomic renames. Downloads verify checksums. SQLite uses foreign keys, WAL, short transactions, and backups before schema upgrades. Settings includes backup and integrity controls. Keep the live database on a local drive; copy completed backups for off-device storage.
 
+## Free disk space after generation
+
+In **My articles**, open a finished recipe and choose **Delete from computer**. The confirmation shows the space it will free. **Delete permanently** removes that recipe from the library and deletes its articles, generated images, all older versions, saved generation requests/responses, and unused imported originals from the selected storage folder. This cannot be undone; download anything you want to keep first.
+
+Original photos still used by another saved recipe are kept until its last generation is deleted. Separate downloads, backups, tracked-site history and WordPress uploads are not removed. A small billing record remains so deletion cannot erase recorded or uncertain charges. Active generation cannot be deleted; cancel pending work or wait for it to finish. If a file is locked, close it and use **Retry deletion**; this never restarts generation.
+
 ## Source and runtime limits
 
 Public requests serialize per domain with at least two seconds spacing, at most three concurrent requests, and stricter robots delays when advertised. Requests validate public DNS results and redirects and enforce time, size, and decompression limits. XML external entities and DTDs are rejected. Pagination/redirect loops record errors. Login, CAPTCHA, paywall, and anti-bot restrictions are not bypassed.

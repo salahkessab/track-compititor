@@ -78,6 +78,14 @@ test('reports and batches share local authorization; downloads have sandboxed pr
   const preview = await request(`artifacts/${file.id}?preview=1`); assert.equal(preview.status, 200); assert.match(preview.headers.get('content-security-policy'), /sandbox; default-src 'none'/);
   assert.equal((await request(`artifacts/${file.id}`, 'GET', undefined, { 'X-RI-Key': '' })).status, 401);
   assert.equal((await request('reports', 'POST', { siteIds: [site.id], from: 'today', to: 'tomorrow' })).status, 400);
+  store.db.prepare("UPDATE content_items SET state='completed' WHERE id=?").run(item.id);
+  assert.equal((await request(`items/${item.id}`, 'DELETE', { confirmed: true }, { 'X-RI-Key': '' })).status, 401);
+  assert.equal((await request(`items/${item.id}`, 'DELETE', { confirmed: true }, { Origin: 'https://other.example' })).status, 403);
+  assert.equal((await request(`items/${item.id}`, 'DELETE', { confirmed: true }, { 'X-Recipe-Intelligence': '' })).status, 403);
+  assert.equal((await request(`items/${item.id}`, 'DELETE', {})).status, 400);
+  assert.ok((await (await request(`items/${item.id}/delete-preview`)).json()).bytes > 0);
+  assert.equal((await (await request(`items/${item.id}`, 'DELETE', { confirmed: true })).json()).deleted, true);
+  assert.equal((await request(`artifacts/${file.id}`)).status, 400);
 });
 
 test('import upload, originals, selection and ZIP APIs retain local authentication and make no paid preparation calls', async t => {
