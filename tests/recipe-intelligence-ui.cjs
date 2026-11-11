@@ -65,7 +65,7 @@ test('Start a recipe shows four photos unchecked and saves only selected photos 
   const calls=[]; const imported={id:'import-ui',kind:'url',status:'ready',title:'Chili',revision:1,selection_confirmed:0,photos:Array.from({length:4},(_,i)=>({id:'p'+i,position:i,name:'Photo '+i,state:'ready',selected:0,width:1024,height:1536}))};
   const snapshot={sites:[],runs:[],worker:{online:true},settings:{root:'C:\\Recipes',timezone:'Africa/Casablanca'},contentSettings:DEFAULT_CONTENT_SETTINGS,imports:[imported],batches:[],reports:[]};
   const batch={id:'batch-ui',settings:DEFAULT_CONTENT_SETTINGS,status:'awaiting_cost_approval',created_at:'2026-11-10T12:00:00Z',limit_usd:0,quote:{createdAt:'ui-quote',estimated:.2,recommendedLimit:1,lines:[]},budget:{actual:0,held:0,uncertain:0},items:[],calls:[]};
-  const fetcher=async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json(snapshot);if(url.endsWith('/imports/import-ui'))return Response.json(imported);if(url.endsWith('/imports/import-ui/selection')){const {photoIds}=JSON.parse(init.body); imported.photos.forEach(p=>p.selected=Number(photoIds.includes(p.id)));imported.revision++;imported.selection_confirmed=1;return Response.json(imported);}if(url.endsWith('/batches')&&init.method==='POST'){batch.settings=JSON.parse(init.body).settings;return Response.json(batch);}if(url.endsWith('/batches/batch-ui'))return Response.json(batch);throw new Error('Unexpected '+url);};
+  const fetcher=async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json(snapshot);if(url.endsWith('/imports/import-ui'))return Response.json(imported);if(url.endsWith('/imports/import-ui/selection')){const {photoIds}=JSON.parse(init.body); imported.photos.forEach(p=>p.selected=Number(photoIds.includes(p.id)));imported.revision++;imported.selection_confirmed=1;return Response.json(imported);}if(url.endsWith('/imports/import-ui/estimate')&&init.method==='POST'){batch.settings=JSON.parse(init.body).settings;return Response.json(batch);}if(url.endsWith('/batches/batch-ui'))return Response.json(batch);throw new Error('Unexpected '+url);};
   const {root,Component,click}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=start');
   await React.act(async()=>root.render(React.createElement(Component,{active:true})));
   assert.match(document.body.textContent,/Start a recipe/);
@@ -78,14 +78,15 @@ test('Start a recipe shows four photos unchecked and saves only selected photos 
   assert.equal(advanced.open, false);
   const modes = [...document.querySelectorAll('select')].find(s => s.closest('label')?.textContent.startsWith('Automation'));
   assert.deepEqual([...modes.options].map(o => o.value), ['full', 'before_articles', 'before_images']);
-  assert.ok(!modes.closest('details'));
+  assert.equal(modes.closest('details').querySelector('summary').textContent, 'Article and image options');
+  assert.equal(modes.closest('details').open, false);
   await click('Photo colors');
   assert.match(document.body.textContent,/Cookware or bowl color/);assert.match(document.body.textContent,/Spoon or utensil color/);await click('Reset photo palette');
   const color=label=>[...document.querySelectorAll('input[type=color]')].find(e=>e.parentElement.textContent.startsWith(label));
   const setColor=async(label,value)=>{const control=color(label);assert.ok(control);await React.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(control,value);control.dispatchEvent(new window.Event('input',{bubbles:true}));control.dispatchEvent(new window.Event('change',{bubbles:true}));});};
   assert.equal(color('Spoon or utensil color').value,'#5c3a2e');
   await setColor('Spoon or utensil color','#3a705e');await setColor('Cookware or bowl color','#112233');await setColor('Surrounding surface color','#ccbbaa');
-  await click('Prepare job estimate');const creation=calls.find(c=>c.url.endsWith('/batches')&&c.init.method==='POST');
+  await click('Prepare job estimate');const creation=calls.find(c=>c.url.endsWith('/imports/import-ui/estimate')&&c.init.method==='POST');
   assert.deepEqual(JSON.parse(creation.init.body).settings.palette,{cookware:'#112233',surface:'#ccbbaa',utensil:'#3a705e'});
   assert.ok(calls.every(c=>!c.url.includes('/approve')&&!c.url.includes('openai.com')));
 });
@@ -101,13 +102,13 @@ test('launcher session is established and removed from the URL; archive waits fo
     if (url.endsWith('/snapshot')) return Response.json({ sites: archived ? [] : [site], runs: [], worker: { online: true }, settings: { root: 'C:\\Selected recipe folder', timezone: 'Africa/Casablanca' } });
     throw new Error(`Unexpected request ${url}`);
   };
-  const { root, Component, click } = await ui(t, fetcher, 'http://127.0.0.1:34567/?tab=recipe-intelligence#ri-token=test-session');
+  const { root, Component, click } = await ui(t, fetcher, 'http://127.0.0.1:34567/?tab=recipe-intelligence&view=websites#ri-token=test-session');
   await React.act(async () => root.render(React.createElement(Component, { active: true })));
   assert.equal(window.location.hash, '');
   assert.equal(calls.find(call => call.url.endsWith('/session')).init.headers['X-RI-Key'], 'test-session');
   assert.ok(document.body.textContent.includes(`${(3000).toLocaleString()} discovered URLs`));
   assert.match(document.body.textContent, /Find recipes to choose a publication date/);
-  assert.deepEqual([...document.querySelectorAll('nav[aria-label="Recipe Intelligence navigation"] a')].map(a => a.textContent), ['Tracked websites', 'Find recipes', 'My articles', 'Use a recipe URL', 'Settings']);
+  assert.deepEqual([...document.querySelectorAll('nav[aria-label="Recipe Intelligence navigation"] a')].map(a => a.textContent), ['Use a recipe URL', 'My articles', 'Tracked websites', 'Find recipes', 'Settings']);
   assert.ok(![...document.querySelectorAll('button')].some(b => b.textContent === 'Refresh'));
   await click('Website details and actions');
   await click('Remove'); assert.ok(document.querySelector('[role="dialog"]'));
@@ -122,7 +123,7 @@ test('report selection preserves per-recipe basis and presents a concrete batch 
   const settings = require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
   const calls = []; let batchCreated = false, approved = false;
   const report = { id: 'r1', title: '2020-01-01 to 2020-01-03', status: 'running', processing: 'Processing available sources', matches: 1, stats: { processed: 1, remaining: 99, errors: 0 }, coverage: ['Incomplete coverage'], errors: [], rows: [{ id: 1, title: 'Carrot soup', canonical_url: 'https://food.example/soup', publication: { raw: '2020-01-02', precision: 'date' }, verification_reason: 'Recipe publication evidence', site_name: 'Food' }] };
-  const batch = { id: 'b1', settings, status: 'awaiting_cost_approval', created_at: '2026-11-10T12:00:00Z', limit_usd: 0, quote: { createdAt: 'quote-v1', estimated: .2, recommendedLimit: 1, explanation: 'No paid work before approval.', lines: [] }, budget: { actual: 0, held: 0, uncertain: 0 }, items: [], calls: [] };
+  const batch = { id: 'b1', settings, status: 'awaiting_cost_approval', created_at: '2026-11-10T12:00:00Z', limit_usd: 0, quote: { createdAt: 'quote-v1', estimated: .2, recommendedLimit: 1, explanation: 'No paid work before approval.', lines: [{kind:'article',estimated:.2,reservation:1}] }, budget: { actual: 0, held: 0, uncertain: 0 }, items: [], calls: [] };
   const fetcher = async (url, init = {}) => {
     calls.push({ url, init });
     if (url.endsWith('/capabilities')) return Response.json({ enabled: true });
@@ -148,9 +149,9 @@ test('report selection preserves per-recipe basis and presents a concrete batch 
   await click('Prepare batch estimate');
   const payload = JSON.parse(calls.find(c => c.url.endsWith('/batches') && c.init.method === 'POST').init.body);
   assert.equal(payload.selections[0].basis, 'best_complete'); assert.equal(payload.settings.mode, 'full'); assert.equal(approved, false);
-  assert.equal(payload.settings.articleFormat, 'blog_1000_1200_v1');
+  assert.equal(payload.settings.articleFormat, 'master_recipe_v1');
   assert.equal(payload.settings.textModel, 'gpt-5.5');
-  assert.match(document.body.textContent, /Estimated total/); await click('Approve $1.0000 limit'); assert.equal(approved, true);
+  assert.match(document.body.textContent, /Estimated total/); await click('Generate article + images'); assert.equal(approved, true);
   const costApproval = JSON.parse(calls.find(c => c.url.endsWith('/approve')).init.body); assert.equal(costApproval.limit, 1); assert.equal(costApproval.quoteVersion, 'quote-v1');
 });
 
@@ -159,7 +160,7 @@ test('WordPress copy retains heading and list formatting without copying schema 
   const calls = []; const copied = [];
   const created = '2026-11-10T12:00:00Z';
   const item = { id: 'i1', title: 'Carrot soup', state: 'completed', basis: 'original', warnings: [], stages: [], article: { wordCount: 1100, format: 'blog_1000_1200_v1' }, files: [{ id: 'html-1', name: 'article.html', media_type: 'text/html' }, { id: 'text-1', name: 'article.txt', media_type: 'text/plain' }] };
-  const batch = { id: 'b1', settings, status: 'completed', created_at: created, approved_at: created, limit_usd: 1, quote: { estimated: .1, recommendedLimit: 1, explanation: '', lines: [] }, budget: { actual: .01, held: 0, uncertain: 0 }, items: [item], calls: [] };
+  const batch = { id: 'b1', settings, status: 'completed', created_at: created, approved_at: created, limit_usd: 1, quote: { estimated: .1, recommendedLimit: 1, explanation: '', lines: [{kind:'article',estimated:.1,reservation:1}] }, budget: { actual: .01, held: 0, uncertain: 0 }, items: [item], calls: [] };
   const html = '<!doctype html><html><body><article><h1><strong>Carrot soup</strong></h1><h2><strong>Introduction</strong></h2><p>Warm carrot soup.</p><h2><strong>How to make carrot soup</strong></h2><ol><li>Simmer the carrots.</li></ol></article><script type="application/ld+json">{"@type":"Recipe"}</script></body></html>';
   const plain = 'Carrot soup\n\nIntroduction\n\nWarm carrot soup.\n\nHow to make carrot soup\n\n1. Simmer the carrots.\n';
   const fetcher = async (url, init = {}) => {
@@ -202,7 +203,7 @@ test('date shortcuts use the reporting day without starting scans or paid work',
   globalThis.Date = class extends NativeDate { constructor(...args) { super(...(args.length ? args : ['2026-11-09T23:30:00Z'])); } static now() { return new NativeDate('2026-11-09T23:30:00Z').getTime(); } };
   t.after(() => { globalThis.Date = NativeDate; });
   const calls = [];
-  const snapshot = { sites: [{ id: 'active', name: 'Active site', status: 'active', urls: 1 }, { id: 'paused', name: 'Paused site', status: 'paused', urls: 1 }], runs: [], worker: { online: true }, settings: { root: 'C:\\Recipes', timezone: 'Africa/Casablanca' }, contentSettings: settings, reports: [] };
+  const snapshot = { sites: [{ id: 'active', name: 'Active site', status: 'active', urls: 1 }, { id: 'paused', name: 'Paused site', status: 'paused', urls: 1 }], runs: [], worker: { online: true }, settings: { root: 'C:\\Recipes', timezone: 'Etc/GMT-1' }, contentSettings: settings, reports: [] };
   const { root, Component, click } = await ui(t, async (url, init = {}) => { calls.push({ url, init }); if (url.endsWith('/capabilities')) return Response.json({ enabled: true }); if (url.endsWith('/snapshot')) return Response.json(snapshot); throw new Error('Unexpected request: ' + url); }, 'http://127.0.0.1:34567/?tab=recipe-intelligence&view=reports');
   await React.act(async () => root.render(React.createElement(Component, { active: true })));
   const range = () => [...document.querySelectorAll('input[type=date]')].map(e => e.value);
@@ -248,4 +249,49 @@ test('results prioritize article actions, show edited photos only, and keep fail
   assert.match(document.body.textContent, /This request will not repeat automatically/);
   await click('Retry Edit photo 2');
   assert.deepEqual(calls.filter(c => c.init.method === 'POST').map(c => ({ url: c.url, body: JSON.parse(c.init.body) })), [{ url: '/api/recipe-intelligence/items/i-gallery/retry', body: { kind: 'photo:p2' } }]);
+});
+
+
+test('a saved blocked recipe shows its source error instead of a zero-price Generate action', async t => {
+  const { DEFAULT_CONTENT_SETTINGS } = require('../.intelligence-build/lib/recipe-intelligence/settings.js');
+  const item={id:'blocked-item',title:'Blocked recipe',import_id:'blocked-import',state:'photo_selection',error:'This website blocks automatic access. Paste the recipe text below or use another recipe URL.',source:null,warnings:[],stages:[],files:[],photos:[]};
+  const batch={id:'blocked-batch',status:'awaiting_cost_approval',settings:DEFAULT_CONTENT_SETTINGS,quote:{estimated:0,recommendedLimit:0,pending:1,lines:[]},budget:{actual:0,held:0,uncertain:0},items:[item],calls:[]};
+  const calls=[];
+  const {root,Component,select}=await ui(t,async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{root:'E:\\Recipes',timezone:'Africa/Casablanca'},contentSettings:DEFAULT_CONTENT_SETTINGS,batches:[{id:batch.id,title:item.title,created_at:'2026-11-11T12:00:00Z',count:1,status:batch.status}],imports:[]});if(url.endsWith('/batches/blocked-batch'))return Response.json(batch);if(url.endsWith('/imports/blocked-import'))return Response.json({id:'blocked-import',title:'Blocked recipe',status:'failed',error:item.error,revision:0,photos:[]});throw new Error(url);},'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  await select('Saved work',batch.id);
+  assert.match(document.body.textContent,/Not available yet/);
+  assert.match(document.body.textContent,/blocks automatic access/);
+  assert.equal(document.querySelector('[aria-label="Budget approval"]'),null);
+  assert.ok(![...document.querySelectorAll('button')].some(b=>/Generate article|Approve.*limit/.test(b.textContent)));
+  assert.ok(calls.every(c=>!c.url.includes('/approve')));
+});
+
+test('extension estimate link opens the selected draft with its spending limit without approving it',async t=>{
+  const {DEFAULT_CONTENT_SETTINGS}=require('../.intelligence-build/lib/recipe-intelligence/settings.js');
+  const id='d9913fb3-cfa3-4d08-9840-3efc042ce14a';
+  const batch={id,status:'awaiting_cost_approval',settings:DEFAULT_CONTENT_SETTINGS,quote:{estimated:.71,recommendedLimit:.9,pending:0,lines:[{kind:'article',estimated:.71}]},budget:{actual:0,held:0,uncertain:0},items:[],calls:[]};
+  const calls=[];
+  const {root,Component}=await ui(t,async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{root:'E:\\Recipes',timezone:'Africa/Casablanca'},contentSettings:DEFAULT_CONTENT_SETTINGS,batches:[{id,title:'Captured soup',created_at:'2026-11-11T12:00:00Z',count:1,status:batch.status}],imports:[]});if(url.endsWith(`/batches/${id}`))return Response.json(batch);throw new Error(url);},`http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches&batchId=${id}`);
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  assert.match(document.body.textContent,/\$0.7100/);
+  assert.ok([...document.querySelectorAll('button')].some(b=>/Generate article/.test(b.textContent)));
+  assert.ok(calls.every(c=>c.init.method!=='POST'));
+});
+
+test('uncertain article offers an explicit retry with the earlier charge reserved and no silent approval',async t=>{
+  const {DEFAULT_CONTENT_SETTINGS}=require('../.intelligence-build/lib/recipe-intelligence/settings.js');
+  const id='aac5fa0c-81eb-4ec1-919e-154051012ecd';
+  const item={id:'uncertain-item',title:'Saved soup',state:'failed',source:null,files:[],photos:[],warnings:[],stages:[{id:4,kind:'article',state:'uncertain',error:'Connection failed'}]};
+  const batch={id,status:'partial',approved_at:'2026-11-11T11:47:29Z',limit_usd:1.69,settings:DEFAULT_CONTENT_SETTINGS,quote:{estimated:.8266,recommendedLimit:1.69,pending:0,lines:[{kind:'article',estimated:.1}]},budget:{actual:0,held:.29375,uncertain:1,remaining:1.39625},items:[item],calls:[]};
+  const calls=[];
+  const {root,Component,click}=await ui(t,async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{root:'E:\\Recipes',timezone:'Africa/Casablanca'},contentSettings:DEFAULT_CONTENT_SETTINGS,batches:[{id,title:item.title,created_at:'2026-11-11T12:00:00Z',count:1,status:batch.status}],imports:[]});if(url.endsWith(`/batches/${id}`))return Response.json(batch);if(url.endsWith('/items/uncertain-item/retry'))return Response.json({queued:true});throw new Error(url);},`http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches&batchId=${id}`);
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  assert.match(document.body.textContent,/old charge stays unknown and reserved/);
+  assert.match(document.body.textContent,/\$1\.6900 limit/);assert.match(document.body.textContent,/\$1\.3962 remains available/);
+  assert.ok(calls.every(c=>c.init.method!=='POST'));
+  await click('Retry article (possible extra charge)');
+  const posts=calls.filter(c=>c.init.method==='POST');assert.equal(posts.length,1);
+  assert.deepEqual(JSON.parse(posts[0].init.body),{kind:'article',regenerate:true,retryUncertain:true});
+  assert.ok(calls.every(c=>!c.url.includes('/resolve')&&!c.url.includes('/approve')));
 });

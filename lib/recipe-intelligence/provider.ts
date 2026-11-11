@@ -1,5 +1,5 @@
 import { load } from "cheerio";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { estimateOpenAIImageOutput, openAIImageCostFromUsage } from "../imagePricing";
 import type { ContentSettings } from "./settings";
 import { writingModelProfile } from "./textModels";
@@ -16,17 +16,30 @@ export class ProviderFailure extends Error {
 }
 export type ProviderResult = { body: any; requestId: string | null };
 export interface ContentProvider {
-  request(operation: "text" | "image", payload: Record<string, any>, signal?: AbortSignal, acknowledged?: (requestId: string) => void): Promise<ProviderResult>;
+  request(operation: "text" | "image", payload: Record<string, any>, signal?: AbortSignal, acknowledged?: (requestId: string) => void, clientRequestId?: string): Promise<ProviderResult>;
+}
+const CERTIFICATE_ERRORS = new Set(["SELF_SIGNED_CERT_IN_CHAIN", "DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID", "ERR_TLS_CERT_ALTNAME_INVALID"]);
+function connectionFailure(error: unknown): ProviderFailure {
+  // Do not print arbitrary error messages: they can contain headers or keys.
+  const codes: string[] = [];
+  let current: any = error;
+  for (let depth = 0; current && depth < 5; depth++, current = current.cause) {
+    if (typeof current.code === "string") codes.push(current.code);
+  }
+  const certificate = codes.find(code => CERTIFICATE_ERRORS.has(code));
+  if (certificate) return new ProviderFailure(`Secure connection to OpenAI failed (${certificate}). The request was not sent. Restart the Windows launcher to use Windows' trusted certificates.`, true);
+  const network = codes.find(code => ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET", "UND_ERR_HEADERS_TIMEOUT"].includes(code));
+  return new ProviderFailure(`Connection to OpenAI failed${network ? ` (${network})` : ""}. The billing outcome is unknown; the request will not repeat automatically.`);
 }
 export class OpenAIContentProvider implements ContentProvider {
-  async request(operation: "text" | "image", payload: Record<string, any>, signal?: AbortSignal, acknowledged?: (requestId: string) => void): Promise<ProviderResult> {
+  async request(operation: "text" | "image", payload: Record<string, any>, signal?: AbortSignal, acknowledged?: (requestId: string) => void, clientRequestId: string = randomUUID()): Promise<ProviderResult> {
     const key = process.env.OPENAI_API_KEY;
     if (!key) throw new ProviderFailure("Configure OPENAI_API_KEY on the local server and restart the launcher.", true);
     const { references, ...parameters } = payload;
     if (references !== undefined && (operation !== "image" || !Array.isArray(references) || references.length < 1 || references.length > 5)) {
       throw new ProviderFailure("Image edits require one to five reference images.", true);
     }
-    const headers: Record<string, string> = { Authorization: `Bearer ${key}` };
+    const headers: Record<string, string> = { Authorization: `Bearer ${key}`, "X-Client-Request-Id": clientRequestId };
     let body: BodyInit;
     if (references) {
       // Send actual reference bytes to the edits endpoint. A URL or a prose
@@ -51,10 +64,13 @@ export class OpenAIContentProvider implements ContentProvider {
     }
     // Fetch, unlike the SDK, does not automatically retry requests that could have been billed.
     const endpoint = operation === "image" ? `images/${references ? "edits" : "generations"}` : "responses";
-    const response = await fetch(`https://api.openai.com/v1/${endpoint}`, {
-      method: "POST", headers, body,
-      signal: AbortSignal.any([AbortSignal.timeout(300_000), ...(signal ? [signal] : [])]),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`https://api.openai.com/v1/${endpoint}`, {
+        method: "POST", headers, body, redirect: "error",
+        signal: AbortSignal.any([AbortSignal.timeout(300_000), ...(signal ? [signal] : [])]),
+      });
+    } catch (error) { throw connectionFailure(error); }
     const requestId = response.headers.get("x-request-id");
     if (requestId) acknowledged?.(requestId);
     if (!response.ok) {

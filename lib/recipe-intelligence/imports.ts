@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { load } from "cheerio";
 import sharp from "sharp";
 import { IntelligenceStore } from "./database";
-import { extractArticle } from "./article";
+import { extractArticle, type RecipeSnapshot } from "./article";
 import { atomicWrite, digest } from "./artifacts";
 import { storagePath } from "./paths";
 import { publicUrl, normalizeUrl } from "./urls";
@@ -12,6 +12,28 @@ import type { DiscoveryFetcher } from "./types";
 export const MAX_PHOTOS = 80;
 export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const now = () => new Date().toISOString();
+export function preparationError(message: string): string {
+  if (/HTTP (403|401)|robots/i.test(message)) return "This website blocks automatic access. Paste the recipe text below or use another recipe URL. No generation has started.";
+  if (/HTTP 404/.test(message)) return "This recipe URL was not found. Check the link or paste the recipe text below.";
+  return message;
+}
+
+export function recipeFromText(url: string, text: string): RecipeSnapshot {
+  if (typeof text !== "string" || text.length > 12000) throw new Error("Paste a recipe of up to 12,000 characters.");
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const heading = (line: string) => line.replace(/^#+\s*/, "").replace(/:$/, "").trim();
+  const ingredientsAt = lines.findIndex(line => /^(ingredients(?: list)?|what you(?:'ll| will) need)$/i.test(heading(line)));
+  const methodAt = lines.findIndex((line, index) => index > ingredientsAt && /^(instructions|directions|method|steps|preparation)$/i.test(heading(line)));
+  if (ingredientsAt < 1 || methodAt <= ingredientsAt + 1) throw new Error("Include the recipe title, an Ingredients heading, and an Instructions heading in the pasted text.");
+  const end = lines.findIndex((line, index) => index > methodAt && /^(notes?|nutrition(?:al information)?|tips|storage|serving suggestions|faq|frequently asked questions)$/i.test(heading(line)));
+  const clean = (line: string) => line.replace(/^(?:[-*•]\s+|\d+[.)]\s+)/, "");
+  const ingredients = lines.slice(ingredientsAt + 1, methodAt).map(clean);
+  const instructions = lines.slice(methodAt + 1, end < 0 ? undefined : end).map(clean);
+  if (!instructions.length || ingredients.length > 200 || instructions.length > 200) throw new Error("Include the ingredients and cooking instructions in the pasted recipe.");
+  return { url: publicUrl(normalizeUrl(url)).href, title: heading(lines[0]).slice(0, 500), ingredients, instructions,
+    yield: "", prepTime: "", cookTime: "", totalTime: "", description: "", imageDescription: "", tips: [], storage: [], retrievedAt: now(),
+    evidenceVersion: 1, supportingEvidence: [], sourceNotes: ["Recipe text supplied by the user. The source page was not fetched."] };
+}
 export function discoverPhotos(html: string, pageUrl: string) {
   if (Buffer.byteLength(html) > 5_000_000) throw new Error("Article exceeds the discovery limit.");
   const $ = load(html); const candidates: { url: string; caption: string }[] = []; const title = $("h1").first().text().trim().toLowerCase();
@@ -59,9 +81,17 @@ export function discoverPhotos(html: string, pageUrl: string) {
 export class ImportStore {
   constructor(public store: IntelligenceStore) {}
   get(id: string): any { const row = this.store.db.prepare("SELECT * FROM recipe_imports WHERE id=?").get(id) as any; if (!row) throw new Error("Import not found."); return row; }
-  detail(id: string) { const row = this.get(id); return { ...row, recipe: row.recipe_json ? JSON.parse(row.recipe_json) : null, photos: this.store.db.prepare("SELECT id,source_url,name,position,caption,state,selected,width,height,mime_type,error FROM reference_photos WHERE import_id=? ORDER BY position").all(id) }; }
+  detail(id: string) { const row = this.get(id); return { ...row, error: row.error ? preparationError(row.error) : null, recipe: row.recipe_json ? JSON.parse(row.recipe_json) : null, photos: this.store.db.prepare("SELECT id,source_url,name,position,caption,state,selected,width,height,mime_type,error FROM reference_photos WHERE import_id=? ORDER BY position").all(id) }; }
   list() { return this.store.db.prepare("SELECT id,title,url,kind,status,error,selection_confirmed,revision FROM recipe_imports ORDER BY created_at DESC LIMIT 100").all(); }
   create(url?: string) { const normalized = url ? publicUrl(normalizeUrl(url)).href : null; const id = randomUUID(); this.store.db.prepare("INSERT INTO recipe_imports(id,kind,url,title,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").run(id, normalized ? "url" : "upload", normalized, normalized || "Uploaded photographs", normalized ? "queued" : "ready", now(), now()); return this.detail(id); }
+  createFromText(url: string, text: string) {
+    const recipe = recipeFromText(url, text);
+    return this.store.db.transaction(() => {
+      const row = this.create(recipe.url);
+      this.store.db.prepare("UPDATE recipe_imports SET status='ready',recipe_json=?,title=?,selection_confirmed=1,revision=1 WHERE id=?").run(JSON.stringify(recipe), recipe.title, row.id);
+      return this.detail(row.id);
+    }).immediate();
+  }
   select(id: string, ids: string[]) {
     const row = this.get(id); if (!["ready", "failed"].includes(row.status)) throw new Error("Wait for photo preparation to finish.");
     if (!Array.isArray(ids) || ids.length > MAX_PHOTOS || ids.some(x => typeof x !== "string")) throw new Error("Invalid photograph selection.");
@@ -70,7 +100,7 @@ export class ImportStore {
     this.store.db.transaction(() => { this.store.db.prepare("UPDATE reference_photos SET selected=0 WHERE import_id=?").run(id); for (const photo of new Set(ids)) this.store.db.prepare("UPDATE reference_photos SET selected=1 WHERE id=?").run(photo); this.store.db.prepare("UPDATE recipe_imports SET selection_confirmed=1,revision=revision+1,updated_at=? WHERE id=?").run(now(), id); }).immediate();
     return this.detail(id);
   }
-  applySelectionRule(id: string) { const photos = this.store.db.prepare("SELECT id FROM reference_photos WHERE import_id=? AND state='ready' ORDER BY position").all(id) as any[]; this.store.db.prepare("UPDATE reference_photos SET selected=? WHERE import_id=? AND state='ready'").run(Number(photos.length > 0 && photos.length <= 3), id); this.store.db.prepare("UPDATE recipe_imports SET selection_confirmed=?,revision=revision+1 WHERE id=?").run(Number(photos.length > 0 && photos.length <= 3), id); }
+  applySelectionRule(id: string) { const photos = this.store.db.prepare("SELECT id FROM reference_photos WHERE import_id=? AND state='ready' ORDER BY position").all(id) as any[]; this.store.db.prepare("UPDATE reference_photos SET selected=1 WHERE import_id=? AND state='ready'").run(id); this.store.db.prepare("UPDATE recipe_imports SET selection_confirmed=?,revision=revision+1 WHERE id=?").run(Number(photos.length > 0), id); }
   async add(id: string, bytes: Buffer, name: string, sourceUrl: string | null = null, caption = "", existingId?: string) {
     this.get(id); if (bytes.length > MAX_PHOTO_BYTES) throw new Error("Photographs must be at most 10 MB.");
     if (!existingId && (this.store.db.prepare("SELECT count(*) n FROM reference_photos WHERE import_id=?").get(id) as any).n >= MAX_PHOTOS) throw new Error("This recipe has reached the 80-photo preparation limit.");
@@ -93,7 +123,7 @@ export class ImportStore {
     const row = this.get(id);
     try {
       if (!row.recipe_json && !(this.store.db.prepare("SELECT 1 FROM reference_photos WHERE import_id=?").get(id))) {
-        const response = await fetcher.get(row.url, { signal }); if (response.status !== 200) throw new Error(`Source returned HTTP ${response.status}.`);
+        const response = await fetcher.get(row.url, { signal }); if (response.status !== 200) throw new Error(preparationError(`Source returned HTTP ${response.status}.`));
         const html = response.body.toString("utf8"); const extracted = extractArticle(html, response.url); const photos = discoverPhotos(html, response.url);
         this.store.db.transaction(() => {
           this.store.db.prepare("UPDATE recipe_imports SET recipe_json=?,title=?,url=? WHERE id=?").run(extracted.recipe ? JSON.stringify(extracted.recipe) : null, extracted.recipe?.title || row.url, response.url, id);

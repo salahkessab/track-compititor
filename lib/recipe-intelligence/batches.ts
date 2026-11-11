@@ -6,7 +6,7 @@ import { completeRecipe, extractArticle, type RecipeSnapshot } from "./article";
 import { ArtifactStore, atomicWrite, digest, validateArticle } from "./artifacts";
 import { storagePath } from "./paths";
 import { normalizeUrl } from "./urls";
-import { BLOG_PROMPT_VERSION, CONTENT_INSTRUCTIONS, HUMANIZER_VERSION, imagePayload, writingPayload } from "./prompts";
+import { CONTENT_INSTRUCTIONS, imagePayload, writingPayload, writingProfile } from "./prompts";
 import { actualCost, assertModelChecks, checkModels, outputText, PRICING_VERSION, ProviderFailure, stageEstimate, type ContentProvider } from "./provider";
 import { contentSettings, validateContentSettings, type Basis, type ContentSettings } from "./settings";
 import type { DiscoveryFetcher } from "./types";
@@ -71,7 +71,7 @@ export class BatchStore {
         return { recipeId: c.recipeId, kind, inputBytes, ...stageEstimate(kind, settings, inputBytes) };
       });
     });
-    const quote = { version: PRICING_VERSION, promptVersion: settings.articleFormat === "blog_1000_1200_v1" ? BLOG_PROMPT_VERSION : HUMANIZER_VERSION, createdAt: now(), currency: "USD", lines,
+    const quote = { version: PRICING_VERSION, promptVersion: writingProfile(settings.articleFormat), createdAt: now(), currency: "USD", lines,
       estimated: lines.reduce((s, l) => s + l.estimated, 0), recommendedLimit: Math.ceil(lines.reduce((s, l) => s + l.reservation, 0) * 100) / 100,
       explanation: "Estimate uses the saved source and request settings, with an allowance for the optional correction draft and unknown research results. It includes three images per recipe when enabled. Reservations are conservative scheduling allowances, not a provider-enforced per-call price cap. Image usage can vary. No automatic retry of an uncertain paid call." };
     return this.store.db.transaction(() => {
@@ -167,11 +167,20 @@ export class BatchStore {
       this.store.db.prepare("UPDATE content_items SET images_approved=1,review_kind=NULL WHERE id=?").run(id); if (settings.imageWorkflow === "reference") nextReferenceStage(this, item); else this.next(id, "featured");
     }
   }
-  retry(itemId: string, kind: string, regenerate = false) {
+  retry(itemId: string, kind: string, regenerate = false, retryUncertain = false) {
     const item = this.item(itemId); const stage = this.store.db.prepare("SELECT * FROM content_stages WHERE item_id=? AND kind=?").get(itemId, kind) as any;
     if (!stage || !["failed", "uncertain", "done"].includes(stage.state)) throw new Error("This stage is not eligible for a targeted retry.");
     if (kind === "correction" && item.correction_attempted) throw new Error("This article has already used its single optional correction attempt.");
-    if (this.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND state IN ('dispatched','uncertain')").get(stage.id)) throw new Error("Resolve this uncertain request against provider billing before retrying. Other recipes can continue.");
+    if (this.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND state='dispatched'").get(stage.id)) throw new Error("This request is still in progress. Wait before retrying.");
+    const uncertain = this.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND attempt=? AND state='uncertain'").get(stage.id, stage.attempt);
+    if (uncertain && !(retryUncertain && regenerate && kind === "article" && stage.state === "uncertain")) throw new Error("Resolve this uncertain request against provider billing before retrying, or explicitly retry the article with the old charge still reserved.");
+    if (retryUncertain && (!uncertain || !regenerate || kind !== "article" || stage.state !== "uncertain")) throw new Error("Only an uncertain article can use a retry with its charge retained.");
+    if (retryUncertain) {
+      const batch = this.get(item.batch_id);
+      if (!batch.approved_at || batch.status === "cancelled" || this.budget(batch.id).remaining <= 0) throw new Error("There is no remaining approved budget for another article request.");
+      // Deliberately leave the old call uncertain and its cost unknown. Its
+      // reservation continues to count against the original spending limit.
+    }
     if (stage.state === "done" && !regenerate && kind !== "save_article") {
       if (!IMAGE_STAGES.includes(kind) && !isPhotoStage(kind)) throw new Error("This stage already succeeded. Explicit regeneration approval is required to replace it.");
       if (!this.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND attempt=? AND response_path IS NOT NULL").get(stage.id, stage.attempt)) throw new Error("No saved image response is available for local repair. A replacement requires explicit regeneration.");
@@ -226,7 +235,7 @@ export class BatchStore {
       this.store.db.prepare("UPDATE api_calls SET state=? WHERE id=?").run(call.state === "reserved" ? "rejected" : "uncertain", call.id);
     }
     for (const stage of this.store.db.prepare("SELECT * FROM content_stages WHERE state='running'").all() as any[]) {
-      const uncertain = this.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND state='uncertain'").get(stage.id);
+      const uncertain = this.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND attempt=? AND state='uncertain'").get(stage.id, stage.attempt);
       this.stage(stage.item_id, stage.kind, uncertain ? "uncertain" : "queued", null, uncertain ? "Interrupted paid request; check provider billing before retrying." : null);
       this.store.db.prepare("UPDATE content_items SET state=?,error=? WHERE id=?").run(uncertain ? "failed" : "queued", uncertain ? "A paid request has an uncertain outcome." : null, stage.item_id);
       if (uncertain && isPhotoStage(stage.kind)) nextReferenceStage(this, this.item(stage.item_id));
@@ -253,7 +262,7 @@ export class BatchEngine {
     if (fs.existsSync(storagePath(this.batches.store.root, requestPath))) payload = JSON.parse(fs.readFileSync(storagePath(this.batches.store.root, requestPath), "utf8"));
     else atomicWrite(this.batches.store.root, requestPath, JSON.stringify(payload));
     const config = item.config_json ? JSON.parse(item.config_json) : {};
-    db.prepare("UPDATE content_stages SET request_path=?,profile_version=? WHERE id=?").run(requestPath, stage.kind.startsWith("photo:") ? config.photoProfile || PHOTO_PROFILE_VERSION : stage.kind.startsWith("analysis:") ? config.analysisProfile || ANALYSIS_PROFILE_VERSION : config.writingProfile || (settings.articleFormat === "blog_1000_1200_v1" ? BLOG_PROMPT_VERSION : HUMANIZER_VERSION), stage.id);
+    db.prepare("UPDATE content_stages SET request_path=?,profile_version=? WHERE id=?").run(requestPath, stage.kind.startsWith("photo:") ? config.photoProfile || PHOTO_PROFILE_VERSION : stage.kind.startsWith("analysis:") ? config.analysisProfile || ANALYSIS_PROFILE_VERSION : config.writingProfile || writingProfile(settings.articleFormat), stage.id);
     const requestHash = digest(JSON.stringify({ payload, attempt: stage.attempt }));
     const check = db.prepare("SELECT checked_at FROM model_checks WHERE model=?").get(payload.model) as any;
     if (!check || Date.now() - Date.parse(check.checked_at) > 24 * 3600000) await checkModels(this.batches.store, settings);
@@ -273,7 +282,7 @@ export class BatchEngine {
       db.prepare("UPDATE api_calls SET state='dispatched' WHERE id=?").run(call.id);
       const result = await this.provider.request(operation, payload, signal, providerId => {
         db.prepare("UPDATE api_calls SET provider_id=? WHERE id=?").run(providerId.slice(0, 200), call.id);
-      });
+      }, call.id);
       atomicWrite(this.batches.store.root, this.batches.receiptPath(call.id), JSON.stringify(result));
       this.batches.settle(call, result); return result.body;
     } catch (e) {
@@ -299,7 +308,7 @@ export class BatchEngine {
       else if (stage.kind === "source") {
         if (settings.output === "images_only") { done(); if (settings.mode === "before_images" && !item.images_approved) b.review(item.id, "images", "Review selected photographs before editing."); else nextImage(); return; }
         if (!source || (!completeRecipe(source) && item.basis === "original")) throw new Error("Essential ingredients or cooking method are missing. This recipe needs a complete source before writing.");
-        if (settings.articleFormat === "blog_1000_1200_v1" && source.evidenceVersion !== 1) {
+        if ((settings.articleFormat === "blog_1000_1200_v1" || settings.articleFormat === "master_recipe_v1") && source.evidenceVersion !== 1) {
           // Refresh optional guidance from the same original page, without
           // changing the captured ingredients, method or approval settings.
           try {
@@ -355,7 +364,7 @@ export class BatchEngine {
         if (Buffer.byteLength(payload.input) > 64000) throw new Error("Writing prompt exceeds the local limit.");
         const response = await this.paid(stage, item, settings, "text", payload, signal);
         const checked = validateArticle(JSON.parse(outputText(response)), source, settings.articleFormat || "compact_v1");
-        db.prepare("UPDATE content_items SET article_json=?,warnings_json=? WHERE id=?").run(JSON.stringify(checked.article), JSON.stringify([...new Set([...(source.sourceNotes || []), ...checked.warnings])]), item.id); done();
+        db.prepare("UPDATE content_items SET article_json=?,warnings_json=? WHERE id=?").run(JSON.stringify(checked.article), JSON.stringify([...new Set([...(source.sourceNotes || []), ...checked.warnings, ...(checked.article.editorialNotes || []).map(note => `Editorial note: ${note}`)])]), item.id); done();
         if (stage.kind === "article" && checked.warnings.length && settings.correction && !item.correction_attempted) b.next(item.id, "correction");
         else b.next(item.id, "save_article");
       } else if (stage.kind === "save_article") {
@@ -371,7 +380,7 @@ export class BatchEngine {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message.slice(0, 500) : "This stage failed.";
-      const uncertain = !!db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND state='uncertain'").get(stage.id);
+      const uncertain = !!db.prepare("SELECT 1 FROM api_calls WHERE stage_id=? AND attempt=? AND state='uncertain'").get(stage.id, stage.attempt);
       if (stage.kind === "correction" && item.article_json) {
         // Correction is advisory. Preserve the first article and its warning, even if this optional call failed.
         b.stage(item.id, stage.kind, uncertain ? "uncertain" : "failed", null, message);

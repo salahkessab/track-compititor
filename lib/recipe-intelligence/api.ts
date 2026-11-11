@@ -7,8 +7,10 @@ import { contentSettings, saveContentSettings, validateContentSettings } from ".
 import { checkModels } from "./provider";
 import { atomicWrite } from "./artifacts";
 import { ImportStore, MAX_PHOTO_BYTES } from "./imports";
-import { prepareReferenceBatch, reviewPhoto } from "./referenceWorkflow";
+import { prepareReferenceBatch, prepareImportEstimate, reviewPhoto } from "./referenceWorkflow";
 import { WordPressStore } from "./wordpress";
+import { beginBrowserCapture, finishBrowserCapture, MAX_CAPTURE_BYTES } from "./browserCapture";
+import { publicUrl } from "./urls";
 
 const state = globalThis as typeof globalThis & { recipeIntelligenceStores?: Map<string, Promise<IntelligenceStore>> };
 function enabled() { return process.env.RECIPE_INTELLIGENCE_LOCAL === "1" && !process.env.VERCEL && !!process.env.RECIPE_INTELLIGENCE_TOKEN; }
@@ -32,7 +34,7 @@ function trustedRequest(request: Request) {
   }
   return true;
 }
-async function body(request: Request): Promise<Record<string, any>> {
+async function body(request: Request, maximum = 16384): Promise<Record<string, any>> {
   if (!request.headers.get("content-type")?.startsWith("application/json")) throw new Error("Send JSON request data.");
   const reader = request.body?.getReader();
   if (!reader) return {};
@@ -40,7 +42,7 @@ async function body(request: Request): Promise<Record<string, any>> {
   try {
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
-      size += value.length; if (size > 16384) throw new Error("Request is too large."); chunks.push(value);
+      size += value.length; if (size > maximum) throw new Error("Request is too large."); chunks.push(value);
     }
   } finally { await reader.cancel().catch(() => {}); }
   const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
@@ -64,7 +66,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
   if (!enabled()) return segments[0] === "capabilities"
     ? json({ enabled: false, phase: 5 }) : json({ error: "Open Recipe Intelligence with the Windows local launcher." }, 503);
   if (!trustedRequest(request)) return json({ error: "Local origin check failed." }, 403);
-  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5 });
+  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1 });
   const token = process.env.RECIPE_INTELLIGENCE_TOKEN!;
   const cookie = (request.headers.get("cookie") || "").split(";").map(part => part.trim()).find(part => part.startsWith("ri_session="))?.slice(11) || "";
   if (segments[0] === "session" && request.method === "POST") {
@@ -84,16 +86,22 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "wordpress" && id && request.method === "DELETE") { await body(request); return json(wordpress.disconnect(id)); }
     if (area === "items" && id && child === "wordpress" && request.method === "GET") return json(wordpress.plan(id, url.searchParams.get("connectionId") || ""));
     if (area === "items" && id && child === "wordpress" && request.method === "POST") return json(await wordpress.upload(id, await body(request)));
-    if (area === "imports" && !id && request.method === "POST") { const data = await body(request); return json(imports.create(data.url), 202); }
+    if (area === "imports" && !id && request.method === "POST") { const data = await body(request); return json(data.text !== undefined ? imports.createFromText(data.url, data.text) : imports.create(data.url), 202); }
+    if (area === "imports" && id === "browser" && !child && request.method === "POST") return json(beginBrowserCapture(imports, await body(request, MAX_CAPTURE_BYTES)), 201);
+    if (area === "imports" && id && child === "browser-finish" && request.method === "POST") return json(finishBrowserCapture(imports, id, await body(request)));
+    if (area === "imports" && id && child === "estimate" && request.method === "POST") { const data = await body(request); return json(prepareImportEstimate(batches, id, data.settings || {})); }
     if (area === "imports" && id && !child && request.method === "GET") return json(imports.detail(id));
     if (area === "imports" && id && child === "selection" && request.method === "POST") { const data = await body(request); return json(imports.select(id, data.photoIds)); }
     if (area === "imports" && id && child === "retry" && request.method === "POST") { await body(request); const row = imports.get(id); if (row.kind !== "url" || row.status === "running") throw new Error("This import cannot be retried now."); database.db.prepare("UPDATE reference_photos SET state='pending',error=NULL WHERE import_id=? AND state='failed'").run(id); database.db.prepare("UPDATE recipe_imports SET status='queued',error=NULL WHERE id=?").run(id); return json({ queued: true }, 202); }
-    if (area === "imports" && id && child === "upload" && request.method === "POST") {
-      const imported = imports.get(id); if (!["ready", "failed"].includes(imported.status)) throw new Error("Wait for URL preparation before adding photos.");
+    if (area === "imports" && id && ["upload", "browser-photo"].includes(child) && request.method === "POST") {
+      const imported = imports.get(id);
+      if (child === "browser-photo" ? imported.kind !== "browser" || imported.status !== "capturing" : !["ready", "failed"].includes(imported.status)) throw new Error("This import is not accepting photographs now.");
+      const sourceUrl = child === "browser-photo" ? publicUrl(decodeURIComponent(request.headers.get("x-source-url") || "")).href : null;
+      const caption = child === "browser-photo" ? decodeURIComponent(request.headers.get("x-photo-caption") || "").slice(0, 1000) : "";
       if (!/^image\/(jpeg|png|webp)$/.test(request.headers.get("content-type") || "")) throw new Error("Upload JPEG, PNG or WebP.");
       const reader = request.body?.getReader(); if (!reader) throw new Error("Upload is empty."); const chunks: Uint8Array[] = []; let size = 0;
       try { while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > MAX_PHOTO_BYTES) throw new Error("Photograph exceeds 10 MB."); chunks.push(value); } } finally { await reader.cancel().catch(() => {}); }
-      await imports.add(id, Buffer.concat(chunks), request.headers.get("x-file-name") || "Uploaded photo"); return json(imports.detail(id), 201);
+      await imports.add(id, Buffer.concat(chunks), request.headers.get("x-file-name") || "Uploaded photo", sourceUrl, caption); return json(imports.detail(id), 201);
     }
     if (area === "references" && id && request.method === "GET") { const file = imports.read(id); return new Response(new Uint8Array(file.bytes), { headers: { "Content-Type": file.mime_type, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'" } }); }
     if (area === "batches" && id && child === "estimate" && request.method === "POST") { await body(request); return json(prepareReferenceBatch(batches, id)); }
@@ -126,7 +134,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "batches" && id && child === "approve" && request.method === "POST") { const data = await body(request); batches.approve(id, data.limit, data.quoteVersion); return json({ approved: true }); }
     if (area === "batches" && id && child === "action" && request.method === "POST") { const data = await body(request); batches.action(id, data.action); return json({ updated: true }); }
     if (area === "items" && id && child === "approve" && request.method === "POST") { const data = await body(request); batches.approveItem(id, data.sourceUrl); return json({ approved: true }); }
-    if (area === "items" && id && child === "retry" && request.method === "POST") { const data = await body(request); batches.retry(id, data.kind, data.regenerate === true); return json({ queued: true }, 202); }
+    if (area === "items" && id && child === "retry" && request.method === "POST") { const data = await body(request); batches.retry(id, data.kind, data.regenerate === true, data.retryUncertain === true); return json({ queued: true }, 202); }
     if (area === "calls" && id && child === "resolve" && request.method === "POST") { const data = await body(request); batches.resolveCall(id, data.cost, data.note); return json({ resolved: true }); }
     if (area === "artifacts" && id && request.method === "GET") {
       const file = batches.artifacts.read(id);

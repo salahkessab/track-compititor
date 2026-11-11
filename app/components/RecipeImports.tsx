@@ -17,7 +17,7 @@ export function ImportPhotos({ id, request, onChange }: { id: string; request: R
   const ready = data.photos.filter((p: any) => p.state === "ready");
   return <section className="space-y-4" aria-label="Photo selection"><div><h3 className="text-lg">{data.title}</h3><p className="text-sm text-[#a6acbd]">Preparation: {data.status}. {selected.length} selected of {ready.length} usable photographs.</p></div>
     {(error || data.error) && <p role="alert" className="text-red-200">{error || data.error}</p>}
-    <p className="text-sm text-[#a6acbd]">{ready.length > 3 ? "Choose the photos to edit, then save your selection. You can choose more than three." : "Available photos are selected for you. Uncheck any you do not want."} Originals are references only. You approve the cost before generation.</p>
+    <p className="text-sm text-[#a6acbd]">All usable photos are selected automatically. You can uncheck any you do not want. The estimate includes the selected images.</p>
     {!!ready.length && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{ready.map((p: any) => <label key={p.id} className={`space-y-2 rounded-xl border p-3 ${selected.includes(p.id) ? "border-[#deb589]" : "border-[#424a60]"}`}><img src={`/api/recipe-intelligence/references/${p.id}`} alt={p.caption || p.name} loading="lazy" className="h-48 w-full rounded-lg object-contain" /><span className="flex gap-2 text-sm"><input type="checkbox" checked={selected.includes(p.id)} onChange={e => setSelected(old => e.target.checked ? [...old, p.id] : old.filter(x => x !== p.id))} />Photo {p.position + 1}</span><span className="block text-xs text-[#a6acbd]">{p.width} × {p.height} · {p.caption?.slice(0, 140)}</span></label>)}</div>}
     {data.status === "ready" && !ready.length && <p>No usable photographs were found. Upload photos below, choose article only, or explicitly choose text-based images in the job options.</p>}
     <div className="flex flex-wrap items-center gap-3">
@@ -31,13 +31,47 @@ export function ImportPhotos({ id, request, onChange }: { id: string; request: R
 
 export function StartRecipe({ snapshot, settings, change, controls, request, created }: { snapshot: any; settings: ContentSettings; change: (s: ContentSettings) => void; controls: ReactNode; request: RequestFn; created: (b: any) => void }) {
   const [url, setUrl] = useState(""), [id, setId] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const [automatic, setAutomatic] = useState(false), [text, setText] = useState(""), [progress, setProgress] = useState("");
+  const estimateSettings = useRef(settings), onCreated = useRef(created);
+  onCreated.current = created;
+  useEffect(() => { const source = new URLSearchParams(window.location.search).get("source"); if (source) setUrl(source); }, []);
   const run = async (fn: () => Promise<void>) => { setBusy(true); setError(""); try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to prepare recipe."); } finally { setBusy(false); } };
-  return <div className="space-y-5"><section className={panel}><h2 className="text-xl">Start a recipe</h2><p className="text-sm text-[#a6acbd]">Paste a recipe link, choose its photos, then review the cost. Preparation is free.</p>
-    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); void run(async () => { const data = await request<any>("imports", "POST", { url }); setId(data.id); }); }}><label className="min-w-0 basis-64 flex-1">Recipe URL<input className={input} type="url" value={url} onChange={e => setUrl(e.target.value)} required placeholder="https://example.com/recipe/" /></label><button className={`${primary} self-end`} disabled={busy}>Prepare URL (free)</button></form>
-    <button className={button} disabled={busy} onClick={() => void run(async () => { const data = await request<any>("imports", "POST", {}); setId(data.id); change({ ...settings, output: "images_only", images: true, imageWorkflow: "reference" }); })}>Start with uploaded photographs</button>
-    {!!snapshot.imports?.length && <label className="block text-sm">Saved preparations<select className={input} value={id} onChange={e => setId(e.target.value)}><option value="">Choose a preparation</option>{snapshot.imports.map((i: any) => <option key={i.id} value={i.id}>{i.title} · {i.status}</option>)}</select></label>}
+  useEffect(() => {
+    if (!id || !automatic) return;
+    let cancelled = false; let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const data: any = await request(`imports/${id}`);
+        if (cancelled) return;
+        if (data.status === "failed") throw new Error(data.error || "Could not read this recipe. Try another URL or paste its text.");
+        if (data.status !== "ready") {
+          setProgress("Reading the recipe and preparing its images…"); timer = setTimeout(poll, 1500); return;
+        }
+        setProgress("Calculating your article and image estimate…");
+        const batch = await request(`imports/${id}/estimate`, "POST", { settings: estimateSettings.current });
+        if (!cancelled) { setAutomatic(false); setProgress(""); onCreated.current(batch); }
+      } catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : "Could not prepare the estimate."); setAutomatic(false); setProgress(""); } }
+    };
+    void poll(); return () => { cancelled = true; clearTimeout(timer); };
+  }, [id, automatic, request]);
+  const prepare = async (pasted = false) => {
+    estimateSettings.current = settings;
+    const data = await request<any>("imports", "POST", { url, ...(pasted ? { text } : {}) });
+    setId(data.id); setAutomatic(true); setProgress("Reading the recipe and preparing its images…");
+  };
+  return <div className="space-y-5"><section className={panel}><h2 className="text-xl">Start a recipe</h2><p className="text-sm text-[#a6acbd]">Paste a URL → see the cost → generate your article and images.</p>
+    <form className="flex flex-wrap gap-3" onSubmit={e => { e.preventDefault(); void run(() => prepare()); }}><label className="min-w-0 basis-64 flex-1">Recipe URL<input className={input} type="url" value={url} onChange={e => setUrl(e.target.value)} required disabled={busy || automatic} placeholder="https://example.com/recipe/" /></label><button className={`${primary} self-end`} disabled={busy || automatic}>{busy || automatic ? "Preparing…" : "Get estimate"}</button></form>
+    <p className="text-sm text-[#a6acbd]">The app reads the recipe and selects its images for you. Nothing is charged until you click Generate.</p>
+    {progress && <p role="status" className="text-sm text-[#deb589]">{progress}</p>}
     {error && <p role="alert" className="text-red-200">{error}</p>}
-  </section>{id && <section className={panel}><ImportPhotos id={id} request={request} /><div className="border-t border-[#424a60] pt-5">{controls}</div><button className={primary} disabled={busy} onClick={() => void run(async () => created(await request("batches", "POST", { selections: [{ importId: id }], settings })))}>Prepare job estimate</button><p className="text-xs text-[#a6acbd]">Save any edited photo selection first. A new estimate is required when selection or settings change.</p></section>}</div>;
+    <p className="text-sm text-[#a6acbd]">If a website blocks URL imports, open the recipe in Chrome and use the <strong>Recipe Intelligence Capture</strong> extension. It imports the readable article and photos, then opens your estimate here.</p>
+    <details className="rounded-xl border border-[#424a60]/70 p-4" open={!!error}><summary className="cursor-pointer text-sm">Website blocked? Paste the recipe instead</summary><form className="mt-4 space-y-3" onSubmit={e => { e.preventDefault(); void run(() => prepare(true)); }}><p className="text-sm text-[#a6acbd]">Keep its URL above. Paste the title, ingredients and instructions below. Without source photos, the estimate includes three new recipe images.</p><textarea aria-label="Recipe text" className={`${input} min-h-48`} value={text} onChange={e => setText(e.target.value)} maxLength={12000} placeholder={'Recipe title\n\nIngredients\n1 cup …\n\nInstructions\n1. …'} required /><button className={button} disabled={busy || automatic || !url || !text}>Estimate pasted recipe</button></form></details>
+    <details className="rounded-xl border border-[#424a60]/70 p-4"><summary className="cursor-pointer text-sm">Article and image options</summary><fieldset disabled={busy || automatic} className="mt-4">{controls}</fieldset></details>
+    <details className="rounded-xl border border-[#424a60]/70 p-4"><summary className="cursor-pointer text-sm">Uploaded photos and saved preparations</summary><div className="mt-4 space-y-4"><button className={button} disabled={busy || automatic} onClick={() => void run(async () => { const data = await request<any>("imports", "POST", {}); setId(data.id); change({ ...settings, output: "images_only", images: true, imageWorkflow: "reference" }); })}>Start with uploaded photographs</button>
+    {!!snapshot.imports?.length && <label className="block text-sm">Saved preparations<select className={input} disabled={busy || automatic} value={id} onChange={e => { setId(e.target.value); setError(""); }}><option value="">Choose a preparation</option>{snapshot.imports.map((i: any) => <option key={i.id} value={i.id}>{i.title} · {i.status}</option>)}</select></label>}
+    {id && !automatic && <><ImportPhotos id={id} request={request} /><button className={primary} disabled={busy} onClick={() => void run(async () => created(await request(`imports/${id}/estimate`, "POST", { settings })))}>Prepare job estimate</button></>}
+    </div></details>
+  </section></div>;
 }
 
 export function PhotoResults({ item, request, updated }: { item: any; request: RequestFn; updated: () => void }) {

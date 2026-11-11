@@ -6,7 +6,7 @@ import { storagePath } from "./paths";
 import { IntelligenceStore } from "./database";
 import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
-import { andText, articleDocument, validateBlog, type Article, type ArticleImage } from "./article-document";
+import { andText, articleDocument, publicationTitle, publicationTimes, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
 export type { Article } from "./article-document";
 
@@ -22,9 +22,11 @@ export function atomicWrite(root: string, relative: string, value: Buffer | stri
 export function validateArticle(raw: any, recipe: RecipeSnapshot, format: ArticleFormat = "compact_v1"): { article: Article; warnings: string[] } {
   const warnings: string[] = [];
   const text = (v: any, max: number) => typeof v === "string" ? v.replace(/<[^>]*>/g, "").trim().slice(0, max) : "";
-  const prose = (v: any, max: number) => { const value = text(v, max).replace(/[—–]/g, ", ").replace(/\*\*/g, ""); return format === "blog_1000_1200_v1" ? andText(value) : value; };
+  const prose = (v: any, max: number) => { const clean = text(v, max).replace(/\*\*/g, ""); const value = format === "master_recipe_v1" ? clean : clean.replace(/[—–]/g, ", "); return format === "blog_1000_1200_v1" ? andText(value) : value; };
   const list = (v: any) => Array.isArray(v) ? v.slice(0, 200).map(s => text(s, 12000)).filter(Boolean) : [];
   const article: Article = { seoTitle: prose(raw?.seoTitle, 160) || recipe.title, metaDescription: prose(raw?.metaDescription, 320), slug: text(raw?.slug, 160).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "recipe", introduction: prose(raw?.introduction, 12000), instructions: list(raw?.instructions), tips: [], storage: [], format };
+  // Optional on stored articles so earlier frozen writing requests remain readable.
+  if (format === "master_recipe_v1" && prose(raw?.articleTitle, 500)) article.articleTitle = prose(raw.articleTitle, 500);
   if (!article.introduction) warnings.push("Introduction is missing.");
   if (!article.metaDescription || article.metaDescription.length > 160) warnings.push("Meta description needs editorial review.");
   // The authoritative ingredients/card remain entirely outside model-authored fields.
@@ -49,19 +51,21 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
   article.tips = [...recipe.tips]; article.storage = [...recipe.storage];
   if (list(raw?.tips).length && !recipe.tips.length || list(raw?.storage).length && !recipe.storage.length) warnings.push("Unsupported tips or storage guidance were omitted.");
   if (article.seoTitle.length > 70) warnings.push("SEO title is longer than the suggested display length.");
-  if (format === "blog_1000_1200_v1") {
-    article.instructions = article.instructions.map(andText);
-    article.blog = validateBlog(raw?.blog, recipe, warnings);
+  if (format === "blog_1000_1200_v1" || format === "master_recipe_v1") {
+    if (format === "blog_1000_1200_v1") article.instructions = article.instructions.map(andText);
+    article.blog = validateBlog(raw?.blog, recipe, warnings, format);
+    if (format === "master_recipe_v1") article.editorialNotes = list(raw?.editorialNotes).slice(0, 10).map(note => text(note, 1500));
+    if (format === "master_recipe_v1" && recipe.cookTime && !publicationTimes(recipe).cookTime) article.editorialNotes!.push("The source lists zero cook time despite heated cooking steps. That inconsistent duration was omitted from the published card; no replacement time was invented.");
     const anecdote = /\b(?:my (?:family|grandmother|grandma|mother)|I (?:tested|grew up|remember|always make))\b/i;
     for (const key of ["introduction", "conclusion"] as const) {
       const value = key === "introduction" ? article.introduction : article.blog.conclusion;
       if (anecdote.test(value)) { warnings.push("An unsupported personal anecdote was omitted."); if (key === "introduction") article.introduction = ""; else article.blog.conclusion = ""; }
     }
     const focus = andText(recipe.title).toLowerCase();
-    if (!article.seoTitle.toLowerCase().includes(focus)) warnings.push("The SEO title should naturally include the recipe title as the focus keyword.");
-    if (!article.introduction.split(/\s+/).slice(0, 100).join(" ").toLowerCase().includes(focus)) warnings.push("Include the focus keyword naturally within the first 100 words.");
+    if (format === "blog_1000_1200_v1" && !article.seoTitle.toLowerCase().includes(focus)) warnings.push("The SEO title should naturally include the recipe title as the focus keyword.");
+    if (format === "blog_1000_1200_v1" && !article.introduction.split(/\s+/).slice(0, 100).join(" ").toLowerCase().includes(focus)) warnings.push("Include the focus keyword naturally within the first 100 words.");
     article.wordCount = articleDocument(article, recipe).wordCount;
-    if (article.wordCount < 1000 || article.wordCount > 1200) warnings.push(`Article is ${article.wordCount} words; aim for 1,000–1,200 with useful supported content, never filler.`);
+    if (format === "blog_1000_1200_v1" && (article.wordCount < 1000 || article.wordCount > 1200)) warnings.push(`Article is ${article.wordCount} words; aim for 1,000–1,200 with useful supported content, never filler.`);
   } else article.wordCount = articleDocument(article, recipe).wordCount;
   return { article, warnings: [...new Set(warnings)] };
 }
@@ -118,15 +122,17 @@ export class ArtifactStore {
       try { images.push({ kind: "reference", placement: analysis.placement || "gallery", stepIndex: analysis.stepIndex, caption: analysis.visibleFood, fileName: name, width: size.width || 1536, height: size.height || 864, dataUri: `data:image/jpeg;base64,${this.read(file.id).data.toString("base64")}` }); } catch { /* One damaged image must not prevent saving the article or other images. */ }
     }
     const document = articleDocument(article, recipe, images);
-    const recipeCard = { "@context": "https://schema.org", "@type": "Recipe", name: recipe.title, description: article.introduction,
+    const times = publicationTimes(recipe);
+    const recipeCard = { "@context": "https://schema.org", "@type": "Recipe", name: publicationTitle(article, recipe), description: article.format === "master_recipe_v1" ? article.metaDescription : article.introduction,
       recipeIngredient: [...recipe.ingredients], recipeInstructions: article.instructions.map(text => ({ "@type": "HowToStep", text })),
-      ...(recipe.yield ? { recipeYield: recipe.yield } : {}), ...(recipe.prepTime ? { prepTime: recipe.prepTime } : {}),
-      ...(recipe.cookTime ? { cookTime: recipe.cookTime } : {}), ...(recipe.totalTime ? { totalTime: recipe.totalTime } : {}),
-      ...(images.length ? { image: images.map(i => i.fileName) } : {}), isBasedOn: recipe.url };
+      ...(recipe.yield ? { recipeYield: recipe.yield } : {}), ...(times.prepTime ? { prepTime: times.prepTime } : {}),
+      ...(times.cookTime ? { cookTime: times.cookTime } : {}), ...(times.totalTime ? { totalTime: times.totalTime } : {}),
+      ...(images.length ? { image: images.map(i => i.fileName) } : {}) };
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(article.seoTitle)}</title><meta name="description" content="${escapeHtml(article.metaDescription)}"></head><body><article>${document.html}</article><script type="application/ld+json">${JSON.stringify(recipeCard).replace(/</g, "\\u003c")}</script></body></html>`;
     this.put(item, "article.html", html, "text/html"); this.put(item, "article.md", document.markdown, "text/markdown"); this.put(item, "article.txt", document.text, "text/plain");
-    this.put(item, "recipe.json", JSON.stringify({ authoritativeRecipe: recipe, recipeCard, draftJsonLd: true }, null, 2), "application/json");
+    this.put(item, "recipe.json", JSON.stringify({ recipeCard, draftJsonLd: true }, null, 2), "application/json");
     this.put(item, "seo.json", JSON.stringify({ title: article.seoTitle, description: article.metaDescription, slug: article.slug, wordCount: document.wordCount, articleFormat: article.format || "compact_v1" }, null, 2), "application/json");
+    if (article.format === "master_recipe_v1") this.put(item, "editorial-notes.txt", article.editorialNotes?.length ? article.editorialNotes.join("\n\n") + "\n" : "No unresolved editorial notes.\n", "text/plain");
     this.put(item, "source.json", JSON.stringify({ recipe, selectionReason: item.selection_reason }, null, 2), "application/json");
     this.put(item, "research-sources.json", item.research_json, "application/json"); this.manifest(item);
   }

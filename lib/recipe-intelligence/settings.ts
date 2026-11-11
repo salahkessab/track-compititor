@@ -3,7 +3,7 @@ import { IntelligenceStore } from "./database";
 import { writingModelProfile, type WritingModel } from "./textModels";
 export type Basis = "original" | "best_complete";
 export type Automation = "full" | "before_articles" | "before_images";
-export type ArticleFormat = "compact_v1" | "blog_1000_1200_v1";
+export type ArticleFormat = "compact_v1" | "blog_1000_1200_v1" | "master_recipe_v1";
 // Optional on stored v2 batches; new preparations always snapshot all three colors.
 export type PhotoPalette = { cookware: string; surface: string; utensil?: string };
 export const DEFAULT_PHOTO_PALETTE: PhotoPalette = { cookware: "#607D8B", surface: "#E5D6BF", utensil: "#5C3A2E" };
@@ -18,14 +18,14 @@ export type ContentSettings = {
 export const DEFAULT_CONTENT_SETTINGS: ContentSettings = {
   basis: "original", mode: "full", textModel: "gpt-5.5", imageModel: "gpt-image-2.6-sunburst",
   images: true, imageSettings: { ...DEFAULT_IMAGE_SETTINGS, size: "1536x864", quality: "high", background: "opaque", output_format: "png", moderation: "auto", partial_images: 0, complexity: "default" }, pinterestTitle: false, correction: true,
-  articleFormat: "blog_1000_1200_v1",
+  articleFormat: "master_recipe_v1",
   imageWorkflow: "reference", output: "article_images", palette: DEFAULT_PHOTO_PALETTE,
 };
 export function validateContentSettings(input: Partial<ContentSettings>): ContentSettings {
   const value = { ...DEFAULT_CONTENT_SETTINGS, ...input };
   if (!["original", "best_complete"].includes(value.basis) || !["full", "before_articles", "before_images"].includes(value.mode)) throw new Error("Invalid recipe basis or automation mode.");
   if (!writingModelProfile(value.textModel)) throw new Error("This writing model does not have a verified pricing profile.");
-  if (!["compact_v1", "blog_1000_1200_v1"].includes(value.articleFormat || "")) throw new Error("Choose a supported article style.");
+  if (!["compact_v1", "blog_1000_1200_v1", "master_recipe_v1"].includes(value.articleFormat || "")) throw new Error("Choose a supported article style.");
   if (!["reference", "legacy"].includes(value.imageWorkflow || "") || !["article_images", "article_only", "images_only"].includes(value.output || "")) throw new Error("Choose a supported content workflow.");
   const inputPalette = value.palette || DEFAULT_PHOTO_PALETTE;
   const palette = { ...inputPalette, utensil: inputPalette.utensil === undefined ? DEFAULT_PHOTO_PALETTE.utensil : inputPalette.utensil };

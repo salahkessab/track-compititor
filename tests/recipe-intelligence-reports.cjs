@@ -95,8 +95,9 @@ test('missing, invalid, timezone-free and conflicting original dates stay out of
   assert.equal(earlierFeed.status, 'uncertain'); assert.match(earlierFeed.reason, /Earlier feed/);
 });
 test('Casablanca reporting uses actual timezone boundaries and preserves date-only precision', () => {
-  assert.equal(dayInZone(parsePublication('2026-11-09T23:30:00Z'), 'Africa/Casablanca'), '2026-11-10');
-  assert.equal(dayInZone(parsePublication('2026-03-01T23:30:00Z'), 'Africa/Casablanca'), '2026-03-01');
+  // Historical winter/Ramadan dates keep this independent of future timezone rule updates.
+  assert.equal(dayInZone(parsePublication('2020-01-01T23:30:00Z'), 'Africa/Casablanca'), '2020-01-02');
+  assert.equal(dayInZone(parsePublication('2020-05-01T23:30:00Z'), 'Africa/Casablanca'), '2020-05-01');
   const day = parsePublication('2020-01-02'); assert.equal(day.precision, 'date'); assert.equal(day.utc, undefined);
   assert.equal(dayInZone(day, 'America/Los_Angeles'), '2020-01-02');
 });

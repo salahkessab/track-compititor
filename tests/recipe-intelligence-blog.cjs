@@ -34,9 +34,8 @@ function lengthFixture(source) {
   value.introduction += ' ' + Array.from({ length: 1100 - initial }, (_, i) => ['Warm', 'recipe', 'test', 'prose'][i % 4]).join(' ');
   return value;
 }
-test('blog is the default for new batches and its versioned prompt preserves the supplied writing brief', () => {
-  assert.equal(DEFAULT_CONTENT_SETTINGS.articleFormat, format);
-  assert.equal(validateContentSettings({}).articleFormat, format);
+test('legacy blog remains available with its original versioned writing brief', () => {
+  assert.equal(validateContentSettings({articleFormat:format}).articleFormat, format);
   assert.throws(() => validateContentSettings({ articleFormat: 'unknown' }), /article style/);
   const source = recipe(); const prompt = articlePrompt(source, undefined, format);
   for (const expected of ['1,000–1,200', 'Why make this recipe', 'Ingredients you’ll need', 'Prep and cook time', 'Tips and creative variations', 'Serving ideas', 'Storing and reheating', 'Pro tips for success', 'FAQs', 'Conclusion', 'first 100 words', 'and" instead of "&', 'do not', 'UNTRUSTED REFERENCE DATA', source.title]) assert.ok(prompt.toLowerCase().includes(expected.toLowerCase()), expected);

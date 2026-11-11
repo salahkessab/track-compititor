@@ -220,7 +220,11 @@ async function main(args = process.argv.slice(2)) {
     delete env.VERCEL;
     function startChild(args, name, childEnv, ipc = false) {
       const stream = fs.createWriteStream(path.join(instance.root, 'logs', name), { flags: 'a', mode: 0o600 }); outputStreams.add(stream);
-      const child = spawn(process.execPath, args, { cwd: repo, env: childEnv, windowsHide: true, stdio: ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'] });
+      // Windows HTTPS inspection certificates are installed in the OS trust
+      // store, not Node's bundled roots. Keep TLS verification enabled while
+      // using the same trusted certificate authorities as Windows browsers.
+      const nodeArgs = process.platform === 'win32' ? ['--use-system-ca', ...args] : args;
+      const child = spawn(process.execPath, nodeArgs, { cwd: repo, env: childEnv, windowsHide: true, stdio: ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'] });
       children.add(child); child.stdout.pipe(stream, { end: false }); child.stderr.pipe(stream, { end: false });
       child.on('error', error => { children.delete(child); startupFailure = new Error(`Could not start ${name}: ${error.message}`); log.write(`${startupFailure.message}\n`); void shutdown(); });
       child.on('exit', code => { children.delete(child); if (!stopping) { startupFailure = new Error(`${name} stopped unexpectedly (exit ${code}). Check the logs and launch again to resume pending work.`); log.write(`${startupFailure.message}\n`); void shutdown(); } });

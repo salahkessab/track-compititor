@@ -64,6 +64,7 @@ test('only finished image bytes are uploaded, reused after restart, and replaced
     assert.match(posts[i].contentType, /^multipart\/form-data; boundary=ri-/);
   }
   const ready = f.wp.plan(f.item.id, c.id); assert.equal(ready.ready, true);
+  assert.doesNotMatch(ready.html, /Recipe source|food\.example/);
   assert.match(ready.html, /https:\/\/first.example\/wp-content\/uploads/); assert.doesNotMatch(ready.html, /data:image|<script|reference only/i);
   assert.match(ready.html, /wp-image-\d/); assert.match(ready.html, /<h[12]>/); assert.match(ready.html, /<ol>/);
   const restarted = new WordPressStore(f.store, f.transport, secrets);

@@ -29,7 +29,7 @@ async function request<T>(route: string, method = "GET", data?: unknown, key?: s
 export function RecipeIntelligence({ active = false }: { active?: boolean }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [view, setView] = useState("websites");
+  const [view, setView] = useState("start");
   const [name, setName] = useState(""); const [url, setUrl] = useState("");
   const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
   const [historySite, setHistorySite] = useState(""); const [page, setPage] = useState(0);
@@ -80,7 +80,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
 
   useEffect(() => {
     if (!active) return;
-    const fromUrl = () => { const current = new URLSearchParams(window.location.search).get("view"); setView(["start", "websites", "reports", "batches", "settings"].includes(current || "") ? current! : "websites"); };
+    const fromUrl = () => { const current = new URLSearchParams(window.location.search).get("view"); setView(["start", "websites", "reports", "batches", "settings"].includes(current || "") ? current! : "start"); };
     fromUrl(); window.addEventListener("popstate", fromUrl); return () => window.removeEventListener("popstate", fromUrl);
   }, [active]);
 
@@ -120,10 +120,10 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
   return <section aria-label="Recipe Intelligence workspace" className="space-y-5">
     <div className="studio-panel rounded-[24px] border p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><h1 className="studio-title text-2xl">Recipe Intelligence</h1><p className="mt-2 max-w-2xl text-sm text-[#a6acbd]">Track websites, find recipes, and prepare your articles and images.</p></div>
+        <div><h1 className="studio-title text-2xl">Recipe Intelligence</h1><p className="mt-2 max-w-2xl text-sm text-[#a6acbd]">Paste a recipe URL, review the cost, and generate an article with images.</p></div>
       </div>
       {enabled && snapshot && <div className="mt-4 flex flex-wrap gap-4 text-sm text-[#a6acbd]">
-        <span>{snapshot.sites.length} / 10 websites</span><span>{snapshot.sites.reduce((sum, site) => sum + site.urls, 0).toLocaleString()} discovered URLs</span>
+        {["websites", "reports"].includes(view) && <><span>{snapshot.sites.length} / 10 websites</span><span>{snapshot.sites.reduce((sum, site) => sum + site.urls, 0).toLocaleString()} discovered URLs</span></>}
         <span className={snapshot.worker.online ? "text-emerald-300" : "text-amber-200"}>{snapshot.worker.online ? "Ready · updates automatically" : "Worker starting or offline · use the Windows launcher"}</span>
       </div>}
     </div>
@@ -133,7 +133,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
     {enabled === false && <div className="studio-panel rounded-2xl border p-6"><h2 className="text-lg">Open the local application</h2><p className="mt-2 text-sm text-[#a6acbd]">Double-click Start Recipe Intelligence on your Windows PC. The launcher lets you choose a storage folder and opens this workspace. Your hosted recipe tools remain available here.</p></div>}
     {enabled && snapshot && <>
       <nav aria-label="Recipe Intelligence navigation" className="flex flex-wrap gap-2">
-        {[["websites", "Tracked websites"], ["reports", "Find recipes"], ["batches", "My articles"], ["start", "Use a recipe URL"], ["settings", "Settings"]].map(([id, title]) => <a key={id} href={`/?tab=recipe-intelligence&view=${id}`} aria-current={view === id ? "page" : undefined}
+        {[["start", "Use a recipe URL"], ["batches", "My articles"], ["websites", "Tracked websites"], ["reports", "Find recipes"], ["settings", "Settings"]].map(([id, title]) => <a key={id} href={`/?tab=recipe-intelligence&view=${id}`} aria-current={view === id ? "page" : undefined}
           className={`${button} ${view === id ? "!border-[#d1a478] !text-[#deb589]" : ""}`} onClick={event => {
             if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
             event.preventDefault(); const target = new URL(window.location.href); target.searchParams.set("view", id); window.history.pushState(null, "", target); setView(id);

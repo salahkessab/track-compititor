@@ -52,11 +52,11 @@ test('responsive and lazy photos deduplicate while ads, portraits and unrelated 
  const source=`<h1>Soup</h1><script type="application/ld+json">${JSON.stringify({'@type':'Recipe',name:'Soup',image:'https://food.example/soup-300x200.jpg'})}</script><article><img srcset="/soup-300x200.jpg 300w, /soup-1200x800.jpg 1200w"><img data-lazy-src="/step.jpg"><div class="related-recipes"><img src="/other.jpg"></div><aside><img src="/ad.jpg"></aside><div class="author-box"><img src="/person.jpg"></div><a href="/different-recipe/"><img src="/another.jpg"></a><img width="20" height="20" src="/tiny.png"><img src="http://127.0.0.1/private.jpg"></article>`;
  assert.deepEqual(discoverPhotos(source,'https://food.example/soup/').map(p=>p.url),['https://food.example/soup-1200x800.jpg','https://food.example/step.jpg']);
 });
-test('three photos auto-select; a fourth clears selection; exact duplicate bytes do not count twice',async t=>{
+test('all usable photos auto-select, including a fourth; exact duplicate bytes do not count twice',async t=>{
  const f=await referenceFixture(t); const row=await f.upload(3);assert.equal(row.selection_confirmed,1); assert.equal(row.photos.filter(p=>p.selected).length,3);
  await f.imports.add(row.id,fs.readFileSync(path.join(directory,names[0]+'.jpg')),'same-photo.jpg'); assert.equal(f.imports.detail(row.id).photos.length,3);
- await f.imports.add(row.id,fs.readFileSync(path.join(directory,names[3]+'.jpg')),'fourth.jpg');const four=f.imports.detail(row.id);assert.equal(four.photos.filter(p=>p.selected).length,0);assert.equal(four.selection_confirmed,0);
- const b=f.batches.create([{importId:row.id}],f.settings); assert.equal(b.quote.lines.length,0);assert.equal(b.items[0].state,'photo_selection');assert.throws(()=>f.approve(b),/selection|preparation/);assert.equal(f.providerCalls.length,0);
+ await f.imports.add(row.id,fs.readFileSync(path.join(directory,names[3]+'.jpg')),'fourth.jpg');const four=f.imports.detail(row.id);assert.equal(four.photos.filter(p=>p.selected).length,4);assert.equal(four.selection_confirmed,1);
+ const b=f.batches.create([{importId:row.id}],f.settings); assert.equal(b.quote.lines.filter(l=>l.kind.startsWith('photo:')).length,4);assert.equal(b.quote.pending,0);assert.equal(f.providerCalls.length,0);
 });
 test('URL preparation is free, persistent and independent of historical publication verification',async t=>{
  const f=await referenceFixture(t);const row=f.imports.create('https://food.example/chili/');
@@ -84,18 +84,18 @@ test('palette, selection, prompt versions and analysis cache survive settings ch
  const count=f.providerCalls.length;f.batches.retry(item.id,'photo:'+row.photos[0].id);await f.drainBatch();assert.equal(f.providerCalls.length,count);
 });
 
-test('frozen v2 jobs keep their old instructions, prompt shape and two-color palette after the v3 update',async t=>{
+for (const version of [2,3]) test(`frozen v${version} jobs keep their instructions and prompt shape after the v4 update`,async t=>{
  const f=await referenceFixture(t);const row=await f.upload(1,7);const b=f.batches.create([{importId:row.id}],f.settings);
  const item=f.batches.item(b.items[0].id),config=JSON.parse(item.config_json);
- const oldPalette={cookware:'#112233',surface:'#ccbbaa'};
- Object.assign(config,{palette:oldPalette,photoProfile:'recipe-photo-editor-v2',photoInstructions:'Saved v2 photo instructions: retain original wooden utensil finish.',analysisProfile:'recipe-photo-understanding-v1',analysisInstructions:'Saved v1 understanding instructions.'});
+ const oldPalette={cookware:'#112233',surface:'#ccbbaa',...(version===3?{utensil:'#664422'}:{})};
+ Object.assign(config,{palette:oldPalette,photoProfile:`recipe-photo-editor-v${version}`,photoInstructions:`Saved v${version} photo instructions: retain original wooden utensil finish.`,analysisProfile:'recipe-photo-understanding-v1',analysisInstructions:'Saved v1 understanding instructions.'});
  const oldSettings={...b.settings,palette:oldPalette};
  f.store.db.prepare('UPDATE content_items SET config_json=? WHERE id=?').run(JSON.stringify(config),item.id);
  f.store.db.prepare('UPDATE content_batches SET settings_json=? WHERE id=?').run(JSON.stringify(oldSettings),b.id);
  f.approve(b);saveContentSettings(f.store,{...f.settings,palette:{cookware:'#ff0000',surface:'#00ff00',utensil:'#0000ff'}});await f.drainBatch();
  const image=f.providerCalls.find(c=>c.operation==='image').payload;
  const analysis=f.batches.detail(b.id).items[0].photos[0].analysis;
- const expected=`recipe-photo-editor-v2\n${config.photoInstructions}\nSelected cookware/bowl color: #112233. Selected surrounding surface color: #ccbbaa. Keep this palette consistent throughout this recipe.\nConfirmed photograph context: ${JSON.stringify(analysis)}\nOutput dimensions: 1536x864. Use this photograph's own original reference. Return one edited photograph.`;
+ const expected=`recipe-photo-editor-v${version}\n${config.photoInstructions}\nSelected cookware/bowl color: #112233. Selected surrounding surface color: #ccbbaa.${version===3?' Selected spoon/utensil color: #664422.':''} Keep this palette consistent throughout this recipe.\nConfirmed photograph context: ${JSON.stringify(analysis)}\nOutput dimensions: 1536x864. Use this photograph's own original reference. Return one edited photograph.`;
  assert.equal(image.prompt,expected);assert.equal(f.providerCalls[0].payload.instructions,'recipe-photo-understanding-v1\n'+config.analysisInstructions);
  assert.deepEqual(f.batches.detail(b.id).settings.palette,oldPalette);assert.equal(f.batches.item(item.id).config_json,JSON.stringify(config));
  const calls=f.providerCalls.length;f.batches.retry(item.id,'photo:'+row.photos[0].id);await f.drainBatch();assert.equal(f.providerCalls.length,calls);
@@ -123,7 +123,7 @@ test('article saves before images and image retries preserve it; no-date imports
  assert.equal(f.store.db.prepare("SELECT count(*) n FROM recipe_records WHERE verification_status='verified'").get().n,1);
 });
 test('one recipe waiting for selection cannot block another; later selected work needs renewed approval',async t=>{
- const f=await referenceFixture(t);const first=await f.upload(1,7),second=await f.upload(4);let b=f.batches.create([{importId:first.id},{importId:second.id}],f.settings);f.approve(b);await f.drainBatch();assert.equal(f.providerCalls.filter(c=>c.operation==='image').length,1);
+ const f=await referenceFixture(t);const first=await f.upload(1,7),second=await f.upload(4);f.imports.select(second.id,[]);let b=f.batches.create([{importId:first.id},{importId:second.id}],f.settings);f.approve(b);await f.drainBatch();assert.equal(f.providerCalls.filter(c=>c.operation==='image').length,1);
  f.imports.select(second.id,second.photos.map(p=>p.id));b=prepareReferenceBatch(f.batches,b.id);await f.drainBatch();assert.equal(f.providerCalls.filter(c=>c.operation==='image').length,1);assert.equal(b.items[1].state,'awaiting_item_approval');f.approve(b);await f.drainBatch();assert.equal(f.providerCalls.filter(c=>c.operation==='image').length,5);
 });
 test('unsafe imports, oversized decoding and forged selections are rejected',async t=>{

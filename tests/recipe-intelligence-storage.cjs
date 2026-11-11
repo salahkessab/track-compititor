@@ -84,8 +84,9 @@ test('robots retry backoff prevents other work for that site while allowing anot
 test('bounded source segments pause and can resume without repeating processed tasks', async t => {
   const { store, owner } = await fixture(t);
   const site = store.addSite('', 'https://large.example/'); const run = store.createScan(site.id);
-  for (let i = 0; i < 501; i++) store.enqueue(run, site.id, `${site.url}map-${i}.xml`, 'source');
+  store.db.transaction(() => { for (let i = 0; i < 501; i++) store.enqueue(run, site.id, `${site.url}map-${i}.xml`, 'source'); })();
   store.db.prepare("UPDATE scan_items SET state='done' WHERE id IN (SELECT id FROM scan_items WHERE run_id=? ORDER BY id LIMIT 500)").run(run);
+  assert.ok(store.acquireLease(owner), 'Renew the test worker after preparing the large fixture');
   assert.equal(store.claim(owner), null);
   assert.equal(store.db.prepare('SELECT status FROM scan_runs WHERE id=?').get(run).status, 'paused');
   store.runAction(run, 'resume'); const next = store.claim(owner);

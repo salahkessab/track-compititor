@@ -7,14 +7,19 @@ distinction between hosted tools and the Windows worker.
 
 ## Recipe Intelligence
 
+For websites that block URL imports, use the bundled [Recipe Intelligence Capture Chrome extension](extensions/recipe-intelligence-capture/README.md). It imports the article and actual photos from the page opened in Chrome, then opens an unpaid estimate in the local app. The extension source is in `extensions/recipe-intelligence-capture` and needs no build step.
+
 On Windows with Node.js 24 LTS, double-click **Start Recipe Intelligence.cmd**.
 Choose a local storage folder on first setup, then add websites in the new Recipe
 Intelligence tab and request manual scans or historical publication-date reports.
 Select verified recipes to prepare an article/image batch with a cost estimate,
-per-recipe source choices, Humanizer writing instructions, and optional review steps.
+per-recipe source choices, Premium Master Prompt V4 with private source records, and optional review steps.
 **Stop Recipe Intelligence.cmd** stops only this launcher's processes. Discovery
 and reports make no paid AI calls. Content processing requires an explicit batch
 spending limit. The hosted studio and its existing tools still work.
+
+The default URL workflow is **paste URL → Get estimate → Generate article + images**.
+Photos are selected automatically. Blocked websites show a clear error and a paste-recipe-text fallback; unfinished preparation never appears as a $0 runnable estimate.
 
 See [setup, scan controls, backups, and diagnostics](docs/recipe-intelligence.md).
 Use **Start a recipe** for a URL or uploaded photographs. See the
