@@ -47,6 +47,14 @@ Run `npm test`, `npx tsc --noEmit`, and `npm run build` before publishing change
 Tests mock paid providers. On Windows, the launcher smoke test is
 `node scripts/smoke-recipe-intelligence.cjs` after preparing the local build.
 
+The deployment preparation on 11 November 2026 updated compatible multipart,
+CSS tooling, source-map and ID-generation dependencies. PostCSS is overridden
+to the application's patched 8.5.x dependency so Next.js does not retain its
+older pinned copy. The complete npm audit then reported zero known
+vulnerabilities. This does not replace future dependency checks. Relevant
+upstream advisories include [PostCSS source-map loading](https://github.com/advisories/GHSA-fxqj-rqcc-2cmp)
+and [form-data multipart fields](https://github.com/advisories/GHSA-hmw2-7cc7-3qxx).
+
 Vercel references: [Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions),
 [Git connections](https://vercel.com/docs/cli/git),
 and [deployment commands](https://vercel.com/docs/cli/deploy).
