@@ -84,19 +84,20 @@ test('palette, selection, prompt versions and analysis cache survive settings ch
  const count=f.providerCalls.length;f.batches.retry(item.id,'photo:'+row.photos[0].id);await f.drainBatch();assert.equal(f.providerCalls.length,count);
 });
 
-for (const version of [2,3]) test(`frozen v${version} jobs keep their instructions and prompt shape after the v4 update`,async t=>{
+for (const version of [2,3,4]) test(`frozen v${version} jobs keep their instructions and prompt shape after the v5 update`,async t=>{
  const f=await referenceFixture(t);const row=await f.upload(1,7);const b=f.batches.create([{importId:row.id}],f.settings);
  const item=f.batches.item(b.items[0].id),config=JSON.parse(item.config_json);
- const oldPalette={cookware:'#112233',surface:'#ccbbaa',...(version===3?{utensil:'#664422'}:{})};
+ const oldPalette={cookware:'#112233',surface:'#ccbbaa',...(version>=3?{utensil:'#664422'}:{})};
  Object.assign(config,{palette:oldPalette,photoProfile:`recipe-photo-editor-v${version}`,photoInstructions:`Saved v${version} photo instructions: retain original wooden utensil finish.`,analysisProfile:'recipe-photo-understanding-v1',analysisInstructions:'Saved v1 understanding instructions.'});
+ if(version===4)Object.assign(config,require('./fixtures/photo-profile-v4.json'));
  const oldSettings={...b.settings,palette:oldPalette};
  f.store.db.prepare('UPDATE content_items SET config_json=? WHERE id=?').run(JSON.stringify(config),item.id);
  f.store.db.prepare('UPDATE content_batches SET settings_json=? WHERE id=?').run(JSON.stringify(oldSettings),b.id);
  f.approve(b);saveContentSettings(f.store,{...f.settings,palette:{cookware:'#ff0000',surface:'#00ff00',utensil:'#0000ff'}});await f.drainBatch();
  const image=f.providerCalls.find(c=>c.operation==='image').payload;
  const analysis=f.batches.detail(b.id).items[0].photos[0].analysis;
- const expected=`recipe-photo-editor-v${version}\n${config.photoInstructions}\nSelected cookware/bowl color: #112233. Selected surrounding surface color: #ccbbaa.${version===3?' Selected spoon/utensil color: #664422.':''} Keep this palette consistent throughout this recipe.\nConfirmed photograph context: ${JSON.stringify(analysis)}\nOutput dimensions: 1536x864. Use this photograph's own original reference. Return one edited photograph.`;
- assert.equal(image.prompt,expected);assert.equal(f.providerCalls[0].payload.instructions,'recipe-photo-understanding-v1\n'+config.analysisInstructions);
+ const expected=`recipe-photo-editor-v${version}\n${config.photoInstructions}\nSelected cookware/bowl color: #112233. Selected surrounding surface color: #ccbbaa.${version>=3?' Selected spoon/utensil color: #664422.':''} Keep this palette consistent throughout this recipe.\nConfirmed photograph context: ${JSON.stringify(analysis)}\nOutput dimensions: 1536x864. Use this photograph's own original reference. Return one edited photograph.`;
+ assert.equal(image.prompt,expected);assert.equal(f.providerCalls[0].payload.instructions,config.analysisProfile+'\n'+config.analysisInstructions);
  assert.deepEqual(f.batches.detail(b.id).settings.palette,oldPalette);assert.equal(f.batches.item(item.id).config_json,JSON.stringify(config));
  const calls=f.providerCalls.length;f.batches.retry(item.id,'photo:'+row.photos[0].id);await f.drainBatch();assert.equal(f.providerCalls.length,calls);
 });
