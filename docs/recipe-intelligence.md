@@ -77,9 +77,13 @@ Writes use temporary files and atomic renames. Downloads verify checksums. SQLit
 
 ## Free disk space after generation
 
+Each article row offers **Archive** and **Delete**. Archive hides it from **Active articles** without removing files, changing its budget or stopping generation. Open **Archived articles** and choose **Restore** to bring it back. Delete uses the permanent-removal confirmation described below.
+
+Publication badges show **Draft** for a workspace article that has no recorded WordPress export. Sent articles show the last confirmed status per destination (Draft, Published, Scheduled, Private or Pending review). Interrupted sends show **Unconfirmed**, not Published. Use **Images & WordPress → Check saved post** to refresh changes made directly on WordPress. These badges do not publish or unpublish anything.
+
 In **My articles**, open a finished recipe and choose **Delete from computer**. The confirmation shows the space it will free. **Delete permanently** removes that recipe from the library and deletes its articles, generated images, all older versions, saved generation requests/responses, and unused imported originals from the selected storage folder. This cannot be undone; download anything you want to keep first.
 
-Original photos still used by another saved recipe are kept until its last generation is deleted. Separate downloads, backups, tracked-site history and WordPress uploads are not removed. A small billing record remains so deletion cannot erase recorded or uncertain charges. Active generation cannot be deleted; cancel pending work or wait for it to finish. If a file is locked, close it and use **Retry deletion**; this never restarts generation.
+Original photos still used by another saved recipe are kept until its last generation is deleted. Separate downloads, backups, tracked-site history and WordPress uploads are not removed. A small billing record remains so deletion cannot erase recorded or uncertain charges. Drafts, queued recipes and items waiting for review can be deleted directly. Requests actively generating, importing or sending to WordPress must finish first. If a file is locked, close it and use **Retry deletion**; this never restarts generation.
 
 ## Source and runtime limits
 

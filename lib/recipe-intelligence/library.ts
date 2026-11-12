@@ -4,12 +4,21 @@ import type { BatchStore } from "./batches";
 function itemLines(batch: any, item: any) {
   return batch.quote.lines.filter((line: any) => line.itemId ? line.itemId === item.id : line.recipeId === item.recipe_id);
 }
-export function articleLibrary(b: BatchStore, page = 0, search = "") {
+export function archiveLibraryItem(b: BatchStore, id: string, archived: unknown) {
+  if (typeof archived !== 'boolean') throw new Error('Choose Archive or Restore.');
+  return b.store.db.transaction(() => {
+    b.item(id);
+    b.store.db.prepare("UPDATE content_items SET archived_at=? WHERE id=?").run(archived ? new Date().toISOString() : null, id);
+    return { archived };
+  }).immediate();
+}
+
+export function articleLibrary(b: BatchStore, page = 0, search = "", archived = false) {
   page = Number.isInteger(page) && page >= 0 ? Math.min(page, 100000) : 0;
   const query = `%${search.slice(0, 150)}%`;
   const from = `FROM content_items i JOIN content_batches b ON b.id=i.batch_id
     LEFT JOIN recipe_records r ON r.id=i.recipe_id LEFT JOIN recipe_imports m ON m.id=i.import_id
-    WHERE i.state<>'deleted' AND b.status<>'deleted' AND COALESCE(json_extract(i.source_json,'$.title'),r.title,m.title,'Recipe') LIKE ?`;
+    WHERE i.state<>'deleted' AND b.status<>'deleted' AND i.archived_at IS ${archived ? 'NOT NULL' : 'NULL'} AND COALESCE(json_extract(i.source_json,'$.title'),r.title,m.title,'Recipe') LIKE ?`;
   const total = (b.store.db.prepare(`SELECT count(*) n ${from}`).get(query) as any).n;
   const records = b.store.db.prepare(`SELECT i.id,i.batch_id ${from} ORDER BY b.created_at DESC,i.rowid DESC LIMIT 20 OFFSET ?`).all(query, page * 20) as any[];
   const batches = new Map<string, any>();
@@ -20,7 +29,13 @@ export function articleLibrary(b: BatchStore, page = 0, search = "") {
     const lines = itemLines(batch, item);
     const estimated = lines.reduce((n: number, l: any) => n + l.estimated, 0);
     const suggestedLimit = Math.ceil(lines.reduce((n: number, l: any) => n + l.reservation, 0) * 100) / 100;
+    const publications = (b.store.db.prepare("SELECT site_url,state,result_json,updated_at FROM wordpress_exports WHERE item_id=? ORDER BY site_url").all(item.id) as any[]).map(saved => {
+      let result: any = {}; try { result = JSON.parse(saved.result_json || '{}'); } catch { /* Unknown saved result stays unconfirmed. */ }
+      const labels: Record<string, string> = { draft: 'Draft', publish: 'Published', pending: 'Pending review', private: 'Private', future: 'Scheduled' };
+      return { site: new URL(saved.site_url).hostname, status: saved.state === 'ready' ? labels[result.status] || 'Unconfirmed' : saved.state === 'sending' ? 'Sending' : 'Unconfirmed', checkedAt: saved.updated_at };
+    });
     return { id: item.id, batchId: batch.id, title: item.source?.title || item.title || "Recipe", state: item.state,
+      archived: !!item.archived_at, deletion: item.deletion, publications,
       createdAt: batch.created_at, error: item.error, approved: !!batch.approved_at, sharedBudget: !!batch.approved_at && batch.items.length > 1,
       estimated, suggestedLimit, limit: batch.limit_usd, quoteVersion: batch.quote.createdAt,
       canApprove: !batch.approved_at && lines.length > 0 && item.state === 'queued',

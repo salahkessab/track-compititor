@@ -96,6 +96,13 @@ test('reports and batches share local authorization; downloads have sandboxed pr
   assert.equal((await request(`items/${item.id}`, 'DELETE', { confirmed: true }, { 'X-RI-Key': '' })).status, 401);
   assert.equal((await request(`items/${item.id}`, 'DELETE', { confirmed: true }, { Origin: 'https://other.example' })).status, 403);
   assert.equal((await request(`items/${item.id}`, 'DELETE', { confirmed: true }, { 'X-Recipe-Intelligence': '' })).status, 403);
+  assert.equal((await request(`items/${item.id}/archive`, 'PATCH', { archived: true }, { 'X-RI-Key': '' })).status, 401);
+  assert.equal((await request(`items/${item.id}/archive`, 'PATCH', { archived: true }, { Origin: 'https://other.example' })).status, 403);
+  assert.equal((await request(`items/${item.id}/archive`, 'PATCH', { archived: true }, { 'X-Recipe-Intelligence': '' })).status, 403);
+  assert.equal((await request(`items/${item.id}/archive`, 'PATCH', { archived: 'yes' })).status, 400);
+  assert.equal((await request(`items/${item.id}/archive`, 'PATCH', { archived: true })).status, 200);
+  assert.equal((await (await request('library?archived=1')).json()).rows[0].id, item.id);
+  assert.equal((await request(`items/${item.id}/archive`, 'PATCH', { archived: false })).status, 200);
   assert.equal((await request(`items/${item.id}`, 'DELETE', {})).status, 400);
   assert.ok((await (await request(`items/${item.id}/delete-preview`)).json()).bytes > 0);
   assert.equal((await (await request(`items/${item.id}`, 'DELETE', { confirmed: true })).json()).deleted, true);

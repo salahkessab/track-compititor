@@ -34,6 +34,26 @@ test('article library shows reference/output previews and approves only the chos
   assert.match(document.querySelector('article[aria-label="Article: Chicken soup"]').textContent,/Approve & Generate/);
 });
 
+test('library archives, restores and confirms deletion from the row while showing publication badges',async t=>{
+ const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+ const row={id:'test-item',batchId:'test-batch',title:'Soup',state:'completed',createdAt:'2026-11-12',approved:true,canApprove:false,actual:.1,held:0,photos:[],files:[],archived:false,deletion:{allowed:true},publications:[{site:'food.example',status:'Published',checkedAt:'2026-11-12'}]};
+ let deleted=false;const calls=[];
+ const fetcher=async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,batches:[]});
+ if(url.includes('/library?')){const visible=!deleted&&(new URL(url,'http://localhost').searchParams.get('archived')==='1')===row.archived;return Response.json({rows:visible?[row]:[],total:visible?1:0,page:0,pageSize:20});}
+ if(url.endsWith('/archive')){assert.equal(init.method,'PATCH');row.archived=JSON.parse(init.body).archived;return Response.json({archived:row.archived});}
+ if(url.endsWith('/delete-preview'))return Response.json({id:row.id,title:row.title,bytes:1024,sharedSource:false});
+ if(init.method==='DELETE'){assert.deepEqual(JSON.parse(init.body),{confirmed:true});deleted=true;return Response.json({deleted:true,batchId:row.batchId,batchEmpty:true,bytesFreed:1024});}
+ throw new Error(url);};fetcher.library=true;
+ const {root,Component,click}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
+ await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+ assert.match(document.querySelector('[aria-label="Publication status"]').textContent,/food.example.*Published/);
+ await click('Archive');assert.equal(document.querySelector('article[aria-label="Article: Soup"]'),null);
+ await click('Archived articles');await click('Restore');await click('Active articles');assert.ok(document.querySelector('article[aria-label="Article: Soup"]'));
+ await click('Delete');assert.ok(document.querySelector('[role=dialog]'));assert.equal(deleted,false);await click('Keep recipe');assert.equal(deleted,false);
+ await click('Delete');await click('Delete permanently');assert.equal(deleted,true);assert.equal(document.querySelector('article[aria-label="Article: Soup"]'),null);
+ assert.equal(calls.filter(c=>c.init.method==='DELETE').length,1);assert.ok(calls.every(c=>!c.url.includes('approve')&&!c.url.includes('wordpress')));
+});
+
 function component() {
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components/RecipeIntelligence.tsx'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -375,6 +395,7 @@ test('date shortcuts use the reporting day without starting scans or paid work',
   const range = () => [...document.querySelectorAll('input[type=date]')].map(e => e.value);
   assert.deepEqual(range(), ['2026-11-04', '2026-11-10']);
   await click('Today'); assert.deepEqual(range(), ['2026-11-10', '2026-11-10']);
+  await click('Yesterday'); assert.deepEqual(range(), ['2026-11-09', '2026-11-09']);
   await click('Last 30 days'); assert.deepEqual(range(), ['2026-10-12', '2026-11-10']);
   const sites = [...document.querySelectorAll('input[type=checkbox]')];
   assert.equal(sites[0].checked, true); assert.equal(sites[1].checked, false); assert.equal(sites[1].disabled, true);

@@ -92,9 +92,9 @@ test('missing bridge or unsupported card never publishes; read-only publishers c
 });
 test('v5 migration backs up existing media receipts before adding publication records', async t => {
   const f = await fixture(t); const hashes = f.store.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all();
-  f.store.db.exec('DROP TABLE r2_deleted_paths; DROP TABLE r2_objects; DROP TABLE wordpress_exports; PRAGMA user_version=5'); f.store.close();
+  f.store.db.exec('ALTER TABLE content_items DROP COLUMN archived_at; DROP TABLE r2_deleted_paths; DROP TABLE r2_objects; DROP TABLE wordpress_exports; PRAGMA user_version=5'); f.store.close();
   const upgraded = await IntelligenceStore.open(f.root); t.after(() => upgraded.close());
-  assert.equal(upgraded.db.pragma('user_version', { simple: true }), 7);
+  assert.equal(upgraded.db.pragma('user_version', { simple: true }), 8);
   assert.deepEqual(upgraded.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all(), hashes);
   assert.ok(fs.readdirSync(path.join(f.root, 'backups')).some(n => n.startsWith('before-migration-6')));
   assert.deepEqual(upgraded.db.pragma('foreign_key_check'), []);

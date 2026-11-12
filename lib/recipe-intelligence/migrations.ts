@@ -1,5 +1,9 @@
 // Additive migrations preserve the original discovery index and its checkpoints.
-export const CURRENT_SCHEMA = 7;
+export const CURRENT_SCHEMA = 8;
+export const MIGRATION_8 = `
+ALTER TABLE content_items ADD COLUMN archived_at TEXT;
+PRAGMA user_version=8;
+`;
 export const MIGRATION_2 = `
 ALTER TABLE recipe_records ADD COLUMN publication_json TEXT;
 ALTER TABLE recipe_records ADD COLUMN verification_reason TEXT;

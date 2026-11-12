@@ -297,9 +297,9 @@ test('invalid tokens, unauthorized users and remote error bodies never leak cred
 
 test('version 4 migration backs up existing articles and adds an independent WordPress ledger', async t => {
   const f = await fixture(t, 1); const hashes = f.store.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all();
-  f.store.db.exec('DROP TABLE r2_deleted_paths; DROP TABLE r2_objects; DROP TABLE wordpress_exports; DROP TABLE wordpress_media; PRAGMA user_version=4'); f.store.close();
+  f.store.db.exec('ALTER TABLE content_items DROP COLUMN archived_at; DROP TABLE r2_deleted_paths; DROP TABLE r2_objects; DROP TABLE wordpress_exports; DROP TABLE wordpress_media; PRAGMA user_version=4'); f.store.close();
   const updated = await IntelligenceStore.open(f.root); t.after(() => updated.close());
-  assert.equal(updated.db.pragma('user_version', { simple: true }), 7);
+  assert.equal(updated.db.pragma('user_version', { simple: true }), 8);
   assert.deepEqual(updated.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all(), hashes);
   const backup = fs.readdirSync(path.join(f.root, 'backups')).find(n => n.startsWith('before-migration-5'));
   assert.ok(backup); const db = new (require('better-sqlite3'))(path.join(f.root, 'backups', backup), { readonly: true });

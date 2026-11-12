@@ -44,7 +44,7 @@ test('shared originals stay until their last generation is deleted, then disappe
 
 test('active work cannot be deleted and uncertain charges are never forgiven',async t=>{
   const f=await contentFixture(t),row=f.seed(),batch=f.batches.create([{recipeId:row.id}],f.defaults),id=batch.items[0].id;
-  assert.throws(()=>previewGenerationDeletion(f.store,id),/Finish generation/);
+  assert.equal(previewGenerationDeletion(f.store,id).id,id);
   f.approve(batch);const stage=f.batches.claim(f.owner);assert.ok(stage);assert.throws(()=>deleteGeneration(f.store,id,true),/current request/);
   await f.batchEngine.process(stage);await f.drainBatch();
   f.store.db.prepare("UPDATE api_calls SET state='uncertain',actual_usd=NULL WHERE batch_id=?").run(batch.id);
@@ -72,4 +72,23 @@ test('deletion rejects traversal and junctions without touching another folder',
   assert.throws(()=>deleteGeneration(f.store,'../../images',true),/Invalid recipe ID/);
   try{fs.symlinkSync(other,path.join(own,'linked'),process.platform==='win32'?'junction':'dir');}catch(e){if(e.code==='EPERM'){t.skip('Link creation requires privileges on this system');return;}throw e;}
   assert.throws(()=>deleteGeneration(f.store,id,true),/linked folder/);assert.equal(fs.readFileSync(path.join(other,'keep.txt'),'utf8'),'Keep me');assert.equal(f.store.db.prepare('SELECT state FROM content_items WHERE id=?').get(id).state,'completed');
+});
+
+for (const state of ['queued','photo_selection','review','budget_wait']) test(`idle ${state} drafts can be deleted without generation or cancellation`,async t=>{
+ const f=await contentFixture(t),source=f.seed(),batch=f.batches.create([{recipeId:source.id}],f.defaults),id=batch.items[0].id;
+ f.store.db.prepare('UPDATE content_items SET state=? WHERE id=?').run(state,id);
+ assert.equal(f.batches.detail(batch.id).items[0].deletion.allowed,true);
+ assert.equal(deleteGeneration(f.store,id,true).deleted,true);
+ assert.equal(f.batches.claim(f.owner),null);assert.equal(f.providerCalls.length,0);assert.equal(f.batches.list().length,0);
+});
+test('a failed URL import waiting for photos can be removed, but an active import is protected',async t=>{
+ const f=await contentFixture(t),imports=new ImportStore(f.store),source=imports.create('https://food.example/blocked');
+ f.store.db.prepare("UPDATE recipe_imports SET status='failed',error='Blocked' WHERE id=?").run(source.id);
+ const batch=f.batches.create([{importId:source.id}],{...f.defaults,imageWorkflow:'reference',images:true}),id=batch.items[0].id;
+ assert.equal(f.batches.item(id).state,'photo_selection');assert.equal(previewGenerationDeletion(f.store,id).id,id);
+ f.store.db.prepare("UPDATE recipe_imports SET status='running' WHERE id=?").run(source.id);
+ assert.throws(()=>deleteGeneration(f.store,id,true),/current request/);
+ f.store.db.prepare("UPDATE recipe_imports SET status='failed' WHERE id=?").run(source.id);
+ assert.equal(deleteGeneration(f.store,id,true).deleted,true);assert.throws(()=>prepareReferenceBatch(f.batches,batch.id),/not found/);
+ assert.equal(imports.list().length,0);assert.equal(f.providerCalls.length,0);
 });

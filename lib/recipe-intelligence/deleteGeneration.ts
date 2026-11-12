@@ -5,7 +5,6 @@ import { assertInside, storagePath } from "./paths";
 import { removeCloudPaths } from "./r2";
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const removing = new Set(["deleting", "delete_failed"]);
 function itemRow(store: IntelligenceStore, id: string): any {
   if (!uuid.test(id)) throw new Error("Invalid recipe ID.");
   const item = store.db.prepare("SELECT i.*,b.status batch_status FROM content_items i JOIN content_batches b ON b.id=i.batch_id WHERE i.id=?").get(id);
@@ -15,9 +14,11 @@ function itemRow(store: IntelligenceStore, id: string): any {
 export function deletionAvailability(store: IntelligenceStore, item: any) {
   const busy = store.db.prepare("SELECT 1 FROM content_stages WHERE item_id=? AND state='running'").get(item.id)
     || store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id IN (SELECT id FROM content_stages WHERE item_id=?) AND state IN ('reserved','dispatched')").get(item.id)
-    || store.db.prepare("SELECT 1 FROM wordpress_exports WHERE item_id=? AND state='sending'").get(item.id);
+    || store.db.prepare("SELECT 1 FROM wordpress_exports WHERE item_id=? AND state='sending'").get(item.id)
+    || (item.import_id && store.db.prepare("SELECT 1 FROM recipe_imports WHERE id=? AND status IN ('running','capturing')").get(item.import_id));
   if (busy || item.state === "running") return { allowed: false, reason: "Wait for this recipe's current request to finish before deleting it." };
-  if (!["completed", "failed", "partial", "deleted"].includes(item.state) && !removing.has(item.state) && item.batch_status !== "cancelled") return { allowed: false, reason: "Finish generation or cancel pending work before deleting this recipe." };
+  // Queued, paused and review-only drafts may be discarded. The deletion's
+  // write lock prevents new worker claims while their files are removed.
   return { allowed: true, reason: "" };
 }
 
@@ -67,7 +68,7 @@ function plan(store: IntelligenceStore, id: string) {
     removeImport = !shared;
     if (removeImport) {
       const imported = store.db.prepare("SELECT status FROM recipe_imports WHERE id=?").get(item.import_id) as any;
-      if (["queued", "running", "capturing"].includes(imported?.status)) throw new Error("The source is still importing. Wait for it to finish before deleting.");
+      if (["running", "capturing"].includes(imported?.status)) throw new Error("The source is still importing. Wait for it to finish before deleting.");
       roots.push(path.join("research", "references", item.import_id));
       addMatching("research/browser", name => name === item.import_id + ".json" || name.startsWith(item.import_id + ".json.") && name.endsWith(".tmp"));
     }

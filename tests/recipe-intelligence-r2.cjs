@@ -113,9 +113,9 @@ test('one invalid transfer cannot block other queued cloud files', async t => {
 test('R2 migration backs up the existing SQLite database and leaves tracking and artifact records intact', async t => {
   const f=await contentFixture(t);f.seed();
   const rows=f.store.db.prepare('SELECT * FROM recipe_records').all();
-  f.store.db.exec('DROP TABLE r2_objects; DROP TABLE r2_deleted_paths; PRAGMA user_version=6');f.store.close();
+  f.store.db.exec('ALTER TABLE content_items DROP COLUMN archived_at; DROP TABLE r2_objects; DROP TABLE r2_deleted_paths; PRAGMA user_version=6');f.store.close();
   const store=await IntelligenceStore.open(f.root);t.after(()=>store.close());
-  assert.equal(store.db.pragma('user_version',{simple:true}),7);
+  assert.equal(store.db.pragma('user_version',{simple:true}), 8);
   assert.deepEqual(store.db.prepare('SELECT * FROM recipe_records').all(),rows);
   const name=fs.readdirSync(path.join(f.root,'backups')).find(n=>n.startsWith('before-migration-7'));
   assert.ok(name);const backup=new Database(path.join(f.root,'backups',name),{readonly:true});

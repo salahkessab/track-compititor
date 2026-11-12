@@ -62,6 +62,11 @@ export function createReferenceBatch(b: BatchStore, selections: Selection[], inp
   prepareReferenceBatch(b, id); return b.detail(id);
 }
 export function prepareReferenceBatch(b: BatchStore, id: string) {
+  // Serialize draft preparation with deletion so a stale worker cannot restore
+  // a discarded draft or its photo rows after the deletion has completed.
+  return b.store.db.transaction(() => prepareReferenceBatchLocked(b, id)).immediate();
+}
+function prepareReferenceBatchLocked(b: BatchStore, id: string) {
   const batch = b.get(id), settings: ContentSettings = JSON.parse(batch.settings_json); const db = b.store.db;
   if (settings.imageWorkflow !== "reference" && !(db.prepare("SELECT 1 FROM content_items WHERE batch_id=? AND import_id IS NOT NULL").get(id))) return;
   const lines: any[] = []; let pending = 0; let changed = false;
