@@ -17,8 +17,8 @@ type Variation = {
   cost: number; imageCost: number | null; costIncomplete: boolean;
 };
 
-const inputClass = "w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20 disabled:opacity-50";
-const secondaryClass = "rounded-xl border border-[#5a4634] px-4 py-2.5 text-sm text-[#f3e5d4] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50";
+const inputClass = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 disabled:opacity-50";
+const secondaryClass = "rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function RecipeImageToImage() {
   const [photo, setPhoto] = useState<FoodPhoto | null>(null);
@@ -182,15 +182,15 @@ export function RecipeImageToImage() {
     <div aria-label="Recipe image to image workspace">
       <section className="studio-panel mb-4 rounded-[28px] p-5 sm:p-6">
         <div className="mb-6">
-          <h1 className="studio-title text-3xl text-[#f7efe5]">Image to Image</h1>
+          <h1 className="studio-title text-3xl text-gray-900">Image to Image</h1>
         </div>
-        {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/25 bg-red-950/30 p-4 text-sm text-red-200">{error}</div>}
+        {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/25 bg-red-950/30 p-4 text-sm text-red-700">{error}</div>}
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.75fr)]">
           <div className="grid content-start gap-6">
           <div>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-medium text-[#f3e5d4]">Original food photo</h2>
-              {photo && <button type="button" className="text-xs text-[#cbb8a2] underline underline-offset-4 disabled:opacity-50"
+              <h2 className="text-sm font-medium text-gray-900">Original food photo</h2>
+              {photo && <button type="button" className="text-xs text-gray-600 underline underline-offset-4 disabled:opacity-50"
                 disabled={loading || uploading} onClick={() => { uploadVersion.current++; setPhoto(null); setExtraInstructions(""); setError(null); setResults([]); setSelectedIndex(0); }}>Remove photo</button>}
             </div>
             <div role="button" tabIndex={loading || uploading ? -1 : 0} aria-disabled={loading || uploading}
@@ -198,15 +198,15 @@ export function RecipeImageToImage() {
               onClick={() => { if (!loading && !uploading) input.current?.click(); }}
               onKeyDown={(event) => { if (!loading && !uploading && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); input.current?.click(); } }}
               onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-              className={`flex min-h-[260px] items-center justify-center overflow-hidden rounded-2xl border border-dashed transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f3e5d4] ${dragging ? "border-[#d2a273] bg-[#4a2e1d]/60 ring-2 ring-[#d2a273]/40" : "border-[#6b5037] bg-[#120f0d]/60"} ${loading || uploading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+              className={`flex min-h-[260px] items-center justify-center overflow-hidden rounded-2xl border border-dashed transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f3e5d4] ${dragging ? "border-blue-600 bg-blue-50/60 ring-2 ring-blue-600/40" : "border-gray-200 bg-white/60"} ${loading || uploading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
               {photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={photo.dataUrl} alt="Original uploaded food" draggable={false} className="max-h-[360px] w-full object-contain" />
               ) : (
                 <div className="px-6 py-10 text-center">
-                  <div aria-hidden="true" className="mb-3 text-3xl text-[#d2a273]">＋</div>
-                  <p className="text-sm text-[#f3e5d4]">Drag a food photo here or click to browse</p>
-                  <p className="mt-2 text-xs text-[#b9aa98]">JPG, PNG, or WebP · up to 25 MB</p>
+                  <div aria-hidden="true" className="mb-3 text-3xl text-blue-700">＋</div>
+                  <p className="text-sm text-gray-900">Drag a food photo here or click to browse</p>
+                  <p className="mt-2 text-xs text-gray-600">JPG, PNG, or WebP · up to 25 MB</p>
                 </div>
               )}
             </div>
@@ -217,15 +217,15 @@ export function RecipeImageToImage() {
               <button type="button" className={secondaryClass} disabled={loading || uploading} onClick={() => input.current?.click()}>
                 {uploading ? "Preparing photo…" : photo ? "Change photo" : "Upload food photo"}
               </button>
-              {photo && <p className="min-w-0 truncate text-xs text-[#b9aa98]" title={photo.name}>{photo.name}</p>}
+              {photo && <p className="min-w-0 truncate text-xs text-gray-600" title={photo.name}>{photo.name}</p>}
             </div>
-            {photo && <p className="mt-2 text-xs text-[#b9aa98]">Changing or removing this photo clears the extra instructions and current result.</p>}
+            {photo && <p className="mt-2 text-xs text-gray-600">Changing or removing this photo clears the extra instructions and current result.</p>}
             <div className="mt-4">
               <OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} quickSettingsOnly />
             </div>
           </div>
           <div className="flex flex-col">
-            <label className="grid gap-2 text-sm text-[#cbb8a2]">
+            <label className="grid gap-2 text-sm text-gray-600">
               Extra instructions <span className="sr-only">(optional)</span>
               <textarea className={inputClass + " min-h-[152px] resize-y"} rows={5} value={extraInstructions}
                 maxLength={MAX_EXTRA_INSTRUCTIONS} disabled={loading || uploading}
@@ -233,13 +233,13 @@ export function RecipeImageToImage() {
                 onChange={(event) => setExtraInstructions(event.target.value)} />
             </label>
             <div className="mt-5 grid gap-4 sm:grid-cols-[minmax(0,1fr)_140px]">
-              <label className="grid min-w-0 gap-2 text-sm text-[#cbb8a2]">
+              <label className="grid min-w-0 gap-2 text-sm text-gray-600">
                 Image model
                 <select className={inputClass} value={model} onChange={(event) => changeModel(event.target.value)} disabled={loading}>
                   {[RECIPE_IMAGE_TO_IMAGE_MODEL, ...OPENAI_IMAGE_MODEL_IDS.filter((id) => id !== RECIPE_IMAGE_TO_IMAGE_MODEL)].map((id) => <option key={id} value={id}>{id}</option>)}
                 </select>
               </label>
-              <label className="grid gap-2 text-sm text-[#cbb8a2]">
+              <label className="grid gap-2 text-sm text-gray-600">
                 Number of images
                 <input className={inputClass} type="number" min={1} max={MAX_RECIPE_VARIATIONS} step={1}
                   value={count} disabled={loading} onChange={(event) => setCount(event.target.value)} />
@@ -247,32 +247,32 @@ export function RecipeImageToImage() {
             </div>
             <div className="mt-auto pt-6">
               <button type="button" onClick={() => void generate()} disabled={!photo || loading || uploading || !validCount}
-                className="w-full rounded-xl bg-gradient-to-r from-[#f3e5d4] to-[#c97a3d] px-5 py-3 text-sm font-semibold text-[#221912] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
+                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
                 {loading ? "Generating " + (completed + 1) + " of " + numberOfImages + "…" : "Generate"}
               </button>
-              <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">OpenAI usage is billed per image. Download results before refreshing this page.</p>
+              <p className="mt-3 text-xs leading-relaxed text-gray-600">OpenAI usage is billed per image. Download results before refreshing this page.</p>
             </div>
           </div>
           </div>
-          <aside aria-label="Food photo variations" className="self-start rounded-[22px] border border-[#514131] bg-[#100d0b]/60 p-4">
-            <p className="text-xs uppercase tracking-[.18em] text-[#d2a273]">Output preview</p>
+          <aside aria-label="Food photo variations" className="self-start rounded-[22px] border border-gray-200 bg-white/60 p-4">
+            <p className="text-xs uppercase tracking-[.18em] text-blue-700">Output preview</p>
             <h2 className="studio-title mt-1 text-xl">{selectedResult ? `Variation ${selectedIndex + 1}` : "Your variation"}</h2>
-            <div className="mt-4 flex aspect-[4/5] items-center justify-center overflow-hidden rounded-xl border border-[#514131] bg-[#211912]">
+            <div className="mt-4 flex aspect-[4/5] items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white">
               {selectedResult ? <button type="button" className="block h-full w-full" onClick={() => setPreview(selectedResult)} aria-label={`Open variation ${selectedIndex + 1}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={selectedResult.imageUrl} alt={`Realistic variation ${selectedIndex + 1} of the uploaded dish`} className="h-full w-full object-contain" />
               </button> : partial ?
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={partial} alt="Food variation in progress" className="h-full w-full object-contain" /> :
-                <p className="px-6 text-center text-sm text-[#b9aa98]">Your generated image will appear here.</p>}
+                <p className="px-6 text-center text-sm text-gray-600">Your generated image will appear here.</p>}
             </div>
-            {loading && <p role="status" aria-live="polite" className="mt-3 text-sm text-[#cbb8a2]">
+            {loading && <p role="status" aria-live="polite" className="mt-3 text-sm text-gray-600">
               {completed + " of " + numberOfImages + " variations ready. Creating a new setting for your dish…"}
             </p>}
-            {!selectedResult && partial && <p className="mt-2 text-xs text-[#b9aa98]">Preview · still generating</p>}
+            {!selectedResult && partial && <p className="mt-2 text-xs text-gray-600">Preview · still generating</p>}
             {selectedResult && <div className="mt-4">
-              <p className="break-words text-xs text-[#b9aa98]">{selectedResult.imageModel}</p>
-              <p className="mt-2 text-xs text-[#b9aa98]">{selectedResult.imageCost === null ? "Cost unavailable from provider usage" : "$" + selectedResult.cost.toFixed(5) + (selectedResult.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
+              <p className="break-words text-xs text-gray-600">{selectedResult.imageModel}</p>
+              <p className="mt-2 text-xs text-gray-600">{selectedResult.imageCost === null ? "Cost unavailable from provider usage" : "$" + selectedResult.cost.toFixed(5) + (selectedResult.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" className={secondaryClass} disabled={downloading !== null} onClick={() => void download(selectedResult, selectedIndex)}>
                   {downloading === selectedResult.id ? "Downloading…" : (selectedResult.imageSettings.output_format === "webp" ? "Download optimized WebP" : "Download Original · " + selectedResult.imageSettings.output_format.toUpperCase())}
@@ -281,18 +281,18 @@ export function RecipeImageToImage() {
               </div>
             </div>}
             {results.length > 1 && <div className="mt-5">
-              <p className="mb-2 text-sm font-medium text-[#e8d9c8]">Choose a variation</p>
+              <p className="mb-2 text-sm font-medium text-gray-900">Choose a variation</p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {results.map((result, index) => <button key={result.id} type="button" aria-label={`Select variation ${index + 1}`} aria-pressed={selectedIndex === index} onClick={() => setSelectedIndex(index)}
-                  className={`overflow-hidden rounded-lg border p-1 text-xs ${selectedIndex === index ? "border-[#d9965e] bg-[#50301f] text-[#fff3e5]" : "border-[#514131] text-[#cbb8a2]"}`}>
+                  className={`overflow-hidden rounded-lg border p-1 text-xs ${selectedIndex === index ? "border-blue-600 bg-blue-50 text-gray-900" : "border-gray-200 text-gray-600"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={result.imageUrl} alt="" className="aspect-square w-full rounded object-cover" />
                   <span className="block py-1">{index + 1}</span>
                 </button>)}
               </div>
             </div>}
-            {selectedResult && partial && <div className="mt-4 rounded-xl border border-[#514131] p-2">
-              <p className="mb-2 text-xs text-[#b9aa98]">Next variation · still generating</p>
+            {selectedResult && partial && <div className="mt-4 rounded-xl border border-gray-200 p-2">
+              <p className="mb-2 text-xs text-gray-600">Next variation · still generating</p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={partial} alt="Food variation in progress" className="max-h-40 w-full object-contain" />
             </div>}
@@ -305,7 +305,7 @@ export function RecipeImageToImage() {
 
       <dialog ref={dialog} aria-label="Food variation preview" onCancel={() => setPreview(null)}
         onClick={(event) => { if (event.target === event.currentTarget) setPreview(null); }}
-        className="max-h-[95vh] w-[min(95vw,1000px)] rounded-2xl border border-[#4a3b2c] bg-[#120f0d] p-4 text-[#f3e5d4] backdrop:bg-black/80">
+        className="max-h-[95vh] w-[min(95vw,1000px)] rounded-2xl border border-gray-200 bg-white p-4 text-gray-900 backdrop:bg-black/80">
         <div className="mb-3 flex justify-end">
           <button type="button" autoFocus className={secondaryClass} onClick={() => setPreview(null)}>Close image preview</button>
         </div>

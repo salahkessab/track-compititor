@@ -36,4 +36,12 @@ Focused-region comparison used the article rows and spending action within the f
 
 P3 follow-up: optional adjustable row density for very large libraries. Not required for this simplified workflow.
 
+## Light dashboard palette follow-up
+
+The user subsequently requested the Article Rewriter dashboard palette. The previous dark/gold adaptation is superseded. Source reference: `https://github.com/salahkessab/rewrite-articles-flippa`, specifically `components/AppShell.tsx`, `components/Sidebar.tsx` and `app/dashboard/page.tsx`; the user's explicit hex values take priority over any differences in that repository.
+
+Updated evidence: `.test-build/library-qa/light-desktop.jpg` (1265 × 712) and `.test-build/library-qa/light-mobile.jpg` (390 × 844). Browser inspection confirmed page background rgb(249,250,251), navigation rgb(3,7,18), primary button rgb(37,99,235) with white text, and secondary button rgb(147,51,234) with white text. Settings fields use white backgrounds, rgb(17,24,39) text and a blue focus outline. Status text uses green, amber and red dark enough for white cards. The navigation remains horizontal; no sidebar or new features were added.
+
+Layout, typography, image framing and responsive breakpoints remain unchanged. Settings and article-list interactions were checked locally with mocked data and no console errors. Hover colors are explicitly #1D4ED8 and #7E22CE; destructive controls retain a red-on-pale-red treatment. No recipe generation prompt, artwork palette or stored output was changed.
+
 Final result: passed

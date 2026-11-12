@@ -14,7 +14,7 @@ type Props = {
   webOptimized?: boolean;
 };
 
-const buttonClass = "rounded-xl border border-[#604a36] px-3 py-2 text-sm text-[#ead9c7] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
+const buttonClass = "rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40";
 const ranges: { key: keyof ImageAdjustments; label: string; min: number; max: number }[] = [
   { key: "brightness", label: "Brightness", min: -40, max: 40 },
   { key: "contrast", label: "Contrast", min: -40, max: 40 },
@@ -135,35 +135,35 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimi
 
   return <dialog ref={dialog} aria-label="Image Filter Studio" onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}
-    className="max-h-[94dvh] w-[min(96vw,1120px)] overflow-y-auto rounded-[24px] border border-[#604a36] bg-[#17120f] p-0 text-[#f3e5d4] shadow-2xl backdrop:bg-black/80">
-    <header className="flex items-center justify-between gap-3 border-b border-[#514131] px-5 py-4">
-      <div><h2 className="studio-title text-2xl">Image Filter Studio</h2><p className="mt-1 text-xs text-[#b9aa98]">Preview a new look. Your original stays unchanged.</p></div>
+    className="max-h-[94dvh] w-[min(96vw,1120px)] overflow-y-auto rounded-[24px] border border-gray-200 bg-white p-0 text-gray-900 shadow-2xl backdrop:bg-black/80">
+    <header className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-4">
+      <div><h2 className="studio-title text-2xl">Image Filter Studio</h2><p className="mt-1 text-xs text-gray-600">Preview a new look. Your original stays unchanged.</p></div>
       <div className="flex gap-2"><button type="button" className={buttonClass} onClick={() => choosePreset("original")}>Reset</button><button type="button" className={buttonClass} onClick={onClose}>Close</button></div>
     </header>
     <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0">
-        <div className="flex min-h-[200px] items-center justify-center overflow-hidden rounded-xl border border-[#514131] bg-[#0d0a08] p-2">
-          {!image && !error && <p role="status" className="text-sm text-[#b9aa98]">Loading image…</p>}
+        <div className="flex min-h-[200px] items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white p-2">
+          {!image && !error && <p role="status" className="text-sm text-gray-600">Loading image…</p>}
           {originalUrl && compare && <img src={originalUrl} alt="Original generated image" className="max-h-[64vh] max-w-full object-contain" />}
           <canvas ref={canvas} role="img" aria-label="Filtered image preview" hidden={!image || compare} className="max-h-[64vh] max-w-full object-contain" />
         </div>
         <button type="button" aria-pressed={compare} className={buttonClass + " mt-3"} disabled={!image} onClick={() => setCompare(value => !value)}>{compare ? "Show filtered image" : "Compare with original"}</button>
       </div>
       <div className="min-w-0">
-        <h3 className="text-xs font-semibold uppercase tracking-[.16em] text-[#d2a273]">Filters</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-[.16em] text-blue-700">Filters</h3>
         <div className="mt-3 grid grid-cols-3 gap-2">{IMAGE_FILTER_PRESETS.map(item => <button key={item.id} type="button" aria-pressed={preset === item.id}
-          onClick={() => choosePreset(item.id)} className={"min-h-[64px] rounded-xl border p-2 text-left text-xs font-medium transition " + (preset === item.id ? "border-[#c97a3d] bg-[#c97a3d]/15 text-[#fff1e1]" : "border-[#514131] bg-[#201914] text-[#d7c5b3] hover:border-[#a97c54]")}>
-          <span aria-hidden="true" className="mb-1 block text-base text-[#d2a273]">{item.icon}</span>{item.label}</button>)}</div>
-        <h3 className="mt-5 border-t border-[#514131] pt-4 text-xs font-semibold uppercase tracking-[.16em] text-[#d2a273]">Fine-tune</h3>
-        <div className="mt-3 space-y-3">{ranges.map(range => <label key={range.key} className="block text-xs text-[#d7c5b3]"><span className="flex justify-between"><span>{range.label}</span><span>{adjustments[range.key]}</span></span>
+          onClick={() => choosePreset(item.id)} className={"min-h-[64px] rounded-xl border p-2 text-left text-xs font-medium transition " + (preset === item.id ? "border-blue-600 bg-blue-600/15 text-gray-900" : "border-gray-200 bg-white text-gray-600 hover:border-gray-200")}>
+          <span aria-hidden="true" className="mb-1 block text-base text-blue-700">{item.icon}</span>{item.label}</button>)}</div>
+        <h3 className="mt-5 border-t border-gray-200 pt-4 text-xs font-semibold uppercase tracking-[.16em] text-blue-700">Fine-tune</h3>
+        <div className="mt-3 space-y-3">{ranges.map(range => <label key={range.key} className="block text-xs text-gray-600"><span className="flex justify-between"><span>{range.label}</span><span>{adjustments[range.key]}</span></span>
           <input type="range" min={range.min} max={range.max} value={adjustments[range.key]} onChange={event => { setAdjustments(current => ({ ...current, [range.key]: Number(event.target.value) })); setNotice(""); }} className="mt-2 w-full accent-[#c97a3d]" /></label>)}</div>
-        <label className="mt-5 block text-xs text-[#d7c5b3]">Download format<select aria-label="Download format" value={format} onChange={event => setFormat(event.target.value as "png" | "jpeg" | "webp")} className="mt-2 w-full rounded-xl border border-[#514131] bg-[#1d1611] px-3 py-2.5 text-sm text-[#f3e5d4]">{webOptimized && <option value="webp">WebP · high quality, compressed</option>}<option value="png">PNG</option><option value="jpeg">JPEG · high quality</option></select></label>
-        {format === "jpeg" && <p className="mt-2 text-xs text-[#b9aa98]">JPEG uses a white background for transparent areas.</p>}
-        {onSave && <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">Downloading also saves a separate copy in Design History.</p>}
-        {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-emerald-300">{notice}</p>}
-        <button type="button" disabled={!image || busy} onClick={() => void exportImage(true)} className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#f3e5d4] to-[#c97a3d] px-4 py-3 text-sm font-semibold text-[#221912] hover:brightness-110 disabled:opacity-40">{busy ? "Preparing image…" : `Download filtered ${format.toUpperCase()}`}</button>
+        <label className="mt-5 block text-xs text-gray-600">Download format<select aria-label="Download format" value={format} onChange={event => setFormat(event.target.value as "png" | "jpeg" | "webp")} className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900">{webOptimized && <option value="webp">WebP · high quality, compressed</option>}<option value="png">PNG</option><option value="jpeg">JPEG · high quality</option></select></label>
+        {format === "jpeg" && <p className="mt-2 text-xs text-gray-600">JPEG uses a white background for transparent areas.</p>}
+        {onSave && <p className="mt-3 text-xs leading-relaxed text-gray-600">Downloading also saves a separate copy in Design History.</p>}
+        {error && <p role="alert" className="mt-3 text-xs text-red-700">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-green-700">{notice}</p>}
+        <button type="button" disabled={!image || busy} onClick={() => void exportImage(true)} className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-600 px-4 py-3 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40">{busy ? "Preparing image…" : `Download filtered ${format.toUpperCase()}`}</button>
         {onSave && <button type="button" disabled={!image || busy} onClick={() => void exportImage(false)} className={buttonClass + " mt-2 w-full"}>Save to Design History</button>}
-        <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">Filters change appearance but cannot guarantee AI detection results.</p>
+        <p className="mt-3 text-xs leading-relaxed text-gray-600">Filters change appearance but cannot guarantee AI detection results.</p>
       </div>
     </div>
   </dialog>;

@@ -844,9 +844,9 @@ export default function Page() {
   return (
     <main className="studio-main mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[220px] bg-[radial-gradient(circle_at_top,rgba(201,122,61,0.12),transparent_55%)]" />
-      <div className="pointer-events-none absolute right-0 top-20 -z-10 h-56 w-56 rounded-full bg-[#6f8f68]/8 blur-3xl" />
+      <div className="pointer-events-none absolute right-0 top-20 -z-10 h-56 w-56 rounded-full bg-green-50/8 blur-3xl" />
 
-      <nav aria-label="Main navigation" className="mb-5 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[20px] border border-[#4a3b2c] bg-[#18120f]/92 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.22)]">
+      <nav aria-label="Main navigation" className="mb-5 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[20px] border border-gray-200 bg-white/92 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.22)]">
         {MAIN_TABS.map((tab) => {
           const active = contentType === tab.contentType &&
             (!("workflow" in tab) || recipeWorkflow === tab.workflow);
@@ -872,8 +872,8 @@ export default function Page() {
               }}
               className={`whitespace-nowrap rounded-[14px] px-4 py-2.5 text-sm font-medium transition ${
                 active
-                  ? "bg-[#f3e5d4] text-[#221912] shadow-[0_12px_30px_rgba(243,229,212,0.18)]"
-                  : "text-[#d7c5b3] hover:bg-white/5 hover:text-white"
+                  ? "bg-blue-600 text-white shadow-[0_12px_30px_rgba(243,229,212,0.18)]"
+                  : "text-gray-600 hover:bg-gray-100 hover:text-blue-700"
               }`}
             >
               {tab.label}
@@ -899,7 +899,7 @@ export default function Page() {
       <section className="studio-panel mb-4 grid gap-4 rounded-[28px] p-5 sm:p-6 sm:grid-cols-2 md:grid-cols-4">
         {contentType !== "recipes" && (
           <Field label="Provider">
-            <div className="rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-200">
+            <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900">
               OpenAI only
             </div>
           </Field>
@@ -913,7 +913,7 @@ export default function Page() {
           <select
             value={imageModel}
             onChange={(e) => setImageModel(e.target.value)}
-            className="w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
           >
             {availableImageModels.map((m) => (
               <option key={m.value} value={m.value}>
@@ -928,7 +928,7 @@ export default function Page() {
             <select
               value={recipePinStyle}
               onChange={(e) => setRecipePinStyle(e.target.value as RecipePinStyle)}
-              className="w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
             >
               {RECIPE_PIN_STYLES.map((style) => (
                 <option key={style.value} value={style.value}>
@@ -941,13 +941,13 @@ export default function Page() {
 
         <Field label="Number of images">
           <div className="flex gap-2">
-            <div className="flex gap-1 rounded-xl bg-[#1a1511] p-1">
+            <div className="flex gap-1 rounded-xl bg-white p-1">
               {BATCH_OPTIONS.map((n) => (
                 <button
                   key={n}
                   onClick={() => { setCount(n); setCountRaw(String(n)); }}
                   className={`rounded-md px-2.5 py-1 text-xs transition ${
-                    count === n ? "bg-[#f3e5d4] text-[#221912]" : "text-neutral-300 hover:bg-white/5 hover:text-white"
+                    count === n ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100 hover:text-blue-700"
                   }`}
                 >
                   {n}
@@ -968,7 +968,7 @@ export default function Page() {
                 setCountRaw(String(clamped));
               }}
               title="Or type any number (1-50)"
-              className="w-16 rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-2 py-2 text-sm text-neutral-100 outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+              className="w-16 rounded-xl border border-gray-200 bg-white px-2 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
             />
           </div>
         </Field>
@@ -986,7 +986,7 @@ export default function Page() {
                 contentType === "fashion" ? "ex: robe satinÃ©e blanche dans une rue parisienne" :
                 "e.g. two palomino horses nose to nose"
               }
-              className="w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 placeholder:text-[#7f7468] outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-600 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
             />
           </Field>
         )}
@@ -996,7 +996,7 @@ export default function Page() {
             <select
               value={framing}
               onChange={(e) => { setFraming(e.target.value as Framing); }}
-              className="w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
             >
               {FRAMINGS.map((f) => (
                 <option key={f.value} value={f.value}>
@@ -1022,8 +1022,8 @@ export default function Page() {
               }}
               className={`w-full rounded-lg border px-3 py-2 text-sm transition ${
                 designPin
-                  ? "border-[#c97a3d] bg-[#c97a3d]/15 text-[#f1d2b8]"
-                  : "border-[#4a3b2c] bg-[#1a1511] text-neutral-400 hover:text-neutral-200"
+                  ? "border-blue-600 bg-blue-600/15 text-blue-700"
+                  : "border-gray-200 bg-white text-gray-600 hover:text-gray-900"
               }`}
             >
               {designPin ? "On - pin with title text" : "Off - plain food photo"}
@@ -1037,8 +1037,8 @@ export default function Page() {
               onClick={() => { setTrendResearch((v) => !v); }}
               className={`w-full rounded-lg border px-3 py-2 text-sm transition ${
                 trendResearch
-                  ? "border-[#5f85b8] bg-[#5f85b8]/15 text-[#d9e7fb]"
-                  : "border-[#4a3b2c] bg-[#1a1511] text-neutral-400 hover:text-neutral-200"
+                  ? "border-blue-600 bg-blue-600/15 text-blue-700"
+                  : "border-gray-200 bg-white text-gray-600 hover:text-gray-900"
               }`}
             >
               {trendResearch ? "On - research current trend angles first" : "Off"}
@@ -1050,7 +1050,7 @@ export default function Page() {
           <select
             value={captionLength}
             onChange={(e) => { setCaptionLength(e.target.value); }}
-            className="w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
           >
             <option value="fb">Facebook optimized (200-400 chars)</option>
             <option value="story">Long storytelling (by scene)</option>
@@ -1063,8 +1063,8 @@ export default function Page() {
               onClick={() => { setWantFirstComment((v) => !v); }}
               className={`w-full rounded-lg border px-3 py-2 text-sm transition ${
                 wantFirstComment
-                  ? "border-[#6f8f68] bg-[#6f8f68]/15 text-[#dcebd7]"
-                  : "border-[#4a3b2c] bg-[#1a1511] text-neutral-400 hover:text-neutral-200"
+                  ? "border-green-300 bg-green-50/15 text-green-700"
+                  : "border-gray-200 bg-white text-gray-600 hover:text-gray-900"
               }`}
             >
               {wantFirstComment ? "On - generate a first comment" : "Off"}
@@ -1077,7 +1077,7 @@ export default function Page() {
             <button
               onClick={generate}
               disabled={loading}
-              className="flex-1 rounded-xl bg-[linear-gradient(135deg,#f3e5d4,#c97a3d)] px-4 py-2.5 text-sm font-semibold text-[#221912] shadow-[0_18px_34px_rgba(201,122,61,0.22)] transition hover:brightness-105 disabled:opacity-50"
+              className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_34px_rgba(201,122,61,0.22)] transition hover:brightness-105 disabled:opacity-50"
             >
               {loading
                 ? progress
@@ -1088,38 +1088,38 @@ export default function Page() {
             <button
               onClick={downloadCSV}
               disabled={!items.length}
-              className="rounded-xl border border-[#4a3b2c] px-3 py-2 text-sm text-[#e6d7c7] transition hover:bg-white/5 disabled:opacity-40"
+              className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 transition hover:bg-gray-100 disabled:opacity-40"
               title="Download CSV"
             >
               CSV
             </button>
           </div>
-          <div className="mt-2 grid gap-1 text-[12px] text-neutral-400">
+          <div className="mt-2 grid gap-1 text-[12px] text-gray-600">
             <div className="flex flex-wrap items-center justify-between gap-x-2">
               <span>Image output / post</span>
-              <span className="font-mono text-emerald-400">{imageOutputEstimate !== null
+              <span className="font-mono text-green-700">{imageOutputEstimate !== null
                 ? `$${imageOutputEstimate.toFixed(5)} est.` : outputExamples
                   ? `Low $${outputExamples.low.toFixed(5)} · ${imageModel.startsWith("gpt-image-2.5-") ? "Max" : "High"} $${outputExamples.high.toFixed(5)}`
                   : "Depends on usage"}</span>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-x-2">
               <span>Image output / batch</span>
-              <span className="font-mono text-emerald-400">{imageOutputEstimate !== null
+              <span className="font-mono text-green-700">{imageOutputEstimate !== null
                 ? `$${(imageOutputEstimate * count).toFixed(5)} est.` : outputExamples
                   ? `Low $${(outputExamples.low * count).toFixed(5)} · ${imageModel.startsWith("gpt-image-2.5-") ? "Max" : "High"} $${(outputExamples.high * count).toFixed(5)}`
                   : "Depends on usage"}</span>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-x-2 border-t border-[#3a2d23] pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 border-t border-gray-200 pt-1">
               <span>Text input / output per 1M tokens</span>
-              <span className="font-mono text-emerald-400">{textRates ? `$${textRates.in.toFixed(2)} / $${textRates.out.toFixed(2)}` : "Depends on usage"}</span>
+              <span className="font-mono text-green-700">{textRates ? `$${textRates.in.toFixed(2)} / $${textRates.out.toFixed(2)}` : "Depends on usage"}</span>
             </div>
             {openAIImage && imageSettings.partial_images > 0 && previewPrice !== null && (
               <div className="flex items-center justify-between">
                 <span>Each partial preview</span>
-                <span className="font-mono text-emerald-400">${previewPrice.toFixed(5)} extra</span>
+                <span className="font-mono text-green-700">${previewPrice.toFixed(5)} extra</span>
               </div>
             )}
-            <p className="text-neutral-400">{outputExamples ? "Auto quality varies; Low and " + (imageModel.startsWith("gpt-image-2.5-") ? "Max" : "High") + " are examples. " : ""}Image output estimates exclude prompt and reference inputs, text planning, image analysis, previews, and any search fees. Actual usage may differ.</p>
+            <p className="text-gray-600">{outputExamples ? "Auto quality varies; Low and " + (imageModel.startsWith("gpt-image-2.5-") ? "Max" : "High") + " are examples. " : ""}Image output estimates exclude prompt and reference inputs, text planning, image analysis, previews, and any search fees. Actual usage may differ.</p>
           </div>
         </Field>
       </section>
@@ -1133,20 +1133,20 @@ export default function Page() {
       {/* â”€â”€ Scene focus multi-select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="studio-panel mb-6 rounded-[24px] p-4 sm:p-5">
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">
+          <span className="text-[11px] uppercase tracking-[0.22em] text-gray-600">
             {contentType === "fashion" ? "Categorie mode - choisissez une ou plusieurs" : "Scene focus - pick one or more"}
-            {modes.size > 0 && <span className="ml-1 text-neutral-400">({modes.size})</span>}
+            {modes.size > 0 && <span className="ml-1 text-gray-600">({modes.size})</span>}
           </span>
           <div className="flex gap-3 text-[11px]">
             <button
               onClick={() => setModes(new Set(sceneChips.map((m) => m.value)))}
-              className="text-[#d7c5b3] transition hover:text-white"
+              className="text-gray-600 transition hover:text-blue-700"
             >
               Select all
             </button>
             <button
               onClick={() => setModes(new Set())}
-              className="text-[#9f9384] transition hover:text-[#f2b0a4]"
+              className="text-gray-600 transition hover:text-red-700"
             >
               Clear
             </button>
@@ -1161,8 +1161,8 @@ export default function Page() {
                 onClick={() => toggleMode(m.value)}
                 className={`rounded-full border px-3 py-1.5 text-xs transition ${
                   on
-                    ? "border-[#6f8f68] bg-[#243222] text-[#e3efde]"
-                    : "border-[#4a3b2c] text-[#c9baaa] hover:border-[#c97a3d] hover:text-white"
+                    ? "border-green-300 bg-green-50 text-green-700"
+                    : "border-gray-200 text-gray-600 hover:border-blue-600 hover:text-blue-700"
                 }`}
               >
                 {m.label}
@@ -1170,7 +1170,7 @@ export default function Page() {
             );
           })}
         </div>
-        <p className="mt-3 text-[11px] leading-5 text-[#8e8276]">
+        <p className="mt-3 text-[11px] leading-5 text-gray-600">
           {contentType === "recipes"
             ? "Each image is randomly drawn from the food categories you select. Select all gives a full mix of dishes."
             : contentType === "fashion"
@@ -1194,17 +1194,17 @@ export default function Page() {
       {(contentType === "horses" || contentType === "fashion") && refs.length > 0 && (
         <section className="studio-panel mb-6 flex flex-col gap-2 rounded-[24px] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-gray-600">
               {openAIImage ? "Reference inspiration" : "Inspiration mode - Flux Dev img2img"}
             </div>
-            <p className="mt-1 text-[11px] leading-5 text-[#8e8276]">
+            <p className="mt-1 text-[11px] leading-5 text-gray-600">
               {openAIImage ? "Guides how closely the prompt follows your reference. OpenAI edits use the selected image model." : "Controls both the image transform strength and how closely the new concept follows your reference style."}
             </p>
           </div>
           <select
             value={imgStrength}
             onChange={(e) => setImgStrength(Number(e.target.value))}
-            className="rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
           >
             {IMG2IMG_STRENGTHS.map((s) => (
               <option key={s.value} value={s.value}>
@@ -1216,7 +1216,7 @@ export default function Page() {
       )}
 
       {error && (
-        <div className="mb-6 rounded-2xl border border-[#7a4037] bg-[#341715]/80 p-4 text-sm text-[#f1c3b8] shadow-[0_18px_40px_rgba(122,64,55,0.16)]">
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700 shadow-[0_18px_40px_rgba(122,64,55,0.16)]">
           {error}
         </div>
       )}
@@ -1225,20 +1225,20 @@ export default function Page() {
       {!!items.length && (
         <section className="studio-panel mb-4 grid gap-2 rounded-[24px] p-4 sm:grid-cols-4 sm:p-5">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">Generated</div>
-            <div className="mt-1 text-2xl font-semibold text-neutral-100">{items.length}</div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-gray-600">Generated</div>
+            <div className="mt-1 text-2xl font-semibold text-gray-900">{items.length}</div>
           </div>
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">High potential</div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-gray-600">High potential</div>
             <div className="mt-1 text-2xl font-semibold text-orange-300">{highPotential}</div>
           </div>
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">Avg. caption</div>
-            <div className="mt-1 text-2xl font-semibold text-neutral-100">{averageCaptionLength}</div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-gray-600">Avg. caption</div>
+            <div className="mt-1 text-2xl font-semibold text-gray-900">{averageCaptionLength}</div>
           </div>
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">{items.some((item) => item.costIncomplete) ? "Avg. partial estimate" : "Avg. usage estimate"}</div>
-            <div className="mt-1 font-mono text-2xl font-semibold text-emerald-400">${averageCost.toFixed(4)}</div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-gray-600">{items.some((item) => item.costIncomplete) ? "Avg. partial estimate" : "Avg. usage estimate"}</div>
+            <div className="mt-1 font-mono text-2xl font-semibold text-green-700">${averageCost.toFixed(4)}</div>
           </div>
         </section>
       )}
@@ -1247,7 +1247,7 @@ export default function Page() {
         <section className="studio-panel overflow-hidden rounded-[24px]">
           {/* Bulk header */}
           <div className="flex flex-col gap-3 border-b border-neutral-800 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-            <label className="flex flex-wrap items-center gap-2 text-sm text-neutral-200 sm:gap-3">
+            <label className="flex flex-wrap items-center gap-2 text-sm text-gray-900 sm:gap-3">
               <input
                 type="checkbox"
                 checked={allChecked}
@@ -1257,10 +1257,10 @@ export default function Page() {
               <span>
                 Select All ({items.length})
                 {selected.size > 0 && (
-                  <span className="ml-1 text-neutral-500">/ {selected.size}</span>
+                  <span className="ml-1 text-gray-600">/ {selected.size}</span>
                 )}
               </span>
-              <span className="rounded-full border border-emerald-700/50 bg-emerald-900/30 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+              <span className="rounded-full border border-emerald-700/50 bg-emerald-900/30 px-2.5 py-0.5 text-xs font-medium text-green-700">
                 {items.some((item) => item.costIncomplete) ? "Partial estimate" : "Usage estimate"}: <span className="font-mono">${totalCost.toFixed(5)}</span>
               </span>
             </label>
@@ -1360,37 +1360,37 @@ export default function Page() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="whitespace-pre-wrap text-sm text-neutral-100">
+                        <p className="whitespace-pre-wrap text-sm text-gray-900">
                           {i.description || i.idea || "Untitled"}
                         </p>
                         <div className="mt-1.5 flex flex-wrap gap-2">
                           <button
                             onClick={() => regenerateCaption(i)}
                             disabled={regenerating.has(i.imageUrl)}
-                            className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-50 transition"
+                            className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] text-gray-900 hover:bg-neutral-800 disabled:opacity-50 transition"
                           >
                             {regenerating.has(i.imageUrl) ? "Regenerating..." : "Regenerate caption"}
                           </button>
                           <button
                             onClick={() => togglePrompt(i.imageUrl)}
-                            className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800 transition"
+                            className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] text-gray-900 hover:bg-neutral-800 transition"
                           >
                             {promptOpen ? "Hide prompt" : "Show prompt"}
                           </button>
                           <button
                             onClick={() => copyText(i.renderedPrompt || i.prompt, `${i.imageUrl}:prompt`)}
-                            className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800 transition"
+                            className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] text-gray-900 hover:bg-neutral-800 transition"
                           >
                             {copied === `${i.imageUrl}:prompt` ? "Copied" : "Copy prompt"}
                           </button>
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-neutral-500">
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-600">
                           <span>{new Date(i.createdAt).toLocaleString()}</span>
-                          <span className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] uppercase tracking-wider text-neutral-400">
+                          <span className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] uppercase tracking-wider text-gray-600">
                             {i.provider} / {i.model}
                           </span>
                           {i.falModel && (
-                            <span className="rounded border border-amber-700/60 bg-amber-900/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-amber-300">
+                            <span className="rounded border border-amber-700/60 bg-amber-900/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-amber-700">
                               {prettyFal(i.falModel)}
                             </span>
                           )}
@@ -1423,18 +1423,18 @@ export default function Page() {
                             </span>
                           )}
                           {lastCopied && (
-                            <span className="rounded border border-emerald-600/60 bg-emerald-900/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+                            <span className="rounded border border-emerald-600/60 bg-emerald-900/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-green-700">
                               ✓ Last copied
                             </span>
                           )}
-                          <span className="font-mono text-emerald-400">
+                          <span className="font-mono text-green-700">
                             ${i.cost.toFixed(5)}{i.costIncomplete ? " partial est.; some usage unavailable" : " usage est."}
                             {typeof i.textCost === "number" && ` · text $${i.textCost.toFixed(5)}`}
                             {typeof i.imageCost === "number" && ` · ${i.imageCostIncluded ? "image" : "image output est."} $${i.imageCost.toFixed(5)}`}
                             {!!i.searchCost && ` · search $${i.searchCost.toFixed(5)}`}
                           </span>
                           {i.description && (
-                            <span className="text-[10px] text-neutral-500">{i.description.length} chars</span>
+                            <span className="text-[10px] text-gray-600">{i.description.length} chars</span>
                           )}
                           {i.location && /no location/i.test(i.location) && (
                             <span className="text-[10px] text-neutral-600">📍 No location suggested</span>
@@ -1442,7 +1442,7 @@ export default function Page() {
                           {i.analysis && (
                             <button
                               onClick={() => toggleAnalysis(i.imageUrl)}
-                              className="text-[10px] text-neutral-500 underline underline-offset-2 hover:text-violet-300 transition"
+                              className="text-[10px] text-gray-600 underline underline-offset-2 hover:text-violet-300 transition"
                             >
                               {analysisOpen ? "Hide analysis ↑" : "Show analysis ↓"}
                             </button>
@@ -1452,15 +1452,15 @@ export default function Page() {
                         {i.firstComment && (
                           <div className="mt-2 rounded-lg border border-emerald-800/40 bg-emerald-950/20 p-2">
                             <div className="mb-1 flex items-center justify-between gap-2">
-                              <span className="text-[10px] uppercase tracking-wider text-emerald-400">First comment</span>
+                              <span className="text-[10px] uppercase tracking-wider text-green-700">First comment</span>
                               <button
                                 onClick={() => copyText(i.firstComment ?? "", `${i.imageUrl}:fc`)}
-                                className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800 transition"
+                                className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-gray-600 hover:bg-neutral-800 transition"
                               >
                                 {copied === `${i.imageUrl}:fc` ? "Copied ✓" : "Copy"}
                               </button>
                             </div>
-                            <p className="whitespace-pre-wrap text-xs text-neutral-200">{i.firstComment}</p>
+                            <p className="whitespace-pre-wrap text-xs text-gray-900">{i.firstComment}</p>
                           </div>
                         )}
 
@@ -1483,7 +1483,7 @@ export default function Page() {
                       <button
                         type="button"
                         onClick={() => { setPreview(null); setPreviewPinned(false); setFilterTarget({ url: i.imageUrl, fileName: `${contentType}-image-${idx + 1}` }); }}
-                        className="flex-1 rounded-lg border border-[#a87b55] px-3 py-1.5 text-xs font-medium text-[#f3e5d4] hover:bg-white/5 sm:flex-none"
+                        className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-900 hover:bg-gray-100 sm:flex-none"
                       >
                         Add Filter
                       </button>
@@ -1497,21 +1497,21 @@ export default function Page() {
                   </div>
 
                   {promptOpen && (
-                    <div className="ml-8 grid gap-2 rounded-xl border border-neutral-800 bg-neutral-900/70 p-3 text-xs text-neutral-300 sm:ml-12">
+                    <div className="ml-8 grid gap-2 rounded-xl border border-neutral-800 bg-neutral-900/70 p-3 text-xs text-gray-600 sm:ml-12">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] uppercase tracking-wider text-neutral-500">
+                        <p className="text-[10px] uppercase tracking-wider text-gray-600">
                           Image prompt
                         </p>
                         <button
                           onClick={() => copyText(i.renderedPrompt || i.prompt, `${i.imageUrl}:prompt-panel`)}
-                          className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800 transition"
+                          className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-gray-600 hover:bg-neutral-800 transition"
                         >
                           {copied === `${i.imageUrl}:prompt-panel` ? "Copied" : "Copy"}
                         </button>
                       </div>
                       <p className="whitespace-pre-wrap leading-relaxed">{i.renderedPrompt || i.prompt}</p>
                       {i.idea && (
-                        <p className="border-t border-neutral-800 pt-2 text-neutral-500">
+                        <p className="border-t border-neutral-800 pt-2 text-gray-600">
                           Idea: {i.idea}
                         </p>
                       )}
@@ -1520,7 +1520,7 @@ export default function Page() {
 
                   {/* Inspiration analysis panel */}
                   {i.analysis && analysisOpen && (
-                    <div className="ml-8 grid gap-2 rounded-xl border border-violet-800/40 bg-violet-950/20 p-3 text-xs text-neutral-300 sm:ml-12">
+                    <div className="ml-8 grid gap-2 rounded-xl border border-violet-800/40 bg-violet-950/20 p-3 text-xs text-gray-600 sm:ml-12">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-[10px] uppercase tracking-wider text-violet-400">
                           Inspiration analysis
@@ -1536,7 +1536,7 @@ export default function Page() {
                           </span>
                         )}
                         {i.rpmScore && (
-                          <span className="rounded border border-emerald-700/60 bg-emerald-900/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">
+                          <span className="rounded border border-emerald-700/60 bg-emerald-900/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-green-700">
                             RPM: {i.rpmScore}
                           </span>
                         )}
@@ -1559,7 +1559,7 @@ export default function Page() {
                           <p className="min-w-0"><span className="text-violet-400">Alt text:</span> {i.altText}</p>
                           <button
                             onClick={() => copyText(i.altText ?? "", `${i.imageUrl}:alt`)}
-                            className="shrink-0 rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800 transition"
+                            className="shrink-0 rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-gray-600 hover:bg-neutral-800 transition"
                           >
                                 {copied === `${i.imageUrl}:alt` ? "Copied ✓" : "Copy"}
                           </button>
@@ -1657,11 +1657,11 @@ function ReferenceZone({
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <span className="text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">
+          <span className="text-[11px] uppercase tracking-[0.22em] text-gray-600">
             Viral Post Inspiration
           </span>
           {refs.length > 0 && (
-            <span className="ml-2 rounded-full bg-[#2d2118] px-2 py-0.5 text-[10px] text-[#f0cfb4]">
+            <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700">
               {refs.length}/{MAX_REFS} images
             </span>
           )}
@@ -1669,7 +1669,7 @@ function ReferenceZone({
         {refs.length > 0 && (
           <button
             onClick={onClear}
-            className="text-[11px] text-[#9f9384] transition hover:text-[#f2b0a4]"
+            className="text-[11px] text-gray-600 transition hover:text-red-700"
           >
             Clear all
           </button>
@@ -1685,17 +1685,17 @@ function ReferenceZone({
           onClick={() => fileInputRef.current?.click()}
           className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition select-none ${
             dragging
-              ? "border-[#c97a3d] bg-[#2b1f17] text-[#f0cfb4]"
-              : "border-[#5a4838] text-[#b9aa98] hover:border-[#c97a3d] hover:text-[#f6ebdf]"
+              ? "border-blue-600 bg-blue-50 text-blue-700"
+              : "border-gray-200 text-gray-600 hover:border-blue-600 hover:text-gray-900"
           }`}
         >
           <span className="text-2xl">📎</span>
           <p className="text-sm font-medium">
             {contentType === "fashion" ? "Drag viral fashion images here" : "Drag viral horse images here"}
             <br />
-            <span className="font-normal text-[#9f9384]">or click to upload</span>
+            <span className="font-normal text-gray-600">or click to upload</span>
           </p>
-          <p className="text-[11px] text-[#8e8276]">
+          <p className="text-[11px] text-gray-600">
             JPG / PNG / WEBP / max {MAX_REFS} images
             {refs.length > 0 && ` / ${remaining} slot${remaining !== 1 ? "s" : ""} left`}
           </p>
@@ -1720,11 +1720,11 @@ function ReferenceZone({
                 <img
                   src={r.dataUrl}
                   alt={r.name}
-                  className="h-16 w-16 rounded-xl object-cover ring-1 ring-[#5a4838]"
+                  className="h-16 w-16 rounded-xl object-cover ring-1 ring-gray-200"
                 />
                 <button
                   onClick={() => onRemove(r.id)}
-                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#a84839] text-[11px] font-bold text-white opacity-0 shadow transition group-hover:opacity-100"
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold text-white opacity-0 shadow transition group-hover:opacity-100"
                   title="Remove"
                 >
                   x
@@ -1732,12 +1732,12 @@ function ReferenceZone({
               </div>
             ))}
           </div>
-          <p className="mt-2.5 text-[11px] leading-5 text-[#a99a89]">
+          <p className="mt-2.5 text-[11px] leading-5 text-gray-600">
             {contentType === "fashion"
               ? `L'IA va analyser ${refs.length === 1 ? "cette image" : `ces ${refs.length} images`} et creer de nouvelles scenes mode originales inspirees de leur style.`
               : `AI will analyze ${refs.length === 1 ? "this image" : `these ${refs.length} images`} and create new original prompts inspired by their visual style.`}
             {full && (
-              <span className="ml-1 text-[#8e8276]">(Max {MAX_REFS} reached.)</span>
+              <span className="ml-1 text-gray-600">(Max {MAX_REFS} reached.)</span>
             )}
           </p>
         </div>
@@ -1745,7 +1745,7 @@ function ReferenceZone({
 
       {/* Empty hint */}
       {refs.length === 0 && (
-        <p className="mt-2.5 text-[11px] leading-5 text-[#8e8276]">
+        <p className="mt-2.5 text-[11px] leading-5 text-gray-600">
           {contentType === "fashion"
             ? "Importez des images mode virales pour guider l'IA. Sans image, l'app genere normalement."
             : "Upload viral horse images to guide the AI. If no images are uploaded, the app generates normally."}
@@ -1776,7 +1776,7 @@ function prettyFal(slug: string): string {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-2 text-[11px] uppercase tracking-[0.22em] text-[#cbb8a2]">{label}</div>
+      <div className="mb-2 text-[11px] uppercase tracking-[0.22em] text-gray-600">{label}</div>
       {children}
     </div>
   );
@@ -1795,7 +1795,7 @@ function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none transition focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20"
+      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
     >
       {options.map((o) => (
         <option key={o} value={o}>

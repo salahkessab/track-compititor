@@ -23,8 +23,8 @@ type Props = {
 type NamedObject = FabricObject & { layerId?: string };
 type LayerInfo = { id: string; label: string; visible: boolean; locked: boolean };
 
-const button = "rounded-xl border border-[#604a36] px-3 py-2 text-sm text-[#ead9c7] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
-const field = "w-full rounded-xl border border-[#514131] bg-[#17120f] px-3 py-2.5 text-sm text-[#f7efe5] outline-none focus:border-[#c97a3d]";
+const button = "rounded-xl border border-gray-200 px-3 py-2 text-sm text-white transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 ui-secondary";
+const field = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-600";
 const labelFor = (id: string) => id === "photo" ? "Food photo" : id === "title" ? "Recipe title" : id === "ingredients" ? "Ingredients" : "Decoration";
 
 function readDataUrl(blob: Blob): Promise<string> {
@@ -205,23 +205,23 @@ export function LayeredDesignEditor({ photo, title, ingredients, family, project
   }
 
   return <dialog ref={dialog} aria-label="Layered Design Editor" onCancel={event => { event.preventDefault(); onClose(); }}
-    className="max-h-[95dvh] w-[min(97vw,1200px)] overflow-y-auto rounded-[24px] border border-[#604a36] bg-[#17120f] p-0 text-[#f3e5d4] shadow-2xl backdrop:bg-black/80">
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#514131] px-5 py-4"><div><h2 className="studio-title text-2xl">Layered Design Editor</h2><p className="mt-1 text-xs text-[#b9aa98]">Move and resize the photo, title, and decoration separately.</p></div><button type="button" className={button} onClick={onClose}>Close</button></header>
+    className="max-h-[95dvh] w-[min(97vw,1200px)] overflow-y-auto rounded-[24px] border border-gray-200 bg-white p-0 text-gray-900 shadow-2xl backdrop:bg-black/80">
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4"><div><h2 className="studio-title text-2xl">Layered Design Editor</h2><p className="mt-1 text-xs text-gray-600">Move and resize the photo, title, and decoration separately.</p></div><button type="button" className={button} onClick={onClose}>Close</button></header>
     <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div ref={canvasHost} className="flex min-w-0 justify-center rounded-xl bg-[#0d0a08] p-2"><canvas ref={canvasElement} aria-label="Editable recipe design canvas" /></div>
-      <div className="min-w-0"><h3 className="text-xs font-semibold uppercase tracking-[.16em] text-[#d2a273]">Layers</h3><p className="mt-2 text-xs text-[#b9aa98]">Select a layer, then drag it or use its corners to resize.</p>
-        <div className="mt-3 space-y-2">{layers.map(item => <div key={item.id} className={"rounded-xl border p-2 " + (active === item.id ? "border-[#c97a3d] bg-[#c97a3d]/10" : "border-[#514131]")}>
+      <div ref={canvasHost} className="flex min-w-0 justify-center rounded-xl bg-white p-2"><canvas ref={canvasElement} aria-label="Editable recipe design canvas" /></div>
+      <div className="min-w-0"><h3 className="text-xs font-semibold uppercase tracking-[.16em] text-blue-700">Layers</h3><p className="mt-2 text-xs text-gray-600">Select a layer, then drag it or use its corners to resize.</p>
+        <div className="mt-3 space-y-2">{layers.map(item => <div key={item.id} className={"rounded-xl border p-2 " + (active === item.id ? "border-blue-600 bg-blue-600/10" : "border-gray-200")}>
           <button type="button" className="w-full px-1 py-1 text-left text-sm font-medium" onClick={() => selectLayer(item.id)}>{item.label}</button>
           <div className="mt-1 flex flex-wrap gap-1"><button type="button" className={button + " text-xs"} onClick={() => toggleVisibility(item.id)}>{item.visible ? "Hide" : "Show"}</button><button type="button" className={button + " text-xs"} onClick={() => toggleLock(item.id)}>{item.locked ? "Unlock position" : "Lock position"}</button><button type="button" className={button + " text-xs"} aria-label={`Move ${item.label} up`} onClick={() => moveLayer(item.id, 1)}>↑</button><button type="button" className={button + " text-xs"} aria-label={`Move ${item.label} down`} onClick={() => moveLayer(item.id, -1)}>↓</button></div>
         </div>)}</div>
-        <label className="mt-4 block text-xs text-[#d7c5b3]">Recipe title<textarea className={field + " mt-2"} value={titleText} rows={2} maxLength={180} disabled={!ready} onChange={event => changeTitle(event.target.value)} /></label>
-        <div className="mt-3 grid grid-cols-[1fr_72px] gap-3"><label className="block text-xs text-[#d7c5b3]">Title font<select className={field + " mt-2"} value={titleFont} disabled={!ready} onChange={event => void changeTitleFont(event.target.value)}><option value="Fraunces Variable">Classic serif</option><option value="Rokkitt Variable">Slab serif</option><option value="Archivo Narrow Variable">Diner</option><option value="Special Elite">Typewriter</option></select></label><label className="block text-xs text-[#d7c5b3]">Title color<input type="color" className="mt-2 h-[42px] w-full cursor-pointer rounded border border-[#514131] bg-[#17120f] p-1" value={titleColor} disabled={!ready} onChange={event => changeTitleColor(event.target.value)} /></label></div>
-        {hasIngredients && <label className="mt-3 block text-xs text-[#d7c5b3]">Ingredients<textarea className={field + " mt-2"} value={ingredientText} rows={5} maxLength={2000} disabled={!ready} onChange={event => changeIngredients(event.target.value)} /></label>}
+        <label className="mt-4 block text-xs text-gray-600">Recipe title<textarea className={field + " mt-2"} value={titleText} rows={2} maxLength={180} disabled={!ready} onChange={event => changeTitle(event.target.value)} /></label>
+        <div className="mt-3 grid grid-cols-[1fr_72px] gap-3"><label className="block text-xs text-gray-600">Title font<select className={field + " mt-2"} value={titleFont} disabled={!ready} onChange={event => void changeTitleFont(event.target.value)}><option value="Fraunces Variable">Classic serif</option><option value="Rokkitt Variable">Slab serif</option><option value="Archivo Narrow Variable">Diner</option><option value="Special Elite">Typewriter</option></select></label><label className="block text-xs text-gray-600">Title color<input type="color" className="mt-2 h-[42px] w-full cursor-pointer rounded border border-gray-200 bg-white p-1" value={titleColor} disabled={!ready} onChange={event => changeTitleColor(event.target.value)} /></label></div>
+        {hasIngredients && <label className="mt-3 block text-xs text-gray-600">Ingredients<textarea className={field + " mt-2"} value={ingredientText} rows={5} maxLength={2000} disabled={!ready} onChange={event => changeIngredients(event.target.value)} /></label>}
         <input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Upload a decoration" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void replaceDecoration(file); }} />
         <button type="button" className={button + " mt-3 w-full"} disabled={!ready} onClick={() => uploadRef.current?.click()}>Upload a decoration</button>
-        <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">Your original photo and generated designs stay unchanged. Layers do not guarantee removal of AI provenance signals.</p>
-        {!ready && !error && <p role="status" className="mt-3 text-xs text-[#b9aa98]">Preparing the layers…</p>}{error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-emerald-300">{notice}</p>}
-        <button type="button" disabled={!ready || busy} onClick={() => void save(true)} className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#f3e5d4] to-[#c97a3d] px-4 py-3 text-sm font-semibold text-[#221912] hover:brightness-110 disabled:opacity-40">{busy ? "Saving…" : "Download layered PNG"}</button>
+        <p className="mt-3 text-xs leading-relaxed text-gray-600">Your original photo and generated designs stay unchanged. Layers do not guarantee removal of AI provenance signals.</p>
+        {!ready && !error && <p role="status" className="mt-3 text-xs text-gray-600">Preparing the layers…</p>}{error && <p role="alert" className="mt-3 text-xs text-red-700">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-green-700">{notice}</p>}
+        <button type="button" disabled={!ready || busy} onClick={() => void save(true)} className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-600 px-4 py-3 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40">{busy ? "Saving…" : "Download layered PNG"}</button>
         <button type="button" disabled={!ready || busy} onClick={() => void save(false)} className={button + " mt-2 w-full"}>Save editable design</button>
       </div>
     </div>

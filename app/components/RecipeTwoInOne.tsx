@@ -12,8 +12,8 @@ import { MAX_EXTRA_INSTRUCTIONS, MAX_TWO_IN_ONE_PHOTO_LENGTH, RECIPE_IMAGE_TO_IM
 
 type CombinedResult = { imageUrl: string; imageModel: string; imageSettings: OpenAIImageSettings; cost: number; imageCost: number | null; costIncomplete: boolean };
 
-const inputClass = "w-full rounded-xl border border-[#4a3b2c] bg-[#1a1511] px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-[#c97a3d] focus:ring-2 focus:ring-[#c97a3d]/20 disabled:opacity-50";
-const secondaryClass = "rounded-xl border border-[#5a4634] px-4 py-2.5 text-sm text-[#f3e5d4] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50";
+const inputClass = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 disabled:opacity-50";
+const secondaryClass = "rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50";
 
 function FoodPhotoSlot({ index, photo, disabled, onFiles, onRemove }: {
   index: number; photo: FoodPhoto | null; disabled: boolean;
@@ -24,8 +24,8 @@ function FoodPhotoSlot({ index, photo, disabled, onFiles, onRemove }: {
   const [dragging, setDragging] = useState(false);
   const label = `food photo ${index + 1}`;
   return <div className="min-w-0">
-    <div className="mb-2 flex items-center justify-between gap-2"><h2 className="text-sm font-medium text-[#f3e5d4]">Photo {index + 1}</h2>
-      {photo && <button type="button" className="text-xs text-[#cbb8a2] underline underline-offset-4 disabled:opacity-50" disabled={disabled} onClick={() => onRemove(index)}>Remove</button>}
+    <div className="mb-2 flex items-center justify-between gap-2"><h2 className="text-sm font-medium text-gray-900">Photo {index + 1}</h2>
+      {photo && <button type="button" className="text-xs text-gray-600 underline underline-offset-4 disabled:opacity-50" disabled={disabled} onClick={() => onRemove(index)}>Remove</button>}
     </div>
     <div role="button" tabIndex={disabled ? -1 : 0} aria-disabled={disabled} aria-label={`Drop ${label} here or click to browse`}
       onClick={() => { if (!disabled) input.current?.click(); }}
@@ -34,14 +34,14 @@ function FoodPhotoSlot({ index, photo, disabled, onFiles, onRemove }: {
       onDragOver={event => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = disabled ? "none" : "copy"; }}
       onDragLeave={event => { event.preventDefault(); event.stopPropagation(); depth.current = Math.max(0, depth.current - 1); if (!depth.current) setDragging(false); }}
       onDrop={event => { event.preventDefault(); event.stopPropagation(); depth.current = 0; setDragging(false); if (!disabled) onFiles(index, Array.from(event.dataTransfer.files)); }}
-      className={`flex min-h-[220px] items-center justify-center overflow-hidden rounded-2xl border border-dashed transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f3e5d4] ${dragging ? "border-[#d2a273] bg-[#4a2e1d]/60 ring-2 ring-[#d2a273]/40" : "border-[#6b5037] bg-[#120f0d]/60"} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+      className={`flex min-h-[220px] items-center justify-center overflow-hidden rounded-2xl border border-dashed transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f3e5d4] ${dragging ? "border-blue-600 bg-blue-50/60 ring-2 ring-blue-600/40" : "border-gray-200 bg-white/60"} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
       {photo ? <img src={photo.dataUrl} alt={`Original food photo ${index + 1}`} draggable={false} className="max-h-[300px] w-full object-contain" /> :
-        <div className="px-4 py-8 text-center"><div aria-hidden="true" className="mb-3 text-3xl text-[#d2a273]">＋</div><p className="text-sm text-[#f3e5d4]">Drag photo {index + 1} here</p><p className="mt-2 text-xs text-[#b9aa98]">or click to browse</p></div>}
+        <div className="px-4 py-8 text-center"><div aria-hidden="true" className="mb-3 text-3xl text-blue-700">＋</div><p className="text-sm text-gray-900">Drag photo {index + 1} here</p><p className="mt-2 text-xs text-gray-600">or click to browse</p></div>}
     </div>
     <input ref={input} type="file" multiple accept="image/jpeg,image/png,image/webp" aria-label={`Upload ${label}`} className="sr-only" disabled={disabled}
       onChange={event => { const files = Array.from(event.currentTarget.files || []); event.currentTarget.value = ""; if (files.length) onFiles(index, files); }} />
     <div className="mt-2 flex min-w-0 items-center gap-2"><button type="button" className={secondaryClass} disabled={disabled} aria-label={`Browse for ${label}`} onClick={() => input.current?.click()}>{photo ? "Change photo" : "Browse files"}</button>
-      {photo && <p className="min-w-0 truncate text-xs text-[#b9aa98]" title={photo.name}>{photo.name}</p>}</div>
+      {photo && <p className="min-w-0 truncate text-xs text-gray-600" title={photo.name}>{photo.name}</p>}</div>
   </div>;
 }
 
@@ -125,31 +125,31 @@ export function RecipeTwoInOne() {
   return <div aria-label="2 in one image workspace">
     <section className="studio-panel mb-4 rounded-[28px] p-5 sm:p-6">
       <div className="mb-6">
-        <h1 className="studio-title text-3xl text-[#f7efe5]">2 in one image</h1>
+        <h1 className="studio-title text-3xl text-gray-900">2 in one image</h1>
       </div>
-      {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/25 bg-red-950/30 p-4 text-sm text-red-200">{error}</div>}
+      {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/25 bg-red-950/30 p-4 text-sm text-red-700">{error}</div>}
       <div className="grid gap-6 lg:grid-cols-2">
-        <div><p className="mb-3 text-sm font-medium text-[#f3e5d4]">Original food photos · both required</p>
+        <div><p className="mb-3 text-sm font-medium text-gray-900">Original food photos · both required</p>
           <div className="grid gap-4 sm:grid-cols-2">{photos.map((photo, index) => <FoodPhotoSlot key={index} index={index} photo={photo} disabled={loading || uploading} onFiles={(slot, files) => void addPhotos(slot, files)} onRemove={removePhoto} />)}</div>
-          <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">Drop one photo in each box, or select two together. JPG, PNG, or WebP · up to 25 MB each.</p>
-          {photos.some(Boolean) && <p className="mt-1 text-xs text-[#b9aa98]">Changing or removing an existing photo clears the extra instructions and current result.</p>}
-          {uploading && <p role="status" className="mt-2 text-xs text-[#d2a273]">Preparing photos…</p>}
+          <p className="mt-3 text-xs leading-relaxed text-gray-600">Drop one photo in each box, or select two together. JPG, PNG, or WebP · up to 25 MB each.</p>
+          {photos.some(Boolean) && <p className="mt-1 text-xs text-gray-600">Changing or removing an existing photo clears the extra instructions and current result.</p>}
+          {uploading && <p role="status" className="mt-2 text-xs text-blue-700">Preparing photos…</p>}
           <div className="mt-4"><OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} quickSettingsOnly /></div>
         </div>
-        <div className="flex flex-col"><label className="grid gap-2 text-sm text-[#cbb8a2]">Extra instructions <span className="sr-only">(optional)</span>
+        <div className="flex flex-col"><label className="grid gap-2 text-sm text-gray-600">Extra instructions <span className="sr-only">(optional)</span>
           <textarea className={inputClass + " min-h-[152px] resize-y"} rows={5} value={extraInstructions} maxLength={MAX_EXTRA_INSTRUCTIONS} disabled={loading || uploading} placeholder="Optional: describe how the foods should be arranged, or name any ingredients that must be visible." onChange={event => setExtraInstructions(event.target.value)} /></label>
-          <label className="mt-5 grid gap-2 text-sm text-[#cbb8a2]">Image model<select className={inputClass} value={model} disabled={loading} onChange={event => changeModel(event.target.value)}>{[RECIPE_IMAGE_TO_IMAGE_MODEL, ...OPENAI_IMAGE_MODEL_IDS.filter(id => id !== RECIPE_IMAGE_TO_IMAGE_MODEL)].map(id => <option key={id} value={id}>{id}</option>)}</select></label>
-          <div className="mt-auto pt-6"><button type="button" onClick={() => void generate()} disabled={!photos[0] || !photos[1] || loading || uploading} className="w-full rounded-xl bg-gradient-to-r from-[#f3e5d4] to-[#c97a3d] px-5 py-3 text-sm font-semibold text-[#221912] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">{loading ? "Generating one image…" : "Generate one image"}</button>
-            <p className="mt-3 text-xs leading-relaxed text-[#b9aa98]">One image request is billed by OpenAI; both photos are sent as references. Download the result before refreshing.</p></div>
+          <label className="mt-5 grid gap-2 text-sm text-gray-600">Image model<select className={inputClass} value={model} disabled={loading} onChange={event => changeModel(event.target.value)}>{[RECIPE_IMAGE_TO_IMAGE_MODEL, ...OPENAI_IMAGE_MODEL_IDS.filter(id => id !== RECIPE_IMAGE_TO_IMAGE_MODEL)].map(id => <option key={id} value={id}>{id}</option>)}</select></label>
+          <div className="mt-auto pt-6"><button type="button" onClick={() => void generate()} disabled={!photos[0] || !photos[1] || loading || uploading} className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">{loading ? "Generating one image…" : "Generate one image"}</button>
+            <p className="mt-3 text-xs leading-relaxed text-gray-600">One image request is billed by OpenAI; both photos are sent as references. Download the result before refreshing.</p></div>
         </div>
       </div>
     </section>
     <OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} hideQuickSettings countDescription="Both original food photos are used as references for one image. Partial images show progress before the finished image." />
-    {loading && <p role="status" aria-live="polite" className="mb-4 text-sm text-[#cbb8a2]">Creating one food photo from both references…</p>}
-    {partial && <div className="studio-panel mb-4 rounded-2xl p-4"><p className="mb-3 text-sm text-[#b9aa98]">Preview · still generating</p><img src={partial} alt="Combined food photo in progress" className="max-h-[440px] w-full rounded-xl object-contain" /></div>}
+    {loading && <p role="status" aria-live="polite" className="mb-4 text-sm text-gray-600">Creating one food photo from both references…</p>}
+    {partial && <div className="studio-panel mb-4 rounded-2xl p-4"><p className="mb-3 text-sm text-gray-600">Preview · still generating</p><img src={partial} alt="Combined food photo in progress" className="max-h-[440px] w-full rounded-xl object-contain" /></div>}
     {result && <section aria-label="Combined food photo" className="studio-panel mt-6 overflow-hidden rounded-[24px] p-4"><h2 className="studio-title mb-4 text-2xl">Your combined image</h2>
-      <img src={result.imageUrl} alt="Food photo combining both references" className="max-h-[600px] w-full rounded-xl bg-[#120f0d] object-contain" />
-      <p className="mt-3 text-xs text-[#b9aa98]">{result.imageModel} · {result.imageCost === null ? "Cost unavailable from provider usage" : "$" + result.cost.toFixed(5) + (result.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
+      <img src={result.imageUrl} alt="Food photo combining both references" className="max-h-[600px] w-full rounded-xl bg-white object-contain" />
+      <p className="mt-3 text-xs text-gray-600">{result.imageModel} · {result.imageCost === null ? "Cost unavailable from provider usage" : "$" + result.cost.toFixed(5) + (result.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
       <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondaryClass} disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : (result.imageSettings.output_format === "webp" ? "Download optimized WebP" : "Download Original · " + result.imageSettings.output_format.toUpperCase())}</button>
       <button type="button" className={secondaryClass} onClick={() => setFilterTarget(result.imageUrl)}>Add Filter</button></div></section>}
     {filterTarget && <ImageFilterStudio webOptimized={result?.imageSettings.output_format === "webp"} source={filterTarget} fileName="two-in-one-food" onClose={() => setFilterTarget(null)} />}
