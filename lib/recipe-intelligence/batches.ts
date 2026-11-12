@@ -1,3 +1,4 @@
+import { excludedPhotoFile } from "./photoExclusions";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -116,7 +117,7 @@ export class BatchStore {
       ...i, source: i.source_json ? JSON.parse(i.source_json) : null, research: JSON.parse(i.research_json), warnings: JSON.parse(i.warnings_json), article: i.article_json ? JSON.parse(i.article_json) : null,
       deletion: deletionAvailability(this.store, { ...i, batch_status: b.status }),
       stages: this.store.db.prepare("SELECT id,kind,state,error,attempt FROM content_stages WHERE item_id=? ORDER BY id").all(i.id),
-      files: this.store.db.prepare("SELECT id,name,size_bytes,media_type FROM artifacts WHERE item_id=? ORDER BY name").all(i.id),
+      files: (this.store.db.prepare("SELECT id,name,size_bytes,media_type FROM artifacts WHERE item_id=? ORDER BY name").all(i.id) as any[]).filter(f => !excludedPhotoFile(this.store, i.id, f.name)),
       photos: (this.store.db.prepare("SELECT p.*,s.state FROM content_photos p LEFT JOIN content_stages s ON s.item_id=p.item_id AND s.kind='photo:'||p.reference_id WHERE p.item_id=? ORDER BY p.position").all(i.id) as any[]).map(p => ({ ...p, relative_path: undefined, analysis: p.analysis_json ? JSON.parse(p.analysis_json) : null })),
     }));
     return { ...b, settings: JSON.parse(b.settings_json), quote: JSON.parse(b.quote_json), budget: this.budget(id), items,

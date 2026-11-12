@@ -435,3 +435,19 @@ test('uncertain article offers an explicit retry with the earlier charge reserve
   assert.deepEqual(JSON.parse(posts[0].init.body),{kind:'article',regenerate:true,retryUncertain:true});
   assert.ok(calls.every(c=>!c.url.includes('/resolve')&&!c.url.includes('/approve')));
 });
+
+test('each reference photo offers Skip and a skipped photo no longer asks for context', async t => {
+ const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+ const id='a1111111-2222-4333-8444-555555555555', calls=[];
+ const item={id:'skip-item',title:'Corn orzo',state:'review',files:[],warnings:[],stages:[],photos:[{id:'p1',reference_id:'ref1',position:0,state:'done'},{id:'p2',reference_id:'ref2',position:1,state:'review',analysis:{role:'unknown'},error:'Review this book cover'}]};
+ const batch={id,settings,status:'needs_review',approved_at:'2026-11-12T11:00:00Z',limit_usd:4,quote:{estimated:1,recommendedLimit:4,lines:[]},budget:{actual:.4,held:0,uncertain:0},items:[item],calls:[]};
+ const {root,Component}=await ui(t,async(url,init={})=>{
+ calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,batches:[]});if(url.endsWith('/batches/'+id))return Response.json(batch);
+ if(url.endsWith('/photo-skip')){assert.deepEqual(JSON.parse(init.body),{referenceId:'ref2'});item.photos[1].state='skipped';item.photos[1].error=null;return Response.json({skipped:true});}throw Error('Unexpected '+url);
+ },`http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches&batchId=${id}`);
+ await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+ const buttons=[...document.querySelectorAll('button')].filter(x=>x.textContent==='Skip this photo');assert.equal(buttons.length,2);assert.ok(document.querySelector('form'));
+ await React.act(async()=>buttons[1].click());
+ assert.match(document.body.textContent,/Skipped · excluded/);assert.ok(!document.body.textContent.includes('Confirm context and continue this photo'));
+ assert.equal(calls.filter(c=>c.init.method==='POST').length,1);assert.ok(calls.every(c=>!c.url.includes('/approve')&&!c.url.includes('/retry')));
+});

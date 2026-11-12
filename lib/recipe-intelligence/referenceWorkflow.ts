@@ -126,7 +126,7 @@ export async function processReferenceStage(engine: BatchEngine, stage: any, ite
   const source = item.source_json ? JSON.parse(item.source_json) : null;
   const config = item.config_json ? JSON.parse(item.config_json) : {};
   if (stage.kind.startsWith("analysis:")) {
-    const group = photos.slice(Number(stage.kind.split(":")[1]) * 10, Number(stage.kind.split(":")[1]) * 10 + 10);
+    const group = photos.slice(Number(stage.kind.split(":")[1]) * 10, Number(stage.kind.split(":")[1]) * 10 + 10).filter(p => !db.prepare("SELECT 1 FROM content_stages WHERE item_id=? AND kind=? AND state='skipped'").get(item.id, `photo:${p.reference_id}`));
     const inputs: any[] = [];
     for (const p of group) {
       try {
@@ -165,4 +165,31 @@ export function reviewPhoto(b: BatchStore, itemId: string, referenceId: string, 
   const source = item.source_json ? JSON.parse(item.source_json) : null; const analysis = checkedAnalysis({ ...input, id: referenceId, needsReview: false, reason: "Photo context confirmed by the user." }, referenceId, source?.instructions?.length || 0);
   if (analysis.needsReview) throw new Error("Confirm the visible food, vessel and supported ingredient names.");
   b.store.db.prepare("UPDATE content_photos SET analysis_json=?,error=NULL WHERE id=?").run(JSON.stringify(analysis), photo.id); b.next(itemId, `photo:${referenceId}`);
+}
+
+export async function skipPhoto(b: BatchStore, itemId: string, referenceId: string) {
+  const db = b.store.db;
+  const item = b.item(itemId);
+  db.transaction(() => {
+    const photo = db.prepare("SELECT 1 FROM content_photos WHERE item_id=? AND reference_id=?").get(itemId, referenceId);
+    const stage = db.prepare("SELECT * FROM content_stages WHERE item_id=? AND kind=?").get(itemId, `photo:${referenceId}`) as any;
+    if (!photo || !stage) throw new Error("Photograph not found in this recipe.");
+    if (db.prepare("SELECT 1 FROM content_stages WHERE item_id=? AND state='running'").get(itemId) || db.prepare("SELECT 1 FROM api_calls WHERE stage_id IN (SELECT id FROM content_stages WHERE item_id=?) AND state='dispatched'").get(itemId)) throw new Error("Wait for this recipe's current request to finish, then skip this photo.");
+    // Keep receipts, files and all paid/uncertain reservations. Skipping never refunds or retries a call.
+    db.prepare("UPDATE content_stages SET state='skipped',error=NULL,updated_at=? WHERE id=?").run(now(), stage.id);
+    db.prepare("UPDATE content_photos SET error=NULL WHERE item_id=? AND reference_id=?").run(itemId, referenceId);
+    const batch = b.get(item.batch_id);
+    if (batch.approved_at && !['cancelled', 'paused', 'budget_wait'].includes(batch.status) && ['review', 'partial', 'completed', 'queued'].includes(item.state)) {
+      const settings = JSON.parse(batch.settings_json);
+      if ((settings.mode !== 'before_images' || item.images_approved) && db.prepare("SELECT 1 FROM content_stages WHERE item_id=? AND kind=? AND state='done'").get(itemId, settings.output === 'images_only' ? 'source' : 'save_article')) {
+        nextReferenceStage(b, item);
+        db.prepare("UPDATE content_batches SET status='running' WHERE id=?").run(batch.id);
+      }
+    }
+  }).immediate();
+  // Rebuild from saved content only; no provider request or new cost approval.
+  if (item.article_json) b.artifacts.article(item, JSON.parse(item.article_json), JSON.parse(item.source_json));
+  await b.artifacts.gallery(item);
+  b.artifacts.manifest(b.item(itemId));
+  b.refresh();
 }

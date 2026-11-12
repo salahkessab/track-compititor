@@ -1,3 +1,4 @@
+import { excludedPhotoFile } from "./photoExclusions";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -78,6 +79,7 @@ export class ArtifactStore {
     return batch && JSON.parse(batch.settings_json).imageStorage === IMAGE_STORAGE_VERSION;
   }
   private imageFile(item: any, stem: string): any {
+    if (excludedPhotoFile(this.store, item.id, `${stem}.webp`)) return;
     const formats = this.lossless(item) ? ["webp", "png", "jpg", "jpeg"] : ["jpg"];
     for (const format of formats) {
       const row = this.store.db.prepare("SELECT id,name,media_type FROM artifacts WHERE item_id=? AND name=?").get(item.id, `${stem}.${format}`);
@@ -136,7 +138,7 @@ export class ArtifactStore {
     return { ...file, data: Buffer.from(html) };
   }
   manifest(item: any) {
-    const files = this.store.db.prepare("SELECT name,sha256,size_bytes,media_type FROM artifacts WHERE item_id=? AND name!='manifest.json'").all(item.id);
+    const files = (this.store.db.prepare("SELECT name,sha256,size_bytes,media_type FROM artifacts WHERE item_id=? AND name!='manifest.json'").all(item.id) as any[]).filter(f => !excludedPhotoFile(this.store, item.id, f.name));
     const stages = (this.store.db.prepare("SELECT kind,state,error,updated_at,result_json FROM content_stages WHERE item_id=?").all(item.id) as any[]).map(({ result_json, ...stage }) => {
       const storage = result_json && JSON.parse(result_json).storage;
       return storage ? { ...stage, storage } : stage;
@@ -210,7 +212,7 @@ export class ArtifactStore {
   async gallery(item: any) {
     const rows = this.store.db.prepare("SELECT * FROM content_photos WHERE item_id=? ORDER BY position").all(item.id) as any[];
     const figures: string[] = [];
-    for (const p of rows) { const file = this.imageFile(item, `photo-${p.reference_id}`);
+    for (const p of rows) { if (excludedPhotoFile(this.store, item.id, `photo-${p.reference_id}.webp`)) continue; const file = this.imageFile(item, `photo-${p.reference_id}`);
       try {
       const original = fs.readFileSync(storagePath(this.store.root, p.relative_path)); if (digest(original) !== p.sha256) throw new Error("Reference checksum changed.");
       const thumbnail = async (data: Buffer) => (await sharp(data, { limitInputPixels: 40_000_000 }).rotate().resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer()).toString("base64");
@@ -221,7 +223,7 @@ export class ArtifactStore {
   }
   zip(item: any) {
     this.manifest(item);
-    const rows = this.store.db.prepare("SELECT * FROM artifacts WHERE item_id=? ORDER BY name").all(item.id) as any[];
+    const rows = (this.store.db.prepare("SELECT * FROM artifacts WHERE item_id=? ORDER BY name").all(item.id) as any[]).filter(f => !excludedPhotoFile(this.store, item.id, f.name));
     if (rows.reduce((sum, f) => sum + f.size_bytes, 0) > 250 * 1024 * 1024) throw new Error("ZIP exceeds 250 MB. Download the individual files instead.");
     const files = rows.map(f => ({ name: f.name, data: this.read(f.id).data }));
     const requests = (this.store.db.prepare("SELECT kind,attempt,profile_version,request_path FROM content_stages WHERE item_id=? AND request_path IS NOT NULL").all(item.id) as any[]).map(s => { const payload = JSON.parse(fs.readFileSync(storagePath(this.store.root, s.request_path), "utf8")); return { ...s, request_path: undefined, request: JSON.parse(JSON.stringify(payload).replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, "[original reference bytes retained locally]")) }; });

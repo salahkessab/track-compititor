@@ -7,7 +7,7 @@ import { contentSettings, saveContentSettings, validateContentSettings } from ".
 import { checkModels } from "./provider";
 import { atomicWrite } from "./artifacts";
 import { ImportStore, MAX_PHOTO_BYTES } from "./imports";
-import { prepareReferenceBatch, prepareImportEstimate, reviewPhoto } from "./referenceWorkflow";
+import { prepareReferenceBatch, prepareImportEstimate, reviewPhoto, skipPhoto } from "./referenceWorkflow";
 import { WordPressStore } from "./wordpress";
 import { WordPressPublisher } from "./wordpress-publish";
 import { beginBrowserCapture, finishBrowserCapture, MAX_CAPTURE_BYTES } from "./browserCapture";
@@ -132,6 +132,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     }
     if (area === "references" && id && request.method === "GET") { const ref = database.db.prepare("SELECT relative_path,sha256 FROM reference_photos WHERE id=? AND state='ready'").get(id) as any; if (ref?.relative_path) await storage.ensure(ref.relative_path, ref.sha256); const file = imports.read(id); return new Response(new Uint8Array(file.bytes), { headers: { "Content-Type": file.mime_type, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'" } }); }
     if (area === "batches" && id && child === "estimate" && request.method === "POST") { await body(request); return json(prepareReferenceBatch(batches, id)); }
+    if (area === "items" && id && child === "photo-skip" && request.method === "POST") { const data = await body(request); await skipPhoto(batches, id, data.referenceId); return json({ skipped: true }); }
     if (area === "items" && id && child === "photo-context" && request.method === "POST") { const data = await body(request); reviewPhoto(batches, id, data.referenceId, data.analysis); return json({ queued: true }, 202); }
     if (area === "items" && id && child === "zip" && request.method === "GET") { const bytes = batches.artifacts.zip(batches.item(id)); return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="recipe-outputs.zip"', "Cache-Control": "no-store" } }); }
     if (area === "reports" && !id && request.method === "POST") {

@@ -1,3 +1,4 @@
+import { excludedPhotoFile } from "./photoExclusions";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import * as cheerio from "cheerio";
@@ -155,7 +156,7 @@ export class WordPressStore {
       if (tag === "a") { try { publicUrl(node.attr("href") || ""); } catch { node.removeAttr("href"); } }
     });
     for (const name of Object.keys(root.attr() || {})) root.removeAttr(name);
-    const outputs = (this.store.db.prepare("SELECT id,name,sha256,size_bytes,media_type FROM artifacts WHERE item_id=? AND media_type IN ('image/jpeg','image/png','image/webp')").all(itemId) as any[]).filter(f => GENERATED_IMAGE_NAME.test(f.name));
+    const outputs = (this.store.db.prepare("SELECT id,name,sha256,size_bytes,media_type FROM artifacts WHERE item_id=? AND media_type IN ('image/jpeg','image/png','image/webp')").all(itemId) as any[]).filter(f => GENERATED_IMAGE_NAME.test(f.name) && !excludedPhotoFile(this.store, itemId, f.name));
     const approved = new Map(outputs.map(f => [f.sha256, f]));
     const images = new Map<string, Image>();
     let linkedImages = false;

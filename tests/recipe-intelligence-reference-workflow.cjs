@@ -4,7 +4,7 @@ const fs = require('node:fs'); const path = require('node:path');
 const sharp = require('sharp');
 const { contentFixture, html, recipeData, article, textResponse } = require('./helpers/content-fixtures.cjs');
 const { ImportStore, discoverPhotos } = require('../.intelligence-build/lib/recipe-intelligence/imports.js');
-const { prepareReferenceBatch, reviewPhoto } = require('../.intelligence-build/lib/recipe-intelligence/referenceWorkflow.js');
+const { prepareReferenceBatch, reviewPhoto, skipPhoto } = require('../.intelligence-build/lib/recipe-intelligence/referenceWorkflow.js');
 const { PHOTO_PROFILE_VERSION, PHOTO_INSTRUCTIONS, analysisPayload } = require('../.intelligence-build/lib/recipe-intelligence/photoProfile.js');
 const { DEFAULT_CONTENT_SETTINGS, saveContentSettings, validateContentSettings } = require('../.intelligence-build/lib/recipe-intelligence/settings.js');
 const { ProviderFailure } = require('../.intelligence-build/lib/recipe-intelligence/provider.js');
@@ -182,4 +182,36 @@ test('migration 4 backs up a real version-3 batch and preserves its stages, rece
  old.prepare("INSERT INTO content_batches(id,created_at,status,settings_json,quote_json) VALUES('batch','2026-01-01','completed',?,?)").run(JSON.stringify({textModel:'gpt-5.4-mini',images:true}),JSON.stringify({createdAt:'2026-01-01',lines:[]}));old.prepare("INSERT INTO content_items(id,batch_id,recipe_id,basis,state) VALUES('item','batch',1,'original','completed')").run();
  old.prepare("INSERT INTO content_stages(item_id,kind,state,updated_at) VALUES('item','featured','done','2026-01-01')").run();old.prepare("INSERT INTO api_calls(id,batch_id,stage_id,model,operation,state,reserved_usd,actual_usd,created_at,response_path,request_hash) VALUES('call','batch',1,'gpt-image-2.6-sunburst','image','succeeded',.1,.05,'2026-01-01','research/api-receipts/old.json','saved-request-hash')").run();old.prepare("INSERT INTO artifacts(id,item_id,name,relative_path,sha256,size_bytes,media_type,created_at) VALUES('file','item','featured.jpg','articles/old.jpg','saved-checksum',100,'image/jpeg','2026-01-01')").run();old.close();
  const updated=await IntelligenceStore.open(root);try{assert.equal(updated.db.pragma('user_version',{simple:true}), 7);assert.deepEqual(updated.db.pragma('foreign_key_check'),[]);const batch=new BatchStore(updated).detail('batch');assert.equal(batch.settings.imageWorkflow,undefined);assert.equal(batch.items[0].stages[0].kind,'featured');assert.equal(batch.items[0].files[0].name,'featured.jpg');assert.equal(batch.budget.actual,.05);const backupName=fs.readdirSync(path.join(root,'backups')).find(n=>n.startsWith('before-migration-4'));assert.ok(backupName);const backup=new Database(path.join(root,'backups',backupName),{readonly:true});try{assert.equal(backup.pragma('user_version',{simple:true}),3);assert.equal(backup.prepare('SELECT count(*) n FROM api_calls').get().n,1);}finally{backup.close();}}finally{updated.close();}
+});
+
+test('skipping an unrelated review photo completes the recipe without another call and keeps successful images',async t=>{
+ const f=await referenceFixture(t,{reviewFirst:true}); const row=await f.upload(2);const b=f.batches.create([{importId:row.id}],f.settings);f.approve(b);await f.drainBatch();
+ let item=f.batches.detail(b.id).items[0];assert.equal(item.photos[0].state,'review');assert.equal(item.photos[1].state,'done');
+ const count=f.providerCalls.length,budget=f.batches.budget(b.id),kept=item.files.find(x=>x.name===`photo-${row.photos[1].id}.webp`);
+ await assert.rejects(skipPhoto(f.batches,item.id,'00000000-0000-0000-0000-000000000000'),/not found/);
+ await skipPhoto(f.batches,item.id,row.photos[0].id);await skipPhoto(f.batches,item.id,row.photos[0].id);await f.drainBatch();
+ item=f.batches.detail(b.id).items[0];assert.equal(item.state,'completed');assert.equal(item.photos[0].state,'skipped');assert.equal(item.files.find(x=>x.id===kept.id).id,kept.id);assert.equal(f.providerCalls.length,count);assert.deepEqual(f.batches.budget(b.id),budget);
+ assert.doesNotMatch(f.batches.artifacts.read(item.files.find(x=>x.name==='gallery.html').id).data.toString(),/Photograph 1/);
+ const second=await IntelligenceStore.open(f.root);try{assert.equal(new BatchStore(second).detail(b.id).items[0].photos[0].state,'skipped');}finally{second.close();}
+});
+
+test('skip before analysis excludes reference bytes; active requests cannot be skipped',async t=>{
+ const f=await referenceFixture(t);const row=await f.upload(2);const b=f.batches.create([{importId:row.id}],f.settings);f.approve(b);
+ const item=b.items[0];const stage=f.batches.claim(f.owner);await assert.rejects(skipPhoto(f.batches,item.id,row.photos[0].id),/current request/);
+ await f.batchEngine.process(stage);await skipPhoto(f.batches,item.id,row.photos[0].id);await f.drainBatch();
+ assert.equal(f.providerCalls.filter(c=>c.operation==='image').length,1);
+ assert.equal(f.providerCalls.find(c=>c.payload.text?.format?.name==='recipe_photographs').payload.input[0].content.filter(c=>c.type==='input_image').length,1);
+ assert.equal(f.batches.detail(b.id).items[0].photos[0].state,'skipped');
+});
+
+test('skipping a ready photo rebuilds saved article and exports without deleting files or charging again',async t=>{
+ const f=await referenceFixture(t);const row=await f.upload(2);const b=f.batches.create([{importId:row.id}],f.settings);f.approve(b);await f.drainBatch();
+ const item=f.batches.item(b.items[0].id);const source=require('../.intelligence-build/lib/recipe-intelligence/article.js').extractArticle(html(),'https://food.example/soup').recipe;
+ f.store.db.prepare('UPDATE content_items SET article_json=?,source_json=? WHERE id=?').run(JSON.stringify(article()),JSON.stringify(source),item.id);
+ const before=f.batches.detail(b.id).items[0];const file=before.files.find(x=>x.name===`photo-${row.photos[0].id}.webp`);const count=f.providerCalls.length,budget=f.batches.budget(b.id);
+ await skipPhoto(f.batches,item.id,row.photos[0].id);
+ const after=f.batches.detail(b.id).items[0];assert.ok(!after.files.some(x=>x.id===file.id));assert.ok(f.batches.artifacts.read(file.id).data.length>0);
+ const saved=f.batches.artifacts.read(after.files.find(x=>x.name==='article.html').id).data.toString();assert.ok(!saved.includes(file.name));assert.ok(saved.includes(`photo-${row.photos[1].id}.webp`));
+ const doc=new (require('../.intelligence-build/lib/recipe-intelligence/wordpress.js').WordPressStore)(f.store).document(item.id);assert.equal(doc.images.length,1);assert.ok(doc.images.every(i=>i.name!==file.name));
+ const zip=f.batches.artifacts.zip(f.batches.item(item.id));assert.ok(!zip.includes(Buffer.from(file.name)));assert.equal(f.providerCalls.length,count);assert.deepEqual(f.batches.budget(b.id),budget);
 });
