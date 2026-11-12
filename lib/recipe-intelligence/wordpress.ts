@@ -6,13 +6,14 @@ import { IntelligenceStore } from "./database";
 import { ArtifactStore, atomicWrite, digest } from "./artifacts";
 import { publicUrl } from "./urls";
 import { storagePath } from "./paths";
-import { windowsSecrets, type SecretProtection } from "./local-secrets";
+import { credentialProtection, type SecretProtection } from "./local-secrets";
 import { mediaMultipart, wordpressRequest, wordpressSite, type WordPressTransport, type WordPressResponse } from "./wordpress-http";
+import { GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
 
 export type WordPressProfile = { version: string; protocol: 1; recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string };
 type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string; bridge?: WordPressProfile };
 type Media = { id: number; sourceUrl: string };
-type Image = { sha256: string; name: string; alt: string; bytes: Buffer; source: string };
+type Image = { sha256: string; name: string; alt: string; bytes: Buffer; source: string; mediaType: "image/jpeg" | "image/png" | "image/webp" };
 const CONNECTION_PREFIX = "wordpress_connection:";
 const MAX_ARTICLE_BYTES = 80 * 1024 * 1024;
 const inFlight = new Map<string, Promise<Media>>();
@@ -32,7 +33,7 @@ function parseMedia(value: any): Media {
 }
 
 export class WordPressStore {
-  constructor(public store: IntelligenceStore, private transport: WordPressTransport = wordpressRequest, private secrets: SecretProtection = windowsSecrets) {}
+  constructor(public store: IntelligenceStore, private transport: WordPressTransport = wordpressRequest, private secrets: SecretProtection = credentialProtection()) {}
   private connection(id: string): Connection {
     if (!/^[a-f0-9]{32}$/.test(id || "")) throw new Error("Choose a connected WordPress website.");
     const row = this.store.db.prepare("SELECT value FROM settings WHERE key=?").get(CONNECTION_PREFIX + id) as any;
@@ -121,22 +122,28 @@ export class WordPressStore {
       if (tag === "a") { try { publicUrl(node.attr("href") || ""); } catch { node.removeAttr("href"); } }
     });
     for (const name of Object.keys(root.attr() || {})) root.removeAttr(name);
-    const outputs = this.store.db.prepare("SELECT id,name,sha256,size_bytes FROM artifacts WHERE item_id=? AND media_type='image/jpeg'").all(itemId) as any[];
-    const approved = new Map(outputs.filter(f => /^(?:featured|alternate|pinterest|photo-[a-f0-9-]{36})\.jpg$/.test(f.name)).map(f => [f.sha256, f]));
+    const outputs = (this.store.db.prepare("SELECT id,name,sha256,size_bytes,media_type FROM artifacts WHERE item_id=? AND media_type IN ('image/jpeg','image/png','image/webp')").all(itemId) as any[]).filter(f => GENERATED_IMAGE_NAME.test(f.name));
+    const approved = new Map(outputs.map(f => [f.sha256, f]));
     const images = new Map<string, Image>();
+    let linkedImages = false;
     root.find("img").each((_i, element) => {
       const node = $(element); const source = node.attr("src") || "";
-      if (!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(source) || source.length > 15_000_000) throw new Error("An article image is not a saved edited JPEG. Repair saved article files before uploading.");
-      const bytes = Buffer.from(source.slice(source.indexOf(",") + 1), "base64");
-      const hash = digest(bytes); const output = approved.get(hash);
+      const local = GENERATED_IMAGE_NAME.test(source) ? outputs.find(f => f.name === source) : undefined;
+      const inline = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(source);
+      if (!local && (!inline || source.length > 15_000_000)) throw new Error("An article image is not a saved edited image. Repair saved article files before uploading.");
+      const hash = local ? local.sha256 : digest(Buffer.from(inline![2], "base64")); const output = approved.get(hash);
       if (!output || output.size_bytes > 10 * 1024 * 1024) throw new Error("Only saved generated or edited images can be uploaded to WordPress.");
+      if (inline && inline[1] !== output.media_type) throw new Error("Article image type does not match its saved file.");
+      if (local) linkedImages = true;
       if (!images.has(hash)) {
         const checked = artifacts.read(output.id);
-        images.set(hash, { sha256: hash, name: output.name, alt: (node.attr("alt") || "Recipe photograph").slice(0, 500), bytes: checked.data, source });
+        images.set(hash, { sha256: hash, name: output.name, alt: (node.attr("alt") || "Recipe photograph").slice(0, 500), bytes: checked.data, source, mediaType: output.media_type });
       }
+      else node.attr("src", images.get(hash)!.source);
     });
     if (images.size > 100) throw new Error("Too many images in one article.");
-    return { $, root, images: [...images.values()], documentHash: article.sha256 };
+    // A replaced image may keep its filename. Bind approval to its bytes too.
+    return { $, root, images: [...images.values()], documentHash: linkedImages ? digest(JSON.stringify([article.sha256, [...images.keys()]])) : article.sha256 };
   }
   private row(siteUrl: string, hash: string): any {
     return this.store.db.prepare("SELECT * FROM wordpress_media WHERE site_url=? AND sha256=?").get(siteUrl, hash);
@@ -149,10 +156,10 @@ export class WordPressStore {
     });
     const ready = images.every(image => image.state === "ready");
     if (ready) {
-      const bySource = new Map(doc.images.map(image => [image.source, this.row(c.siteUrl, image.sha256)]));
+      const bySource = new Map(doc.images.map(image => [image.source, { ...this.row(c.siteUrl, image.sha256), mime_type: image.mediaType }]));
       doc.root.find("img").each((_i, element) => {
         const node = doc.$(element); const row = bySource.get(node.attr("src")!);
-        const media = parseMedia({ id: row.media_id, source_url: row.source_url, mime_type: "image/jpeg" });
+        const media = parseMedia({ id: row.media_id, source_url: row.source_url, mime_type: row.mime_type });
         node.attr("src", media.sourceUrl).attr("class", `wp-image-${media.id}`).attr("loading", "lazy");
         node.parent("figure").addClass("wp-block-image size-full");
       });
@@ -177,7 +184,7 @@ export class WordPressStore {
   }
   private async uploadImage(c: Connection, image: Image): Promise<Media> {
     const previous = this.row(c.siteUrl, image.sha256);
-    if (previous?.state === "ready") return parseMedia({ id: previous.media_id, source_url: previous.source_url, mime_type: "image/jpeg" });
+    if (previous?.state === "ready") return parseMedia({ id: previous.media_id, source_url: previous.source_url, mime_type: image.mediaType });
     // A saved successful receipt takes precedence over issuing any new upload.
     if (previous?.receipt_path) {
       try {
@@ -200,7 +207,12 @@ export class WordPressStore {
     }
     if (previous && ["uploading", "uncertain"].includes(previous.state)) throw new Error("The earlier upload has an uncertain outcome. Check this website's Media Library; clicking again only checks for the saved image and will not upload a duplicate.");
     const metadata = await sharp(image.bytes, { limitInputPixels: 40_000_000 }).metadata();
-    if (metadata.format !== "jpeg" || !metadata.width || !metadata.height || metadata.width * metadata.height > 40_000_000 || (metadata.pages || 1) !== 1) throw new Error("The edited image could not be decoded safely.");
+    if (`image/${metadata.format}` !== image.mediaType || !metadata.width || !metadata.height || metadata.width * metadata.height > 40_000_000 || (metadata.pages || 1) !== 1) throw new Error("The edited image could not be decoded safely.");
+    // Convert locally for this upload, including older JPEG/PNG articles.
+    // Keep the source checksum as the ledger key/slug so old receipts and
+    // uncertain uploads still reconcile instead of creating duplicate media.
+    const webp = await losslessImage(image.bytes, { requireWebP: true });
+    if (webp.data.length > 10 * 1024 * 1024) throw new Error("The lossless WebP exceeds the 10 MB upload limit. No image was uploaded; quality was not reduced.");
     const claimed = this.store.db.transaction(() => {
       const current = this.row(c.siteUrl, image.sha256);
       if (current && current.state !== "failed") return false;
@@ -209,9 +221,9 @@ export class WordPressStore {
     if (!claimed) throw new Error("Another request is handling this image. Try copying again after it finishes.");
     let response: WordPressResponse | undefined;
     try {
-      response = await this.transport(endpoint.href, { method: "POST", authorization, ...mediaMultipart(image.bytes, `${slug}.jpg`, { slug, title: image.alt, alt_text: image.alt }) });
+      response = await this.transport(endpoint.href, { method: "POST", authorization, ...mediaMultipart(webp.data, `${slug}.webp`, { slug, title: image.alt, alt_text: image.alt }, "image/webp") });
       const receipt = `exports/wordpress-receipts/${c.id}/${image.sha256}-${randomUUID()}.json`;
-      atomicWrite(this.store.root, receipt, JSON.stringify({ status: response.status, body: response.body.toString("utf8") }));
+      atomicWrite(this.store.root, receipt, JSON.stringify({ status: response.status, body: response.body.toString("utf8"), upload: { sourceSha256: image.sha256, sha256: digest(webp.data), mediaType: "image/webp", sizeBytes: webp.data.length, storage: webp.storage } }));
       this.store.db.prepare("UPDATE wordpress_media SET receipt_path=? WHERE site_url=? AND sha256=?").run(receipt, c.siteUrl, image.sha256);
       const media = parseMedia(readJson(response));
       return this.ready(c, image.sha256, media);

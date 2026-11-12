@@ -21,6 +21,7 @@ node_modules
 *.sqlite-journal
 *.pem
 *.key
+*.ribak
 
 .vercel
 .env*

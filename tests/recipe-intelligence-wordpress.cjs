@@ -26,7 +26,8 @@ async function fixture(t, count = 2) {
     assert.ok(u.pathname.endsWith('/media'), 'Only user lookup and media endpoints are used');
     if (init.method === 'GET') return json([...(remote.get(u.origin) || [])].filter(m => m.slug === u.searchParams.get('slug')));
     const slug = /name="slug"\r\n\r\n([^\r]+)/.exec(init.body.toString())[1];
-    const media = { id: nextId++, slug, source_url: u.origin + '/wp-content/uploads/' + slug + '.jpg', mime_type: 'image/jpeg' };
+    const type = /Content-Type: (image\/(?:jpeg|png|webp))\r\n/.exec(init.body.toString())[1];
+    const media = { id: nextId++, slug, source_url: u.origin + '/wp-content/uploads/' + slug + (type === 'image/jpeg' ? '.jpg' : '.' + type.split('/')[1]), mime_type: type };
     if (behavior.rejectUpload) return json({ message: 'Refused' }, 413);
     if (!behavior.dropUpload) remote.set(u.origin, [...(remote.get(u.origin) || []), media]);
     if (behavior.timeout) throw new Error('simulated connection interruption');
@@ -37,6 +38,45 @@ async function fixture(t, count = 2) {
   return { ...f, item, artifacts, wp, calls, remote, behavior, transport, connect };
 }
 const upload = (f, c, p, image) => f.wp.upload(f.item.id, { connectionId: c.id, documentHash: p.documentHash, sha256: image.sha256 });
+const uploadedWebP = post => {
+  const header = Buffer.from('Content-Type: image/webp\r\n\r\n');
+  const start = post.body.indexOf(header); assert.ok(start >= 0, 'upload MIME type is WebP');
+  assert.match(post.body.subarray(0, start).toString(), /filename="ri-[a-f0-9]+\.webp"/);
+  return post.body.subarray(start + header.length, post.body.lastIndexOf(Buffer.from('\r\n--')));
+};
+async function samePixels(a, b) {
+  const decode = bytes => sharp(bytes, { ignoreIcc: true }).toColourspace('srgb').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const before = await decode(a), after = await decode(b);
+  assert.deepEqual(after.info, before.info); assert.ok(after.data.equals(before.data), 'all decoded pixels are identical');
+  const x = await sharp(a).metadata(), y = await sharp(b).metadata();
+  assert.deepEqual(x.icc, y.icc); assert.equal(y.format, 'webp');
+}
+
+test('lossless WebP uploads keep exact bytes, extension, featured order and receipt reuse', async t => {
+  const f = await fixture(t, 0), c = await f.connect();
+  const source = JSON.parse(f.item.source_json);
+  const bytes = await sharp({ create: { width: 80, height: 50, channels: 4, background: '#44556680' } }).webp({ lossless: true }).toBuffer();
+  f.artifacts.put(f.item, 'featured.webp', bytes, 'image/webp');
+  f.artifacts.put(f.item, 'alternate.webp', bytes, 'image/webp');
+  f.artifacts.article(f.item, article(), source);
+  const plan = f.wp.plan(f.item.id, c.id);
+  assert.equal(plan.images.length, 1, 'identical masters under two names share one upload');
+  assert.equal(plan.images[0].name, 'featured.webp');
+  await upload(f, c, plan, plan.images[0]);
+  const posts = f.calls.filter(c => c.method === 'POST'); assert.equal(posts.length, 1);
+  assert.ok(posts[0].body.includes(bytes));
+  assert.match(posts[0].body.toString(), /filename="ri-[a-f0-9]+\.webp"\r\nContent-Type: image\/webp/);
+  const ready = f.wp.plan(f.item.id, c.id); assert.equal(ready.ready, true);
+  assert.equal((ready.html.match(/src="https:[^"]+\.webp"/g) || []).length, 2);
+  assert.deepEqual(ready.mediaIds, [1]);
+  await upload(f, c, plan, plan.images[0]); assert.equal(f.calls.filter(c => c.method === 'POST').length, 1);
+  const newer = await sharp({ create: { width: 80, height: 50, channels: 3, background: '#bb8877' } }).webp({ lossless: true }).toBuffer();
+  f.artifacts.put(f.item, 'featured.webp', newer, 'image/webp');
+  assert.notEqual(f.wp.plan(f.item.id, c.id).documentHash, plan.documentHash, 'same filename with new pixels invalidates the reviewed export');
+  await assert.rejects(upload(f, c, plan, plan.images[0]), /article changed/);
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 1);
+  assert.equal(f.providerCalls.length, 0);
+});
 
 test('WordPress connections support multiple arbitrary HTTPS sites and expose no passwords', async t => {
   const f = await fixture(t); const a = await f.connect(); const b = await f.connect('https://second.example/blog/');
@@ -52,7 +92,7 @@ test('WordPress connections support multiple arbitrary HTTPS sites and expose no
   assert.deepEqual(new WordPressStore(reopened, f.transport, secrets).status().connections.map(c => c.id), [b.id]);
 });
 
-test('only finished image bytes are uploaded, reused after restart, and replaced with destination URLs', async t => {
+test('finished images upload as lossless WebP, reuse uploads after restart, and retain local originals', async t => {
   const f = await fixture(t, 3); const c = await f.connect(); const plan = f.wp.plan(f.item.id, c.id);
   assert.equal(plan.images.length, 3); assert.equal(plan.html, null);
   const savedBefore = f.store.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all();
@@ -60,7 +100,7 @@ test('only finished image bytes are uploaded, reused after restart, and replaced
   const posts = f.calls.filter(c => c.method === 'POST'); assert.equal(posts.length, 3);
   for (let i = 0; i < posts.length; i++) {
     const original = f.store.db.prepare('SELECT id FROM artifacts WHERE name=?').get(plan.images[i].name);
-    assert.ok(posts[i].body.includes(f.artifacts.read(original.id).data));
+    await samePixels(f.artifacts.read(original.id).data, uploadedWebP(posts[i]));
     assert.match(posts[i].contentType, /^multipart\/form-data; boundary=ri-/);
   }
   const ready = f.wp.plan(f.item.id, c.id); assert.equal(ready.ready, true);
@@ -77,6 +117,58 @@ test('only finished image bytes are uploaded, reused after restart, and replaced
   assert.equal(f.calls.filter(c => c.method === 'POST').length, 6);
   assert.doesNotMatch(f.wp.plan(f.item.id, second.id).html, /first.example/);
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM api_calls').get().n, 0);
+});
+
+test('older inline JPEG and PNG articles upload WebP even when the lossless file is larger', async t => {
+  const f = await fixture(t, 0), c = await f.connect();
+  const photo = fs.readFileSync(path.join(__dirname, 'fixtures/approved-recipe-photos/08-skillet-approved.jpg'));
+  const png = await sharp(photo).withIccProfile('p3').png().toBuffer();
+  f.artifacts.put(f.item, 'featured.jpg', photo, 'image/jpeg');
+  f.artifacts.put(f.item, 'alternate.png', png, 'image/png');
+  f.artifacts.put(f.item, 'article.html', `<article><img src="data:image/jpeg;base64,${photo.toString('base64')}"><img src="data:image/png;base64,${png.toString('base64')}"></article>`, 'text/html');
+  const before = f.store.db.prepare('SELECT name,sha256,size_bytes FROM artifacts ORDER BY name').all();
+  const p = f.wp.plan(f.item.id, c.id);
+  for (const image of p.images) await upload(f, c, p, image);
+  const posts = f.calls.filter(c => c.method === 'POST'); assert.equal(posts.length, 2);
+  const first = uploadedWebP(posts[0]); assert.ok(first.length > photo.length, 'WebP is required even if the old JPEG was smaller');
+  await samePixels(photo, first); await samePixels(png, uploadedWebP(posts[1]));
+  assert.deepEqual(f.store.db.prepare('SELECT name,sha256,size_bytes FROM artifacts ORDER BY name').all(), before);
+  assert.equal((f.wp.plan(f.item.id, c.id).html.match(/\.webp"/g) || []).length, 2);
+  const receiptRow = f.store.db.prepare('SELECT receipt_path FROM wordpress_media WHERE sha256=?').get(p.images[0].sha256);
+  const receipt = JSON.parse(fs.readFileSync(path.join(f.root, receiptRow.receipt_path), 'utf8'));
+  assert.equal(receipt.upload.sha256, digest(first)); assert.equal(receipt.upload.sourceSha256, digest(photo));
+  assert.equal(receipt.upload.storage.pixelsVerified, true);
+  assert.equal(f.providerCalls.length, 0);
+});
+
+test('non-lossless conversion is blocked without an upload or a lossy fallback; other images continue', async t => {
+  const f = await fixture(t, 0), c = await f.connect();
+  const image = sharp({ create: { width: 80, height: 50, channels: 3, background: '#124567' } });
+  const deep = await image.clone().toColourspace('rgb16').png().toBuffer();
+  const good = await image.clone().png().toBuffer();
+  f.artifacts.put(f.item, 'featured.png', deep, 'image/png');
+  f.artifacts.put(f.item, 'alternate.png', good, 'image/png');
+  f.artifacts.put(f.item, 'article.html', '<article><img src="featured.png"><img src="alternate.png"></article>', 'text/html');
+  const p = f.wp.plan(f.item.id, c.id);
+  await assert.rejects(upload(f, c, p, p.images[0]), /cannot be exported as lossless WebP/);
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 0);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM wordpress_media').get().n, 0);
+  await upload(f, c, p, p.images[1]);
+  await samePixels(good, uploadedWebP(f.calls.find(c => c.method === 'POST')));
+  assert.equal(f.providerCalls.length, 0);
+});
+
+test('a pre-upgrade JPEG upload with uncertain outcome reconciles without creating a second attachment', async t => {
+  const f = await fixture(t, 1), c = await f.connect(), p = f.wp.plan(f.item.id, c.id), image = p.images[0];
+  const slug = `ri-${image.sha256}`;
+  f.store.db.prepare("INSERT INTO wordpress_media(site_url,sha256,slug,state,updated_at) VALUES(?,?,?,'uncertain',?)").run(c.siteUrl, image.sha256, slug, new Date().toISOString());
+  f.remote.set('https://first.example', [{ id: 12, slug, source_url: `https://first.example/uploads/${slug}.jpg`, mime_type: 'image/jpeg' }]);
+  await upload(f, c, p, image);
+  const restarted = new WordPressStore(f.store, async () => { throw new Error('Confirmed uploads must be reused'); }, secrets);
+  await restarted.upload(f.item.id, { connectionId: c.id, documentHash: p.documentHash, sha256: image.sha256 });
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 0);
+  assert.equal(restarted.plan(f.item.id, c.id).ready, true);
+  assert.deepEqual(restarted.plan(f.item.id, c.id).mediaIds, [12]);
 });
 
 test('duplicate images and simultaneous export requests make a single media upload', async t => {
@@ -145,7 +237,7 @@ test('WordPress exports reject reference images, external URLs, stale article ve
   await assert.rejects(f.wp.upload(f.item.id, { connectionId: c.id, documentHash: 'old', sha256: p.images[0].sha256 }), /article changed/);
   assert.equal(f.calls.length, before);
   f.artifacts.put(f.item, 'article.html', '<article><img src="https://competitor.example/original.jpg"></article>', 'text/html');
-  assert.throws(() => f.wp.plan(f.item.id, c.id), /saved edited JPEG/);
+  assert.throws(() => f.wp.plan(f.item.id, c.id), /saved edited image/);
   const other = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#000' } }).jpeg().toBuffer();
   f.artifacts.put(f.item, 'article.html', '<article><img src="data:image/jpeg;base64,' + other.toString('base64') + '"></article>', 'text/html');
   assert.throws(() => f.wp.plan(f.item.id, c.id), /Only saved generated or edited/);
@@ -167,9 +259,9 @@ test('unsafe destinations and credentials fail before requests; authentication e
 
 test('version 4 migration backs up existing articles and adds an independent WordPress ledger', async t => {
   const f = await fixture(t, 1); const hashes = f.store.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all();
-  f.store.db.exec('DROP TABLE wordpress_exports; DROP TABLE wordpress_media; PRAGMA user_version=4'); f.store.close();
+  f.store.db.exec('DROP TABLE r2_deleted_paths; DROP TABLE r2_objects; DROP TABLE wordpress_exports; DROP TABLE wordpress_media; PRAGMA user_version=4'); f.store.close();
   const updated = await IntelligenceStore.open(f.root); t.after(() => updated.close());
-  assert.equal(updated.db.pragma('user_version', { simple: true }), 6);
+  assert.equal(updated.db.pragma('user_version', { simple: true }), 7);
   assert.deepEqual(updated.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all(), hashes);
   const backup = fs.readdirSync(path.join(f.root, 'backups')).find(n => n.startsWith('before-migration-5'));
   assert.ok(backup); const db = new (require('better-sqlite3'))(path.join(f.root, 'backups', backup), { readonly: true });

@@ -22,7 +22,7 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
   }
   async function disconnect(id: string) {
     setBusy(true); setError(""); setMessage("");
-    try { await request(`wordpress/${id}`, "DELETE", {}); await refresh(); setMessage("Local connection removed. Previously uploaded images stay in WordPress."); }
+    try { await request(`wordpress/${id}`, "DELETE", {}); await refresh(); setMessage("Connection removed. Previously uploaded images stay in WordPress."); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not disconnect."); } finally { setBusy(false); }
   }
   async function sync(id: string) {
@@ -41,7 +41,7 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
       <form className="mt-4 space-y-4" onSubmit={connect} autoComplete="off">
         <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">WordPress website URL<input className={`${input} mt-1`} type="text" inputMode="url" required maxLength={2048} placeholder="https://your-website.com" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} disabled={busy} /></label><label className="text-sm">WordPress username<input className={`${input} mt-1`} required maxLength={100} value={username} onChange={e => setUsername(e.target.value)} disabled={busy} autoComplete="off" /></label></div>
         <label className="block text-sm">Application Password<input className={`${input} mt-1`} type="password" required maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy} autoComplete="new-password" /></label>
-        <p className="text-sm text-[#a6acbd]">In WordPress, go to Users → Profile → Application Passwords. Create one named Recipe Intelligence and enter it here. It is encrypted for your Windows account and stays on this computer.</p>
+        <p className="text-sm text-[#a6acbd]">In WordPress, go to Users → Profile → Application Passwords. Create one named Recipe Intelligence and enter it here. It is stored encrypted in your workspace and is never included in articles or exports.</p>
         <button className={button} disabled={busy || !password || !username || !siteUrl}>{busy ? "Checking connection…" : "Connect website"}</button>
       </form>
     </details>
@@ -124,7 +124,7 @@ export function WordPressCopy({ itemId, connections, request }: { itemId: string
   if (!connections.length) return null;
   return <div className="space-y-3 rounded-xl border border-[#424a60] p-3" aria-label="Upload article images to WordPress">
     <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">WordPress destination<select className={`${input} mt-1`} value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setPrepared(null); setReview(null); setSent(null); setPublishConfirmed(false); setMessage(""); setError(""); }}><option value="">Choose a website</option>{connections.map(c => <option key={c.id} value={c.id}>{c.siteUrl}</option>)}</select></label><button className={button} disabled={busy || !target} onClick={() => void prepareSend()}>Prepare WordPress post</button><button className={button} disabled={busy || !target} onClick={() => void uploadAndCopy()}>{busy ? "Working…" : "Upload images and copy"}</button></div>
-    <p className="text-xs text-[#a6acbd]">Uploads the finished images and copies the article with permanent image URLs. Existing uploads on this destination are reused.</p>
+    <p className="text-xs text-[#a6acbd]">New image uploads use lossless WebP. The article uses permanent image URLs, and existing uploads on this destination are reused.</p>
     {message && <p role="status" className="text-sm text-emerald-200">{message}</p>}{error && <p role="alert" className="text-sm text-red-200">{error}</p>}
     {review && <div className="space-y-3 rounded-xl border border-[#424a60] p-3"><p className="text-sm">{review.title} → {review.siteUrl}</p><p className="text-sm">Recipe card: <strong>{review.profile.recipeCardLabel}</strong> · {review.images.length} hosted images</p><p className="text-xs text-[#a6acbd]">Uses saved recipe facts. No new AI request. Changing the default card in WordPress requires preparing again.</p><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => void send("draft")}>Save draft</button><button className={button} disabled={busy} onClick={() => void checkSent()}>Check saved post</button></div>{review.profile.canPublish && sent?.status !== "publish" && <div className="space-y-2"><label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy} checked={publishConfirmed} onChange={e => setPublishConfirmed(e.target.checked)} />Publish this article publicly on {new URL(review.siteUrl).host} now.</label><button className={button} disabled={busy || !publishConfirmed} onClick={() => void send("publish")}>Publish live</button></div>}</div>}
     {sent && <div className="flex flex-wrap gap-3 text-sm"><span>{sent.status === "publish" ? "Published" : "Saved"} · Post {sent.postId}</span><a className="text-[#deb589] underline" href={sent.editUrl} target="_blank" rel="noreferrer">Open in WordPress</a>{sent.status === "publish" && <a className="text-[#deb589] underline" href={sent.postUrl} target="_blank" rel="noreferrer">View live article</a>}</div>}

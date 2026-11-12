@@ -61,7 +61,8 @@ async function capturePage() {
   clearError(); status('Reading the open page…'); $('retry').hidden = true;
   try {
     const tab = await chrome.tabs.get(sourceTab);
-    if (new URL(tab.url).hostname === '127.0.0.1') {
+    const savedConnection = await connection.readSaved();
+    if (new URL(tab.url).hostname === '127.0.0.1' || new URL(tab.url).searchParams.get('tab') === 'recipe-intelligence' || new URL(tab.url).origin === savedConnection?.origin) {
       await findApp({origin:tab.url,allowOpen:false});
       status('Connected. Open a recipe website and click the extension to capture it.');
       return;

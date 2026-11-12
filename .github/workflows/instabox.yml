@@ -1,0 +1,29 @@
+name: Update InstaBox app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recipe-intelligence-instabox
+  cancel-in-progress: false
+
+jobs:
+  test-and-deploy:
+    if: github.repository == 'salahkessab/track-compititor' && github.ref == 'refs/heads/main' && github.event.repository.private == true
+    runs-on: [self-hosted, Linux, X64, recipe-intelligence-instabox]
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact update
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Build and test without provider credentials
+        run: node scripts/deploy-instabox.cjs verify
+      - name: Back up and install the tested update
+        run: flock -n /data/recipe-intelligence-trial/deployment.lock node scripts/deploy-instabox.cjs release

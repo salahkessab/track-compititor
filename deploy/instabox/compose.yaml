@@ -1,0 +1,44 @@
+# Run from an unpacked, secret-free source archive on the InstaBox machine.
+# The trial owns a NEW workspace under /data; it never restores production data.
+services:
+  app:
+    image: ${RI_APP_IMAGE:-recipe-intelligence-trial-app:latest}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 35s
+    env_file: /data/recipe-intelligence-trial/runtime.env
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      RECIPE_INTELLIGENCE_MODE: server
+      RECIPE_INTELLIGENCE_ROOT: /var/lib/recipe-intelligence
+      RECIPE_INTELLIGENCE_ALLOW_EMPTY: "1"
+      R2_ENABLED: "0"
+      OPENAI_API_KEY: ""
+      FAL_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      PORT: "3000"
+    expose:
+      - "3000"
+    volumes:
+      - /data/recipe-intelligence-trial/workspace:/var/lib/recipe-intelligence
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/server-health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      RI_PUBLIC_HOST: ${RI_PUBLIC_HOST:?Set the exact InstaBox public hostname}
+    ports:
+      - "3000:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - app

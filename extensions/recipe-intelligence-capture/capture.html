@@ -5,14 +5,14 @@
   <section class="card" aria-label="App connection"><p id="connection-status" role="status" aria-live="polite">Checking your app connection…</p>
     <div class="actions"><button id="connect" class="secondary">Connect</button><button id="open-app" class="secondary" hidden>Open connected app</button></div>
     <details id="connection-settings"><summary>Connection settings</summary><p class="hint">The app address is remembered after a successful connection. No password or API key is stored.</p>
-      <label>Local app address<input id="app-url" type="url" placeholder="http://127.0.0.1:61999" autocomplete="off"></label><button id="save-connection" class="secondary">Save and connect</button>
+      <label>App address<input id="app-url" type="url" placeholder="https://your-recipe-app.example" autocomplete="off"></label><button id="save-connection" class="secondary">Save and connect</button>
       <div id="connection" hidden><label>Choose workspace<select id="workspace"></select></label></div>
     </details><p id="connection-error" role="alert" hidden></p>
   </section>
   <section class="card"><p id="status" role="status" aria-live="polite">Reading the open page…</p><p id="error" role="alert" hidden></p>
     <h2 id="title"></h2><a id="source" target="_blank" rel="noreferrer"></a><p id="counts"></p>
     <div class="actions"><button id="import" disabled>Import and see estimate</button><button id="resume" class="secondary" hidden>Resume previous import</button><button id="retry" class="secondary" hidden>Capture page again</button><button id="open" class="secondary" hidden>Open generation screen</button></div>
-    <p id="next" class="hint" hidden>Open the generation screen to review the estimate and click Generate in the local app.</p>
+    <p id="next" class="hint" hidden>Open the generation screen to review the estimate and click Generate in the app.</p>
     <p class="hint">Keep this tab open while importing. Capturing is free. Generation starts only when you click Generate in the app.</p>
     <p id="result"></p><ul id="warnings"></ul>
   </section>

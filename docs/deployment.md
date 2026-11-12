@@ -1,7 +1,14 @@
 # GitHub and Vercel deployment
 
-This repository includes the hosted Next.js studio and the Windows-only local
-Recipe Intelligence application. It uses Node.js 24.x and `npm ci`.
+This repository includes the hosted Next.js studio, the Windows local application,
+and a persistent-server runtime for Recipe Intelligence. It uses Node.js 24.x.
+See the [server deployment and migration guide](server-deployment.md) to run the
+whole workspace without a PC. That deployment requires a persistent host.
+
+The isolated InstaBox trial has a [GitHub deployment workflow](../deploy/instabox/README.md#automatic-updates-from-github)
+for pushes to `main`. It builds and tests on the existing Free VM before updating
+the app, with an encrypted database backup and recovery on installation failure.
+The worker's server data and credentials are separate from GitHub source code.
 
 ## Hosted studio
 
@@ -21,12 +28,11 @@ Store credentials in Vercel's environment settings, never in Git. Do not set
 on Vercel. Preview deployments need the same password protection if API keys
 are configured there.
 
-The hosted studio supports its existing recipe-design and image-generation
-tools. Recipe Intelligence tracking, historical reports, persistent batches,
-local files, WordPress connections, and the background worker remain local.
-Deploying this repository does not migrate the local database or provide remote
-access to the Windows application. Hosting that workflow would require a
-separate service with durable storage and an appropriate credential store.
+The Vercel-hosted studio supports its existing recipe-design and image-generation
+tools. Deploying to Vercel alone does not migrate the database or run the durable
+worker. The persistent-server runtime supports tracking, reports, batches, private
+files and encrypted WordPress connections. Keep RECIPE_INTELLIGENCE_MODE unset on
+Vercel; use the migration guide for the complete server deployment.
 
 ## Local Recipe Intelligence
 

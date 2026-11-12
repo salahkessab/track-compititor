@@ -77,13 +77,26 @@ async function prepareBuild(log, owned) {
   const lockHash = createHash('sha256').update(fs.readFileSync(path.join(repo, 'package-lock.json'))).digest('hex');
   let dependenciesReady = true;
   try {
-    for (const dependency of ['next', 'typescript', 'saxes', 'robots-parser', 'cheerio']) require.resolve(dependency);
-    const probe = new (require('better-sqlite3'))(':memory:'); probe.close();
+    for (const dependency of ['next', 'typescript', 'saxes', 'robots-parser', 'cheerio', 'sharp', '@aws-sdk/client-s3']) require.resolve(dependency);
+    // A native module stays locked in the loading process on Windows even after
+    // closing SQLite. Probe in a short-lived child so npm ci can replace it.
+    const probe = require('node:child_process').spawnSync(process.execPath,
+      ['-e', "const db=new(require('better-sqlite3'))(':memory:');db.close()"],
+      { cwd: repo, windowsHide: true, stdio: 'ignore', timeout: 15_000 });
+    if (probe.status !== 0) dependenciesReady = false;
   } catch { dependenciesReady = false; }
   if (!dependenciesReady || previous && previous.lockHash !== lockHash) {
     const npm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
     if (!fs.existsSync(npm)) throw new Error('Install Node.js 24 LTS with npm, then run npm ci in the application folder.');
-    await runNode([npm, 'ci'], process.env, log, owned);
+    // better-sqlite3 13 ships Node-API binaries, but npm otherwise synthesizes
+    // node-gyp rebuild from binding.gyp and asks Windows users for a compiler.
+    await runNode([npm, 'ci', '--ignore-scripts'], process.env, log, owned);
+    // Restore the optional native canvas package used by the existing design
+    // tools. Its explicit install script downloads the vendor's prebuilt binary.
+    if (fs.existsSync(path.join(repo, 'node_modules', 'canvas', 'package.json'))) {
+      try { await runNode([npm, 'rebuild', 'canvas'], process.env, log, owned); }
+      catch { log.write('Optional native canvas could not be prepared. Browser-based design tools remain available.\n'); }
+    }
   }
   const current = fingerprint();
   if (previous?.fingerprint === current && fs.existsSync(path.join(repo, '.local-next', 'BUILD_ID')) && fs.existsSync(path.join(repo, '.intelligence-build', 'workers', 'recipe-intelligence.js'))) return;

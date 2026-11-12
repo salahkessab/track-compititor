@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Source = { id: number; url: string; kind: string; status: string; error: string | null; last_success_at: string | null };
 type Site = { id: string; name: string; url: string; status: "active" | "paused"; urls: number; sources: Source[]; last_scan_at: string | null; last_success_at: string | null; baseline_completed_at: string | null };
 type Run = { id: string; site_id: string; site_name: string; status: string; total: number; processed: number; errors: number; remaining: number; message: string | null; created_at: string; coverage: string };
-type Snapshot = { sites: Site[]; runs: Run[]; worker: { online: boolean; heartbeat_at: string | null }; settings: { root: string; timezone: string }; contentSettings?: unknown; reports?: unknown[]; batches?: unknown[]; providerConfigured?: boolean };
+type Snapshot = { serverBackup?: { savedAt: string | null; error: string | null }; runtime?: "server" | "local"; sites: Site[]; runs: Run[]; worker: { online: boolean; heartbeat_at: string | null }; settings: { root: string; timezone: string }; contentSettings?: unknown; reports?: unknown[]; batches?: unknown[]; providerConfigured?: boolean; objectStorage?: { enabled: boolean; bucket?: string; synced: number; pending: number; failed: number; error?: string | null } };
 type History = { total: number; rows: { id: number; canonical_url: string; title: string; first_seen_at: string; origin: string; sources: string; evidence: string }[] };
 type Event = { id: number; at: string; level: string; message: string; url: string | null };
 const button = "rounded-xl border border-[#424a60] bg-[#202537] px-3 py-2 text-sm text-[#e9e4df] disabled:cursor-not-allowed disabled:opacity-40";
@@ -15,7 +15,7 @@ const input = "w-full rounded-xl border border-[#424a60] bg-[#101421] px-3 py-2 
 const running = (status: string) => ["running", "queued"].includes(status);
 const label = (value: string) => value.replace(/_/g, " ");
 
-function CaptureSetup({ local = false }: { local?: boolean }) {
+function CaptureSetup({ local = false, server = false }: { local?: boolean; server?: boolean }) {
   return <details className="rounded-xl border border-[#424a60]/70 p-4">
     <summary className="cursor-pointer text-sm">Capture recipes with the Chrome extension</summary>
     <div className="mt-4 space-y-3 text-sm text-[#a6acbd]">
@@ -23,10 +23,10 @@ function CaptureSetup({ local = false }: { local?: boolean }) {
       <a className={`${button} inline-block`} href="/api/recipe-capture-extension" download="recipe-intelligence-capture.zip">Download Chrome extension</a>
       <ol className="list-decimal space-y-2 pl-5">
         <li>Extract the ZIP. In Chrome, open <code>chrome://extensions</code>, enable Developer mode, and choose Load unpacked. Select the extracted folder containing <code>manifest.json</code>.</li>
-        <li>Open Recipe Intelligence with the Windows shortcut in the same Chrome profile. Click the extension on that page to connect once.</li>
+        <li>{server ? "Open this Recipe Intelligence website and sign in in the same Chrome profile. Click the extension on this page to connect once." : "Open Recipe Intelligence with the Windows shortcut in the same Chrome profile. Click the extension on that page to connect once."}</li>
         <li>Open a recipe website, click the extension, and choose Import and see estimate. Review the cost in the app before generating.</li>
       </ol>
-      {local && <p>Local app address: <code className="break-all text-[#e9e4df]">{typeof window !== "undefined" ? window.location.origin : ""}</code>. The extension remembers this workspace and can reopen its tab.</p>}
+      {local && <p>{server ? "Cloud app address: " : "Local app address: "}<code className="break-all text-[#e9e4df]">{typeof window !== "undefined" ? window.location.origin : ""}</code>. The extension remembers this workspace and can reopen its tab.</p>}
       {!local && <p>Recipe processing and storage run in the local Windows app. Start it before connecting the extension.</p>}
       <p>Already installed? Replace the files in your installed extension folder, click Reload in Chrome, and close old capture tabs. Capture and import make no paid AI requests.</p>
     </div>
@@ -142,12 +142,12 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
       </div>
       {enabled && snapshot && <div className="mt-4 flex flex-wrap gap-4 text-sm text-[#a6acbd]">
         {["websites", "reports"].includes(view) && <><span>{snapshot.sites.length} / 10 websites</span><span>{snapshot.sites.reduce((sum, site) => sum + site.urls, 0).toLocaleString()} discovered URLs</span></>}
-        <span className={snapshot.worker.online ? "text-emerald-300" : "text-amber-200"}>{snapshot.worker.online ? "Ready · updates automatically" : "Worker starting or offline · use the Windows launcher"}</span>
+        <span className={snapshot.worker.online ? "text-emerald-300" : "text-amber-200"}>{snapshot.worker.online ? (snapshot.runtime === "server" ? "Cloud workspace ready · works while your computer is off" : "Ready · updates automatically") : snapshot.runtime === "server" ? "Server worker starting or offline" : "Worker starting or offline · use the Windows launcher"}</span>
       </div>}
     </div>
     {error && <div role="alert" className="rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-100">{error}{snapshot && <button className={`${button} ml-3`} disabled={busy} onClick={() => void act(reload)}>Reconnect</button>}</div>}
     {notice && <div role="status" className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 p-4 text-sm text-emerald-100">{notice}</div>}
-    {enabled === null && !error && <p className="text-sm text-[#a6acbd]">Checking local connection…</p>}
+    {enabled === null && !error && <p className="text-sm text-[#a6acbd]">Connecting to your workspace…</p>}
     {enabled === false && <><div className="studio-panel rounded-2xl border p-6"><h2 className="text-lg">Open the local application</h2><p className="mt-2 text-sm text-[#a6acbd]">Double-click Start Recipe Intelligence on your Windows PC. The launcher lets you choose a storage folder and opens this workspace. Your hosted recipe tools remain available here.</p></div><CaptureSetup /></>}
     {enabled && snapshot && <>
       <nav aria-label="Recipe Intelligence navigation" className="flex flex-wrap gap-2">
@@ -157,7 +157,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
             event.preventDefault(); const target = new URL(window.location.href); target.searchParams.set("view", id); window.history.pushState(null, "", target); setView(id);
           }}>{title}</a>)}
       </nav>
-      {["start", "settings"].includes(view) && <CaptureSetup local />}
+      {["start", "settings"].includes(view) && <CaptureSetup local server={snapshot.runtime === "server"} />}
       <IntelligenceContent view={view} snapshot={snapshot} request={request} refresh={reload} navigate={navigate} active={active} />
       {view === "websites" && <>
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg">Your websites</h2><p className="mt-1 text-sm text-[#a6acbd]">Scan when you want, then use Find recipes to choose a publication date. Both steps are free.</p></div><button className={primary} disabled={busy || !snapshot.worker.online || !snapshot.sites.some(site => site.status === "active")} onClick={() => void scan()}>Scan all active websites</button></div>
@@ -196,7 +196,8 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
         {!!snapshot.runs.length && <details className="rounded-xl border border-[#424a60]/70 p-4"><summary className="cursor-pointer text-sm text-[#a6acbd]">Previous scans and logs</summary><div className="mt-4 space-y-4">{snapshot.runs.filter(run => !["running", "queued", "paused"].includes(run.status)).slice(0, 20).map(runCard)}</div></details>}
       </>}
       {view === "settings" && <div className="studio-panel space-y-5 rounded-2xl border p-6">
-        <div><h2 className="text-lg">Local storage</h2><p className="mt-2 break-all font-mono text-sm text-[#deb589]">{snapshot.settings.root}</p><p className="mt-2 text-sm text-[#a6acbd]">Your database, backups, and scan history live here. Choose storage during launcher setup. Changing folders opens a separate local workspace; it does not erase the previous folder.</p></div>
+        <div><h2 className="text-lg">{snapshot.runtime === "server" ? "Server storage" : "Local storage"}</h2>{snapshot.runtime !== "server" && <p className="mt-2 break-all font-mono text-sm text-[#deb589]">{snapshot.settings.root}</p>}<p className="mt-2 text-sm text-[#a6acbd]">{snapshot.runtime === "server" ? "Your database, backups and processing run on the server. You can close the browser or turn off your computer while work continues." : "Your database, backups, and scan history live here. Choose storage during launcher setup. Changing folders opens a separate local workspace; it does not erase the previous folder."}</p>{snapshot.serverBackup && <p className="mt-2 text-sm text-[#a6acbd]">Encrypted database backup: {snapshot.serverBackup.savedAt ? date(snapshot.serverBackup.savedAt) : "Waiting for the first cloud backup"}{snapshot.serverBackup.error && <span className="ml-2 text-amber-200">{snapshot.serverBackup.error}</span>}</p>}</div>
+        {(snapshot.objectStorage?.enabled || snapshot.objectStorage?.error) && <div className="space-y-2"><h2 className="text-lg">Private cloud files</h2>{snapshot.objectStorage.enabled && <><p className="text-sm">Cloudflare R2 · {snapshot.objectStorage.bucket} · {snapshot.objectStorage.synced} saved · {snapshot.objectStorage.pending} pending · {snapshot.objectStorage.failed} waiting to retry</p><p className="text-sm text-[#a6acbd]">Images and recipe files sync while the app is running. Local copies are retained. Your database and credentials stay on this computer.</p><button className={button} disabled={busy} onClick={() => void act(async () => { await request("storage", "POST", {}); setNotice("Cloud sync queued. The worker will retry unfinished files."); })}>Sync files</button></>}{snapshot.objectStorage.error && <p className="text-sm text-amber-200">{snapshot.objectStorage.error}</p>}</div>}
         <details><summary className="cursor-pointer text-sm">Storage maintenance and timezone</summary><div className="mt-4 space-y-4"><form className="max-w-md space-y-2" onSubmit={event => { event.preventDefault(); void act(() => request("settings", "PATCH", { timezone }), "Reporting timezone saved."); }}><label className="text-sm" htmlFor="ri-timezone">Reporting timezone</label><input id="ri-timezone" className={input} value={timezone} onChange={event => setTimezone(event.target.value)} /><button className={button} disabled={busy}>Save timezone</button></form>
         <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => void act(async () => { const result = await request<{ file: string }>("backup", "POST"); setNotice(`Backup saved in the backups folder: ${result.file}`); })}>Back up database</button><button className={button} disabled={busy} onClick={() => void act(async () => { const result = await request<{ result: string }>("integrity", "POST"); setNotice(`Database integrity: ${result.result}`); })}>Check database</button><button className={button} onClick={() => setLogRun("")}>All scan logs</button></div>
         </div></details><p className="text-sm text-[#a6acbd]">Discovery and reports use no AI provider. Content processing starts only after an explicit batch cost approval.</p>
@@ -208,6 +209,6 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
       </section>}
       {logRun !== null && <section className="studio-panel rounded-2xl border p-5" aria-label="Monitoring logs"><div className="flex justify-between"><h2 className="text-lg">Scan logs</h2><button className={button} onClick={() => setLogRun(null)}>Close logs</button></div><ul className="mt-3 max-h-96 space-y-3 overflow-auto text-sm">{events.map(event => <li key={event.id}><span className={event.level === "error" ? "text-red-200" : "text-[#a6acbd]"}>{date(event.at)} · {event.level}</span><p>{event.message}</p>{event.url && <a className="break-all text-xs text-[#deb589] underline" href={event.url} target="_blank" rel="noreferrer">{event.url}</a>}</li>)}</ul></section>}
     </>}
-    {archive && <div role="dialog" aria-modal="true" aria-labelledby="ri-archive-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5"><div className="studio-panel max-w-md space-y-4 rounded-2xl border p-6"><h2 id="ri-archive-title" className="text-lg">Remove {archive.name}?</h2><p className="text-sm text-[#a6acbd]">This archives the website and cancels its pending scans. Saved URL history stays on this PC and returns if you add the website again.</p><div className="flex gap-2"><button autoFocus className={button} disabled={busy} onClick={() => setArchive(null)}>Keep website</button><button className={button} disabled={busy} onClick={() => void act(async () => { await request(`sites/${archive.id}`, "DELETE", { confirmed: true }); setArchive(null); setHistorySite(""); })}>Remove website</button></div></div></div>}
+    {archive && <div role="dialog" aria-modal="true" aria-labelledby="ri-archive-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5"><div className="studio-panel max-w-md space-y-4 rounded-2xl border p-6"><h2 id="ri-archive-title" className="text-lg">Remove {archive.name}?</h2><p className="text-sm text-[#a6acbd]">This archives the website and cancels its pending scans. Saved URL history stays in this workspace and returns if you add the website again.</p><div className="flex gap-2"><button autoFocus className={button} disabled={busy} onClick={() => setArchive(null)}>Keep website</button><button className={button} disabled={busy} onClick={() => void act(async () => { await request(`sites/${archive.id}`, "DELETE", { confirmed: true }); setArchive(null); setHistorySite(""); })}>Remove website</button></div></div></div>}
   </section>;
 }

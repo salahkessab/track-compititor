@@ -71,14 +71,14 @@ test('finished recipe deletion previews disk space, requires confirmation, and r
   };
   const {root,Component,click}=await ui(t,fetcher,`http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches&batchId=${id}`);
   await React.act(async()=>root.render(React.createElement(Component,{active:true})));
-  await click('Delete from computer');
+  await click('Delete from workspace');
   const dialog=document.querySelector('[role=dialog]');assert.ok(dialog);assert.match(dialog.textContent,/5\.0 MB/);assert.match(dialog.textContent,/used by another saved recipe/);assert.equal(document.activeElement.textContent,'Keep recipe');
   assert.equal(calls.filter(c=>c.init.method==='DELETE').length,0);
   await click('Keep recipe');assert.equal(document.querySelector('[role=dialog]'),null);assert.equal(deleted,false);
-  await click('Delete from computer');await click('Delete permanently');
+  await click('Delete from workspace');await click('Delete permanently');
   assert.match(document.querySelector('[role=dialog]').textContent,/Close the open file/);assert.equal(deleted,false);
   await click('Keep recipe');await click('Retry deletion');await click('Delete permanently');
-  assert.equal(deleted,true);assert.equal(document.querySelector('[role=dialog]'),null);assert.match(document.body.textContent,/Recipe deleted from this computer\. Freed 5\.0 MB/);assert.ok(!window.location.search.includes('batchId'));assert.ok(!document.body.textContent.includes('Saved work · 1'));
+  assert.equal(deleted,true);assert.equal(document.querySelector('[role=dialog]'),null);assert.match(document.body.textContent,/Recipe deleted from this workspace\. Freed 5\.0 MB/);assert.ok(!window.location.search.includes('batchId'));assert.ok(!document.body.textContent.includes('Saved work · 1'));
 });
 
 test('inactive workspace makes no requests; hosted mode offers the local launcher without opening storage', async t => {
@@ -250,13 +250,14 @@ test('date shortcuts use the reporting day without starting scans or paid work',
   assert.ok(calls.every(c => !c.init.method || c.init.method === 'GET'));
 });
 
-test('results prioritize article actions, show edited photos only, and keep failures actionable', async t => {
+for (const lossless of [false,true]) test(`results prioritize article actions, edited ${lossless ? 'WebP' : 'legacy JPEG'} downloads and isolated failures`, async t => {
   const settings = require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
   const item = { id: 'i-gallery', import_id: 'import-1', title: 'Chili', state: 'partial', basis: 'original', warnings: [],
     article: { wordCount: 1100 },
     photos: [{ id: 'cp1', reference_id: 'p1', position: 0, state: 'done' }, { id: 'cp2', reference_id: 'p2', position: 1, state: 'failed' }, { id: 'cp3', reference_id: 'p3', position: 2, state: 'uncertain' }],
     stages: [{ id: 1, kind: 'article', state: 'done' }, { id: 2, kind: 'photo:p1', state: 'done' }, { id: 3, kind: 'photo:p2', state: 'failed', error: 'File save failed.' }, { id: 4, kind: 'photo:p3', state: 'uncertain', error: 'Provider outcome unknown.' }],
     files: [{ id: 'article', name: 'article.html', media_type: 'text/html' }, { id: 'jpg1', name: 'photo-p1.jpg', media_type: 'image/jpeg' }, { id: 'png1', name: 'photo-p1.png', media_type: 'image/png' }, { id: 'meta', name: 'recipe.json', media_type: 'application/json' }] };
+  if(lossless){item.config_json=JSON.stringify({imageStorage:'lossless-webp-v1'});item.files=item.files.filter(f=>f.id!=='png1').map(f=>f.id==='jpg1'?{...f,name:'photo-p1.webp',media_type:'image/webp'}:f);}
   const batch = { id: 'b-gallery', settings, status: 'partial', approved_at: '2026-11-10', limit_usd: 1, quote: { estimated: .3, recommendedLimit: 1, lines: [] }, budget: { actual: .1, held: .1, uncertain: 1 }, items: [item], calls: [] };
   const snapshot = { sites: [], runs: [], worker: { online: true }, settings: { root: 'C:\\Recipes', timezone: 'Africa/Casablanca' }, contentSettings: settings, batches: [{ id: batch.id, title: 'Chili', count: 1, status: 'partial', created_at: '2026-11-10T12:00:00Z' }] };
   const calls = [];
@@ -269,6 +270,7 @@ test('results prioritize article actions, show edited photos only, and keep fail
   assert.ok(gallery.querySelector('img').src.includes('/artifacts/jpg1?preview=1'));
   assert.equal(document.querySelectorAll('img[src*="/references/"]').length, 0);
   assert.equal(document.querySelectorAll('a[href$="/artifacts/jpg1"]').length, 1);
+  if(lossless){assert.match(gallery.textContent,/Download WebP/);assert.ok(gallery.querySelector('a[href$="?format=png"]'));assert.doesNotMatch(gallery.textContent,/Download JPEG/);}
   assert.equal(document.querySelectorAll('a[href$="/items/i-gallery/zip"]').length, 1);
   const comparison = [...gallery.querySelectorAll('input')].find(e => e.type === 'checkbox');
   await React.act(async () => comparison.click());

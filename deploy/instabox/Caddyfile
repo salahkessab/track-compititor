@@ -1,0 +1,10 @@
+# InstaBox terminates TLS and forwards Host as 127.0.0.1:3000. Require its exact
+# published hostname, then normalize only the upstream Host. The app retains
+# its own password, exact-origin and CSRF checks. No secrets are given to Caddy.
+:8080 {
+    @wrongHost not header X-Forwarded-Host {$RI_PUBLIC_HOST}
+    respond @wrongHost "Unexpected workspace host." 403
+    reverse_proxy app:3000 {
+        header_up Host {$RI_PUBLIC_HOST}
+    }
+}

@@ -35,6 +35,20 @@ check($profile['ready'] && $profile['recipeCard'] === 'builtin', 'default card s
 $media = [];
 foreach (['featured-red.jpg', 'featured-blue.jpg'] as $filename) {
     $bytes = file_get_contents(dirname($root) . '/' . $filename);
+    if ($filename === 'featured-blue.jpg') {
+        $image = imagecreatefromstring($bytes);
+        ob_start(); imagewebp($image, null, IMG_WEBP_LOSSLESS); $bytes = ob_get_clean();
+        $r = new WP_REST_Request('POST', '/wp/v2/media');
+        $r->set_header('content-type', 'image/webp');
+        $r->set_header('content-disposition', 'attachment; filename="featured-blue.webp"');
+        $r->set_body($bytes);
+        $response = rest_do_request($r); $data = $response->get_data();
+        check($response->get_status() === 201, 'WebP accepted by actual WordPress media REST endpoint');
+        check($data['mime_type'] === 'image/webp' && str_ends_with($data['source_url'], '.webp'), 'WebP MIME and filename retained');
+        check(file_get_contents(get_attached_file($data['id'])) === $bytes, 'uploaded WebP master bytes unchanged');
+        $media[] = $data['id'];
+        continue;
+    }
     $upload = wp_upload_bits($filename, null, $bytes);
     check(!$upload['error'], 'fixture photo uploaded');
     $attachment = wp_insert_attachment(['post_mime_type' => 'image/jpeg', 'post_title' => $filename, 'post_status' => 'inherit', 'post_author' => get_current_user_id()], $upload['file'], 0, true);

@@ -8,6 +8,7 @@ import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
 import { andText, articleDocument, publicationTitle, publicationTimes, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
+import { IMAGE_STORAGE_VERSION, GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
 export type { Article } from "./article-document";
 
 export const digest = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
@@ -71,6 +72,31 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
 }
 export class ArtifactStore {
   constructor(public store: IntelligenceStore) {}
+  private lossless(item: any) {
+    if (item.config_json) return JSON.parse(item.config_json).imageStorage === IMAGE_STORAGE_VERSION;
+    const batch = this.store.db.prepare("SELECT settings_json FROM content_batches WHERE id=?").get(item.batch_id) as any;
+    return batch && JSON.parse(batch.settings_json).imageStorage === IMAGE_STORAGE_VERSION;
+  }
+  private imageFile(item: any, stem: string): any {
+    const formats = this.lossless(item) ? ["webp", "png", "jpg", "jpeg"] : ["jpg"];
+    for (const format of formats) {
+      const row = this.store.db.prepare("SELECT id,name,media_type FROM artifacts WHERE item_id=? AND name=?").get(item.id, `${stem}.${format}`);
+      if (row) return row;
+    }
+  }
+  private putImage(item: any, stem: string, encoded: Awaited<ReturnType<typeof losslessImage>>) {
+    const name = `${stem}.${encoded.extension}`;
+    this.put(item, name, encoded.data, encoded.mediaType);
+    // Regeneration has already forked a version. Retire only format alternatives
+    // in the current version, leaving the previous version and receipt intact.
+    for (const ext of ["webp", "png", "jpg", "jpeg"]) {
+      if (`${stem}.${ext}` === name) continue;
+      const old = this.store.db.prepare("SELECT id,relative_path FROM artifacts WHERE item_id=? AND name=?").get(item.id, `${stem}.${ext}`) as any;
+      if (!old || path.dirname(old.relative_path) !== this.directory(item)) continue;
+      this.store.db.prepare("DELETE FROM artifacts WHERE id=?").run(old.id);
+      try { fs.unlinkSync(storagePath(this.store.root, old.relative_path)); } catch { /* A leftover duplicate does not invalidate the saved master. */ }
+    }
+  }
   directory(item: any) { return path.join("articles", item.id, `v${item.version}`); }
   put(item: any, name: string, value: Buffer | string, mediaType: string) {
     if (!/^[a-z0-9][a-z0-9.-]{0,100}$/.test(name)) throw new Error("Invalid artifact name.");
@@ -87,13 +113,38 @@ export class ArtifactStore {
     if (digest(data) !== row.sha256) throw new Error("Saved file checksum changed. Retry the local save for this recipe.");
     return { ...row, data };
   }
+  async download(id: string, format?: string | null) {
+    const file = this.read(id);
+    if (format) {
+      if (format !== "png" || file.media_type !== "image/webp" || !GENERATED_IMAGE_NAME.test(file.name)) throw new Error("PNG download is available for saved WebP recipe images only.");
+      const data = await sharp(file.data, { limitInputPixels: 40_000_000 }).keepIccProfile().png().toBuffer();
+      return { ...file, data, name: file.name.replace(/\.webp$/, ".png"), media_type: "image/png" };
+    }
+    if (file.name !== "article.html") return file;
+    // Store image references once on disk and in ZIPs. Standalone HTML downloads
+    // and previews embed checked images on demand, without retaining another copy.
+    let embeddedBytes = 0;
+    const html = file.data.toString("utf8").replace(/src="([a-z0-9.-]+)"/g, (match: string, name: string) => {
+      if (!GENERATED_IMAGE_NAME.test(name)) return match;
+      const row = this.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name=?").get(file.item_id, name) as any;
+      if (!row) throw new Error("An article image is missing. Repair its saved files first.");
+      const image = this.read(row.id);
+      embeddedBytes += image.data.length;
+      if (embeddedBytes > 180 * 1024 * 1024) throw new Error("Standalone HTML is too large. Download the ZIP with separate images instead.");
+      return `src="data:${image.media_type};base64,${image.data.toString("base64")}"`;
+    });
+    return { ...file, data: Buffer.from(html) };
+  }
   manifest(item: any) {
     const files = this.store.db.prepare("SELECT name,sha256,size_bytes,media_type FROM artifacts WHERE item_id=? AND name!='manifest.json'").all(item.id);
-    const stages = this.store.db.prepare("SELECT kind,state,error,updated_at FROM content_stages WHERE item_id=?").all(item.id);
+    const stages = (this.store.db.prepare("SELECT kind,state,error,updated_at,result_json FROM content_stages WHERE item_id=?").all(item.id) as any[]).map(({ result_json, ...stage }) => {
+      const storage = result_json && JSON.parse(result_json).storage;
+      return storage ? { ...stage, storage } : stage;
+    });
     const profiles = item.config_json ? JSON.parse(item.config_json) : null;
     const batch = this.store.db.prepare("SELECT settings_json FROM content_batches WHERE id=?").get(item.batch_id) as any;
     const references = this.store.db.prepare("SELECT reference_id,source_url,sha256,position,analysis_json FROM content_photos WHERE item_id=? ORDER BY position").all(item.id);
-    this.put(item, "manifest.json", JSON.stringify({ version: item.version, itemId: item.id, settings: batch ? JSON.parse(batch.settings_json) : null, profiles, references, updatedAt: new Date().toISOString(), stages, files }, null, 2), "application/json");
+    this.put(item, "manifest.json", JSON.stringify({ version: item.version, itemId: item.id, settings: batch ? JSON.parse(batch.settings_json) : null, profiles, imageStorage: this.lossless(item) ? IMAGE_STORAGE_VERSION : "legacy", references, updatedAt: new Date().toISOString(), stages, files }, null, 2), "application/json");
   }
   forkVersion(item: any) {
     const files = this.store.db.prepare("SELECT * FROM artifacts WHERE item_id=? AND name!='manifest.json'").all(item.id) as any[];
@@ -109,17 +160,17 @@ export class ArtifactStore {
     this.manifest(next);
   }
   article(item: any, article: Article, recipe: RecipeSnapshot) {
+    const imageSource = (file: any) => { const checked = this.read(file.id); return this.lossless(item) ? file.name : `data:${file.media_type};base64,${checked.data.toString("base64")}`; };
     const images: ArticleImage[] = (["featured", "alternate", "pinterest"] as const).flatMap(kind => {
-      const file = this.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name=?").get(item.id, `${kind}.jpg`) as { id: string } | undefined;
+      const file = this.imageFile(item, kind);
       if (!file) return [];
-      return [{ kind, fileName: `${kind}.jpg`, width: kind === "pinterest" ? 1000 : 1200, height: 1500,
-        dataUri: `data:image/jpeg;base64,${this.read(file.id).data.toString("base64")}` }];
+      return [{ kind, fileName: file.name, width: kind === "pinterest" ? 1000 : 1200, height: 1500, dataUri: imageSource(file) }];
     });
     for (const p of this.store.db.prepare("SELECT * FROM content_photos WHERE item_id=? AND analysis_json IS NOT NULL ORDER BY position").all(item.id) as any[]) {
-      const name = `photo-${p.reference_id}.jpg`; const file = this.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name=?").get(item.id, name) as any;
+      const file = this.imageFile(item, `photo-${p.reference_id}`);
       if (!file) continue; const analysis = JSON.parse(p.analysis_json); const dimensions = this.store.db.prepare("SELECT result_json FROM content_stages WHERE item_id=? AND kind=?").get(item.id, `photo:${p.reference_id}`) as any;
       const size = dimensions?.result_json ? JSON.parse(dimensions.result_json) : { width: 1536, height: 864 };
-      try { images.push({ kind: "reference", placement: analysis.placement || "gallery", stepIndex: analysis.stepIndex, caption: analysis.visibleFood, fileName: name, width: size.width || 1536, height: size.height || 864, dataUri: `data:image/jpeg;base64,${this.read(file.id).data.toString("base64")}` }); } catch { /* One damaged image must not prevent saving the article or other images. */ }
+      try { images.push({ kind: "reference", placement: analysis.placement || "gallery", stepIndex: analysis.stepIndex, caption: analysis.visibleFood, fileName: file.name, width: size.width || 1536, height: size.height || 864, dataUri: imageSource(file) }); } catch { /* One damaged image must not prevent saving the article or other images. */ }
     }
     const document = articleDocument(article, recipe, images);
     const times = publicationTimes(recipe);
@@ -141,18 +192,25 @@ export class ArtifactStore {
     const bytes = Buffer.from(base64, "base64"); const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
     if (!metadata.width || !metadata.height || !["png", "jpeg", "webp"].includes(metadata.format || "") || (metadata.pages || 1) > 1) throw new Error("Edited photo could not be decoded.");
     const name = `photo-${photo.reference_id}`;
-    this.put(item, `${name}.${metadata.format === "jpeg" ? "jpeg" : metadata.format}`, bytes, `image/${metadata.format}`);
-    this.put(item, `${name}.png`, metadata.format === "png" ? bytes : await sharp(bytes).png().toBuffer(), "image/png");
-    this.put(item, `${name}.jpg`, await sharp(bytes).flatten({ background: "#ffffff" }).jpeg({ quality: 95 }).toBuffer(), "image/jpeg");
+    let storage;
+    if (this.lossless(item)) {
+      const encoded = await losslessImage(bytes);
+      this.putImage(item, name, encoded);
+      storage = encoded.storage;
+    } else {
+      this.put(item, `${name}.${metadata.format === "jpeg" ? "jpeg" : metadata.format}`, bytes, `image/${metadata.format}`);
+      this.put(item, `${name}.png`, metadata.format === "png" ? bytes : await sharp(bytes).png().toBuffer(), "image/png");
+      this.put(item, `${name}.jpg`, await sharp(bytes).flatten({ background: "#ffffff" }).jpeg({ quality: 95 }).toBuffer(), "image/jpeg");
+    }
     this.put(item, `${name}-prompt.txt`, prompt, "text/plain");
-    this.store.db.prepare("UPDATE content_stages SET result_json=? WHERE item_id=? AND kind=?").run(JSON.stringify({ width: metadata.width, height: metadata.height }), item.id, `photo:${photo.reference_id}`);
+    this.store.db.prepare("UPDATE content_stages SET result_json=? WHERE item_id=? AND kind=?").run(JSON.stringify({ width: metadata.width, height: metadata.height, ...(storage ? { storage } : {}) }), item.id, `photo:${photo.reference_id}`);
     if (item.article_json) this.article(item, JSON.parse(item.article_json), JSON.parse(item.source_json));
     await this.gallery(item); this.manifest(item);
   }
   async gallery(item: any) {
     const rows = this.store.db.prepare("SELECT * FROM content_photos WHERE item_id=? ORDER BY position").all(item.id) as any[];
     const figures: string[] = [];
-    for (const p of rows) { const file = this.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name=?").get(item.id, `photo-${p.reference_id}.jpg`) as any;
+    for (const p of rows) { const file = this.imageFile(item, `photo-${p.reference_id}`);
       try {
       const original = fs.readFileSync(storagePath(this.store.root, p.relative_path)); if (digest(original) !== p.sha256) throw new Error("Reference checksum changed.");
       const thumbnail = async (data: Buffer) => (await sharp(data, { limitInputPixels: 40_000_000 }).rotate().resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer()).toString("base64");
@@ -182,9 +240,13 @@ export class ArtifactStore {
       const overlay = `<svg width="1000" height="1500" xmlns="http://www.w3.org/2000/svg"><rect width="1000" height="${80 + Math.min(lines.length, 4) * 60}" fill="#fffaf0" fill-opacity="0.93"/>${lines.slice(0, 4).map((s,i)=>`<text x="500" y="${78+i*60}" text-anchor="middle" font-family="Georgia,serif" font-size="48" fill="#202020">${escapeHtml(s)}</text>`).join("")}</svg>`;
       output = output.composite([{ input: Buffer.from(overlay) }]);
     }
-    const result = await output.jpeg({ quality: 94 }).toBuffer();
+    // Legacy image stages still apply their requested crop/title first. Lossless
+    // compression preserves that rendered output, not pre-resize source pixels.
+    const encoded = this.lossless(item) ? await losslessImage(await output.png().toBuffer()) : null;
+    const result = encoded ? encoded.data : await output.jpeg({ quality: 94 }).toBuffer();
     const check = await sharp(result).metadata(); if (check.width !== width || check.height !== height) throw new Error("Image dimensions did not match the requested export.");
-    this.put(item, `${name}.jpg`, result, "image/jpeg");
+    if (encoded) this.putImage(item, name, encoded);
+    else this.put(item, `${name}.jpg`, result, "image/jpeg");
     // Refresh the standalone HTML from saved prose, without another paid writing request.
     if (item.article_json && item.source_json) this.article(item, JSON.parse(item.article_json), JSON.parse(item.source_json));
     else this.manifest(item);

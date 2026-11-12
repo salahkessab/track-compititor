@@ -2,9 +2,11 @@
   const STORAGE_KEY = 'recipeIntelligenceConnection';
   function appOrigin(value) {
     let url;
-    try { url = new URL(value); } catch { throw new Error('Use the local app address shown in Recipe Intelligence, for example http://127.0.0.1:61999.'); }
-    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.username || url.password) {
-      throw new Error('Recipe processing runs in the local Windows app. Open it with the desktop shortcut and use its http://127.0.0.1 address.');
+    try { url = new URL(value); } catch { throw new Error('Use your HTTPS Recipe Intelligence address or its local loopback address.'); }
+    const local = url.protocol === 'http:' && url.hostname === '127.0.0.1';
+    const cloud = url.protocol === 'https:' && url.hostname.includes('.') && !/^\d+[.\d]*$/.test(url.hostname) && !/(^|\.)(localhost|local|internal|lan|home)$/.test(url.hostname);
+    if ((!local && !cloud) || url.username || url.password) {
+      throw new Error('Use the secure HTTPS app address or http://127.0.0.1 for a local workspace.');
     }
     // Never retain a launch token, query string, or credentials from a pasted URL.
     return url.origin;
@@ -26,7 +28,7 @@
       const result = injection?.result;
       if (!result || result.error) {
         const error = new Error(result?.status === 401
-          ? 'Your local session expired. Reopen Recipe Intelligence with the desktop shortcut in this Chrome profile, then reconnect. Your capture is saved.'
+          ? 'Your session expired. Sign in to the cloud app, or reopen the local app with the desktop shortcut in this Chrome profile, then reconnect. Your capture is saved.'
           : result?.error || 'The app tab is unavailable. Reconnect to resume your saved capture.');
         error.status = result?.status || 0; throw error;
       }
@@ -38,11 +40,15 @@
       if (result.ready !== true || typeof result.root !== 'string' || !result.root || result.root.length > 4096) throw new Error('This tab is not a connected Recipe Intelligence workspace.');
       return {id:tab.id,origin,root:result.root};
     }
-    async function scan() {
-      const tabs = await browser.tabs.query({url:'http://127.0.0.1/*'});
+    async function scan(requested) {
+      const tabs = await browser.tabs.query({url:['http://127.0.0.1/*','https://*/*']});
       const seen = new Set(), candidates = [];
       for (const tab of tabs) {
-        try { const origin = appOrigin(tab.url); if (!seen.has(origin) && Number.isInteger(tab.id)) { seen.add(origin); candidates.push(tab); } } catch { /* Unrelated tab. */ }
+        try {
+          const origin = appOrigin(tab.url), url = new URL(tab.url);
+          const appTab = url.hostname === '127.0.0.1' || origin === requested || origin === saved?.origin || url.searchParams.get('tab') === 'recipe-intelligence';
+          if (appTab && !seen.has(origin) && Number.isInteger(tab.id)) { seen.add(origin); candidates.push(tab); }
+        } catch { /* Unrelated tab. */ }
       }
       const results = await Promise.allSettled(candidates.slice(0,12).map(probe));
       return {ready:results.filter(r=>r.status==='fulfilled').map(r=>r.value), errors:results.filter(r=>r.status==='rejected').map(r=>r.reason)};
@@ -56,7 +62,7 @@
       await readSaved();
       const requested = origin ? appOrigin(origin) : null;
       const expectedRoot = root || (!requested ? saved?.root : null);
-      const found = await scan();
+      const found = await scan(requested);
       const eligible = found.ready.filter(t=>(!expectedRoot || t.root===expectedRoot) && (!requested || t.origin===requested));
       const preferred = eligible.find(t=>t.origin===(requested || saved?.origin));
       if (preferred || eligible.length===1) return remember(preferred || eligible[0]);
@@ -68,7 +74,7 @@
       if (existing && expectedRoot && existing.root!==expectedRoot) throw new Error('This address now opens a different storage folder. Open the original workspace to resume this capture.');
       if (allowOpen && restoreOrigin) {
         // Reopen only a saved/entered address. Never scan ports or carry session secrets.
-        const tabs = await browser.tabs.query({url:'http://127.0.0.1/*'});
+        const tabs = await browser.tabs.query({url:restoreOrigin+'/*'});
         let tab = tabs.find(t=>{try{return appOrigin(t.url)===restoreOrigin;}catch{return false;}});
         if (!tab) tab = await browser.tabs.create({url:appUrl(restoreOrigin),active:false});
         let failure;
@@ -83,13 +89,13 @@
             if (attempt<7) await wait(350);
           }
         }
-        throw new Error(`Could not reconnect to ${restoreOrigin}. Start Recipe Intelligence with the desktop shortcut, then reconnect. Your capture is saved.${failure?.status===409 ? ' The app may need an update.' : ''}`);
+        throw new Error(`Could not reconnect to ${restoreOrigin}. Start Recipe Intelligence at its cloud address or with the desktop shortcut, then reconnect. Your capture is saved.${failure?.status===409 ? ' The app may need an update.' : ''}`);
       }
       const error = found.errors.find(e=>e.status===401);
       if (error) throw error;
       const failure = new Error(expectedRoot
-        ? 'Open your saved workspace with the desktop shortcut, then reconnect. The app will not switch storage folders automatically.'
-        : 'Open Recipe Intelligence with the desktop shortcut in this Chrome profile, then click Connect.');
+        ? 'Open your saved workspace, then reconnect. The app will not switch workspaces automatically.'
+        : 'Open Recipe Intelligence in this Chrome profile, or enter its HTTPS address in Connection settings, then click Connect.');
       failure.targets=found.ready; throw failure;
     }
     async function focus(target, destination=appUrl(target.origin)) {

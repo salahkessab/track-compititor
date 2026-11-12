@@ -1,0 +1,125 @@
+# Recipe Intelligence on a persistent server
+
+The server runs the complete Next.js app and its worker together. SQLite,
+receipts and files use a persistent disk; private R2 retains the file copies.
+Closing a browser or turning off the owner's computer does not stop server jobs.
+This is a single-owner deployment, not a multi-tenant SaaS.
+
+## Deployment status
+
+The server runtime, migration tools and HTTPS extension connection are implemented.
+An [isolated InstaBox Free trial](../deploy/instabox/README.md) is provisioned with
+its own workspace and GitHub deployment workflow. Production cutover has not been
+performed: existing Windows data and the running local instance have not been
+moved or removed, and the trial has no AI provider credentials. R2 object storage
+alone cannot run this application.
+
+Use a persistent Linux Node 24 host, with at least 2 GB RAM initially for Next.js,
+the worker and image decoding. Check actual peak usage before reducing it. A Docker
+host can run `docker compose --env-file .env.server -f compose.server.yaml up -d --build`. A managed Node
+host can use `npm ci --ignore-scripts && npm rebuild canvas && npm run build:recipe-intelligence && npm run build`
+and `npm run server:start`, with a persistent disk and public HTTPS reverse proxy.
+The native modules must be installed on the target architecture. Do not copy
+Windows node_modules to Linux. A serverless Vercel function is not a persistent host.
+
+The Docker Compose file includes Caddy for HTTPS. Point SERVER_DOMAIN's DNS to
+the host and permit ports 80 and 443. Node's port is bound to the host's loopback
+interface. No database port is exposed. Managed hosting can supply HTTPS instead.
+
+## Secrets and persistent storage
+
+Create an ignored `.env.server` with `node scripts/migrate-recipe-intelligence-server.cjs key`.
+This creates the encryption key without printing it. Back up that file privately.
+Add APP_PASSWORD, OPENAI_API_KEY, optional FAL_KEY, the existing private R2 variables,
+SERVER_DOMAIN, and the server variables documented in `.env.example`.
+On managed hosting put these in its secret environment settings. Never commit,
+publish, include in a Docker build context, or send that file to the browser.
+
+- RECIPE_INTELLIGENCE_MODE must be `server`; do not also set LOCAL or VERCEL.
+- RECIPE_INTELLIGENCE_ROOT must name the persistent mount, not an ephemeral folder.
+- RECIPE_INTELLIGENCE_ORIGIN must exactly match the public HTTPS origin.
+- RECIPE_INTELLIGENCE_SECRET_KEY is a permanent 32-byte base64 AES-GCM key.
+  Rotating or losing it without re-encrypting credentials breaks saved WordPress connections.
+- APP_PASSWORD protects the web interface and API. Any nonempty username works.
+- Only one host should own this workspace. Use one replica, one persistent disk.
+  The worker's SQLite lease prevents two workers on that same database.
+
+The API checks the password independently of middleware, rejects mismatched Host
+and Origin headers, and requires the existing CSRF header on mutations. Local
+launcher tokens cannot authenticate the cloud workspace. Paid generation retains
+its separate per-batch approval and reservation rules.
+
+## Safe cutover
+
+1. Back up source code and SQLite. Wait for active generation and WordPress sends
+   to settle, then finish the R2 sync. Verify that all current files are synced.
+2. Stop the local launcher. Do not restart it against the migrated data during
+   cutover: two independent copies of a database cannot coordinate worker leases.
+3. Run `npm run build:recipe-intelligence`, then
+   `node scripts/migrate-recipe-intelligence-server.cjs prepare "D:\article track" "<private-backup-folder>\server.ribak"`.
+   Replace the paths for the installation. The script refuses a running worker,
+   uses SQLite's backup API, re-encrypts WordPress passwords on the backup, encrypts
+   the whole snapshot, uploads it to private R2 and records its SHA256 receipt.
+   The source database and Windows credentials remain unchanged.
+4. Set MIGRATION_KEY and MIGRATION_SHA256 from that receipt on the server. Keep the
+   same R2 bucket/prefix and encryption key. Set WORKER_PAUSED=1 for verification.
+   Do not set ALLOW_EMPTY as a workaround for a failed migration.
+5. Start the host. It authenticates and validates the snapshot, restores it once,
+   restores the current R2 files with checksum checks, and starts web and worker.
+   Initial hydration can take several minutes; allow a long initial health timeout.
+   Subsequent restarts never overwrite the live database with the snapshot.
+6. Verify site, recipe, report, batch, API-ledger and artifact counts; inspect a
+   saved article and image. Check the WordPress connection profile without publishing.
+   Test authentication, a free import and a host restart. No paid AI test is needed.
+7. Remove WORKER_PAUSED and restart the service after verification. Jobs resume
+   from their saved checkpoints. Keep the Windows launcher stopped and point the
+   Chrome extension to the public HTTPS app. Reopen old interrupted captures in
+   their original workspace; do not silently transfer them to another workspace.
+8. Open the HTTPS app from another device while the PC application is stopped.
+   Only after this succeeds is the server cutover complete. Retain the rollback backup.
+
+GET /api/server-health returns only readiness; it checks the worker heartbeat.
+The process supervisor shuts down both children when either fails. Configure the
+host to restart failed services (Compose uses `restart: unless-stopped`). Graceful
+shutdown leaves uncertain paid requests reserved rather than automatically repeating them.
+
+## Recovery and limitations
+
+Use the host's persistent-volume snapshots and the app's SQLite backup API. In
+server mode, the worker additionally uploads an AES-GCM encrypted database backup
+to private R2 once a day, checking the uploaded size and checksum before recording
+success. It does not make AI calls. These backups are retained; monitor storage
+growth and configure retention deliberately. The latest object key and checksum
+are stored under `server_database_backup` in SQLite settings. Earlier objects are
+under the private bucket's `migrations/backup-` prefix. R2 file sync and these
+database backups are separate; a database backup can reference files whose latest
+upload is still pending, so persistent-volume snapshots remain useful too.
+Never recover a running SQLite database by copying only its main file without WAL;
+use the backup API or a stopped clean database. Restore DB and encryption key as a pair.
+On a new host, restore the matching private R2 configuration as well.
+
+For rollback, stop the server first. Never run both the pre-migration Windows DB
+and the migrated server DB as active owners. If the server has accepted new work,
+do not simply revert to the old snapshot: migrate that newer data back first.
+
+Browser-local histories from unrelated tools are tied to their old browser origin.
+They are not SQLite records and are not automatically moved by this migration.
+Recipe Intelligence's persistent history is included.
+
+## Verification
+
+`npm test`, `npx tsc --noEmit`, and `npm run build` validate server and hosted paths.
+`node scripts/smoke-recipe-intelligence-server.cjs` exercises password protection,
+an unpaid import, restart persistence and worker shutdown using disposable storage.
+Tests mock providers and do not generate paid content.
+Docker/Linux and live HTTPS cutover checks require the selected target host; they
+must not be reported as passed based on a Windows smoke test alone.
+
+Verified on 12 November 2026: 321 automated tests passed; TypeScript and the hosted
+production build passed. The disposable server smoke test passed authentication,
+restart persistence, stable workspace identity and graceful worker shutdown with
+zero paid calls. The original workspace still has 10 batches, 166 artifacts with
+matching checksums, 2,421 indexed URLs, 78 unchanged API-call records and 373 synced
+R2 objects. A source-code and SQLite checkpoint was saved before these changes.
+Linux/Docker execution, remote hosting and final cutover remain unverified until
+the host is selected and accessible.

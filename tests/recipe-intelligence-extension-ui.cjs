@@ -51,7 +51,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,wind
 }
 test('extension preview imports image bytes, finishes before estimating, and opens the exact unpaid draft',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.1\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.2\.0/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   const operations=screen.calls.map(m=>m.op).filter(op=>op!=='probe');
@@ -61,7 +61,7 @@ test('extension preview imports image bytes, finishes before estimating, and ope
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/\$0.7100/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.1.0');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.2.0');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 test('resuming an older capture explains that its original photo selection is preserved',async t=>{
@@ -105,7 +105,7 @@ test('unavailable source photo is reported and does not erase readable article c
 test('offline capture is saved before connection and can resume from a new extension tab',async t=>{
   const first=await ui(t,{offline:true});await first.run();
   assert.equal(first.storage.lastCapture.started,false);assert.equal(first.storage.lastCapture.pending,true);
-  assert.equal(first.calls.length,0);assert.match(first.button('connection-error').textContent,/desktop shortcut/);
+  assert.equal(first.calls.length,0);assert.match(first.button('connection-error').textContent,/HTTPS address/);
   const id=first.storage.lastCapture.id;
   const reopened=await ui(t,{storage:first.storage});
   assert.equal(reopened.button('resume').hidden,false);reopened.button('resume').click();await reopened.run();

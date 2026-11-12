@@ -13,9 +13,13 @@ import { WordPressPublisher } from "./wordpress-publish";
 import { beginBrowserCapture, finishBrowserCapture, MAX_CAPTURE_BYTES } from "./browserCapture";
 import { publicUrl } from "./urls";
 import { deleteGeneration, previewGenerationDeletion } from "./deleteGeneration";
+import { objectStorage } from "./r2";
+import { intelligenceEnabled, serverAuthenticated, serverMode, serverOrigin } from "./runtime";
+import { serverBackupStatus } from "./serverBackup";
+import { deploymentPause } from "./deployment";
 
 const state = globalThis as typeof globalThis & { recipeIntelligenceStores?: Map<string, Promise<IntelligenceStore>> };
-function enabled() { return process.env.RECIPE_INTELLIGENCE_LOCAL === "1" && !process.env.VERCEL && !!process.env.RECIPE_INTELLIGENCE_TOKEN; }
+const enabled = intelligenceEnabled;
 function json(body: unknown, status = 200, headers?: Record<string, string>) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...headers } });
 }
@@ -27,7 +31,8 @@ function trustedRequest(request: Request) {
   const origin = process.env.RECIPE_INTELLIGENCE_ORIGIN;
   if (!origin) return false;
   const target = new URL(origin);
-  if (target.protocol !== "http:" || target.hostname !== "127.0.0.1") return false;
+  if (serverMode()) { try { if (origin !== serverOrigin()) return false; } catch { return false; } }
+  else if (target.protocol !== "http:" || target.hostname !== "127.0.0.1") return false;
   if (request.headers.get("host") !== target.host) return false;
   const suppliedOrigin = request.headers.get("origin");
   if (suppliedOrigin && suppliedOrigin !== origin) return false;
@@ -67,22 +72,29 @@ export async function handleIntelligence(request: Request): Promise<Response> {
   const segments = url.pathname.replace(/^\/api\/recipe-intelligence\/?/, "").split("/").filter(Boolean);
   if (!enabled()) return segments[0] === "capabilities"
     ? json({ enabled: false, phase: 5 }) : json({ error: "Open Recipe Intelligence with the Windows local launcher." }, 503);
-  if (!trustedRequest(request)) return json({ error: "Local origin check failed." }, 403);
-  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1 });
+  if (!trustedRequest(request)) return json({ error: "Workspace origin check failed." }, 403);
+  if (serverMode() && !serverAuthenticated(request)) return json({ error: "Sign in to Recipe Intelligence." }, 401, { "WWW-Authenticate": 'Basic realm="Recipe Intelligence", charset="UTF-8"' });
+  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, ...(serverMode() ? { mode: "server" } : {}) });
   const token = process.env.RECIPE_INTELLIGENCE_TOKEN!;
   const cookie = (request.headers.get("cookie") || "").split(";").map(part => part.trim()).find(part => part.startsWith("ri_session="))?.slice(11) || "";
   if (segments[0] === "session" && request.method === "POST") {
+    if (serverMode()) return json({ connected: true });
     if (!equal(request.headers.get("x-ri-key"), token)) return json({ error: "Open the local workspace from its launcher to connect." }, 401);
     return json({ connected: true }, 200, { "Set-Cookie": `ri_session=${token}; Path=/api/recipe-intelligence; HttpOnly; SameSite=Strict` });
   }
-  if (!equal(cookie, token) && !equal(request.headers.get("x-ri-key"), token)) return json({ error: "Launch Recipe Intelligence to connect this browser to local storage." }, 401);
+  if (!serverMode() && !equal(cookie, token) && !equal(request.headers.get("x-ri-key"), token)) return json({ error: "Launch Recipe Intelligence to connect this browser to local storage." }, 401);
+  if (serverMode() && request.method !== "GET" && deploymentPause(localRoot())) return json({ error: "An app update is being installed. Your saved work is safe. Please try again shortly." }, 503, { "Retry-After": "30" });
   try {
     const database = await store();
     const reports = new ReportStore(database); const batches = new BatchStore(database); const imports = new ImportStore(database);
     const [area, id, child] = segments;
     const wordpress = new WordPressStore(database);
     const publisher = new WordPressPublisher(wordpress);
-    if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: !!process.env.OPENAI_API_KEY, wordpress: wordpress.status() });
+    const storage = objectStorage(database);
+    if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), runtime: serverMode() ? "server" : "local", serverBackup: serverBackupStatus(database), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: !!process.env.OPENAI_API_KEY, wordpress: wordpress.status(), objectStorage: storage.status() });
+    if (area === "storage" && request.method === "GET") return json(storage.status());
+    if (area === "storage" && request.method === "POST") { await body(request); return json(storage.requestSync(), 202); }
+    if (area === "items" && id && ["zip", "wordpress", "wordpress-publish", "wordpress-check"].includes(child)) await storage.ensureItem(id);
     if (area === "wordpress" && !id && request.method === "GET") return json(wordpress.status());
     if (area === "wordpress" && id === "target" && request.method === "POST") return json(wordpress.suggest((await body(request)).siteUrl));
     if (area === "wordpress" && id === "connect" && request.method === "POST") return json(await wordpress.connect(await body(request)));
@@ -110,7 +122,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
       try { while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > MAX_PHOTO_BYTES) throw new Error("Photograph exceeds 10 MB."); chunks.push(value); } } finally { await reader.cancel().catch(() => {}); }
       await imports.add(id, Buffer.concat(chunks), request.headers.get("x-file-name") || "Uploaded photo", sourceUrl, caption); return json(imports.detail(id), 201);
     }
-    if (area === "references" && id && request.method === "GET") { const file = imports.read(id); return new Response(new Uint8Array(file.bytes), { headers: { "Content-Type": file.mime_type, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'" } }); }
+    if (area === "references" && id && request.method === "GET") { const ref = database.db.prepare("SELECT relative_path,sha256 FROM reference_photos WHERE id=? AND state='ready'").get(id) as any; if (ref?.relative_path) await storage.ensure(ref.relative_path, ref.sha256); const file = imports.read(id); return new Response(new Uint8Array(file.bytes), { headers: { "Content-Type": file.mime_type, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'" } }); }
     if (area === "batches" && id && child === "estimate" && request.method === "POST") { await body(request); return json(prepareReferenceBatch(batches, id)); }
     if (area === "items" && id && child === "photo-context" && request.method === "POST") { const data = await body(request); reviewPhoto(batches, id, data.referenceId, data.analysis); return json({ queued: true }, 202); }
     if (area === "items" && id && child === "zip" && request.method === "GET") { const bytes = batches.artifacts.zip(batches.item(id)); return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="recipe-outputs.zip"', "Cache-Control": "no-store" } }); }
@@ -146,7 +158,9 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "items" && id && child === "retry" && request.method === "POST") { const data = await body(request); batches.retry(id, data.kind, data.regenerate === true, data.retryUncertain === true); return json({ queued: true }, 202); }
     if (area === "calls" && id && child === "resolve" && request.method === "POST") { const data = await body(request); batches.resolveCall(id, data.cost, data.note); return json({ resolved: true }); }
     if (area === "artifacts" && id && request.method === "GET") {
-      const file = batches.artifacts.read(id);
+      const artifact = database.db.prepare("SELECT item_id,relative_path,sha256,name FROM artifacts WHERE id=?").get(id) as any;
+      if (artifact) { if (artifact.name === "article.html") await storage.ensureItem(artifact.item_id); else await storage.ensure(artifact.relative_path, artifact.sha256); }
+      const file = await batches.artifacts.download(id, url.searchParams.get("format"));
       return new Response(new Uint8Array(file.data), { headers: { "Content-Type": file.media_type, "Content-Length": String(file.data.length), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'", "Content-Disposition": `${url.searchParams.has("preview") ? "inline" : "attachment"}; filename="${file.name}"` } });
     }
     if (area === "history" && request.method === "GET") {

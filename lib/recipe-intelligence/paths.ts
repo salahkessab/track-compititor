@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { serverMode, validateServerRuntime } from "./runtime";
 
 export function prepareRoot(input: string): string {
   if (!input || !path.isAbsolute(input) || /^\\\\|^\/\//.test(input) || /[\x00-\x1f]/.test(input)) throw new Error("Choose an absolute folder on a local drive.");
@@ -34,6 +35,7 @@ export function storagePath(root: string, ...parts: string[]): string {
 }
 
 export function localRoot(): string {
+  if (serverMode()) { validateServerRuntime(); return prepareRoot(process.env.RECIPE_INTELLIGENCE_ROOT!); }
   if (process.env.RECIPE_INTELLIGENCE_LOCAL !== "1" || process.env.VERCEL) throw new Error("Recipe Intelligence storage is available only through the local launcher.");
   if (!process.env.RECIPE_INTELLIGENCE_ROOT) throw new Error("Choose a storage folder with the local launcher.");
   return prepareRoot(process.env.RECIPE_INTELLIGENCE_ROOT);

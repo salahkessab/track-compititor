@@ -20,9 +20,10 @@ const contexts = [
 ];
 async function referenceFixture(t, options={}) {
  let photoMap = new Map(); let imageCount=0;
+ const editedImage=await sharp(path.join(directory,'08-skillet-approved.jpg')).png().toBuffer();
  const f = await contentFixture(t,{provider:async(op,payload,signal,n)=>{
    if(options.provider) { const custom = await options.provider(op,payload,++imageCount); if(custom) return custom; }
-   if(op==='image') return {body:{data:[{b64_json:fs.readFileSync(path.join(directory,'08-skillet-approved.jpg')).toString('base64')}],usage:{input_tokens:2200,output_tokens:1400,input_tokens_details:{text_tokens:200,image_tokens:2000}}},requestId:'image-'+n};
+   if(op==='image') return {body:{data:[{b64_json:editedImage.toString('base64')}],usage:{input_tokens:2200,output_tokens:1400,input_tokens_details:{text_tokens:200,image_tokens:2000}}},requestId:'image-'+n};
    if(payload.text?.format?.name==='recipe_photographs') {
      const records = JSON.parse(payload.input[0].content[0].text).photos;
      return textResponse({photos:records.map((p,i)=>({id:p.id,...contexts[photoMap.get(p.id)||0],stepIndex:null,needsReview:options.reviewFirst===true&&i===0,reason:options.reviewFirst&&i===0?'Confirm ingredient labels.':''}))});
@@ -66,13 +67,13 @@ test('URL preparation is free, persistent and independent of historical publicat
  assert.equal(d.status,'ready');assert.ok(d.recipe.ingredients.length);assert.equal(d.photos.filter(p=>p.state==='ready').length,1);assert.equal(f.providerCalls.length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM recipe_records').get().n,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM tracked_sites').get().n,0);
  const second=await IntelligenceStore.open(f.root);try{assert.equal(new ImportStore(second).detail(row.id).photos.length,2);}finally{second.close();}
 });
-test('selected references alone enter quotes, high-detail analysis and image edits; outputs include native, JPEG, gallery and ZIP',async t=>{
+test('selected references alone enter quotes, high-detail analysis and image edits; outputs include lossless WebP, gallery and ZIP',async t=>{
  const f=await referenceFixture(t);const row=await f.upload(7);const ids=[row.photos[1].id,row.photos[4].id,row.photos[6].id];f.imports.select(row.id,ids);
  const b=f.batches.create([{importId:row.id}],f.settings);assert.equal(b.quote.lines.filter(l=>l.kind.startsWith('photo:')).length,3);assert.equal(b.quote.lines.filter(l=>l.kind.startsWith('analysis:')).length,1);f.approve(b);await f.drainBatch();
  const done=f.batches.detail(b.id); assert.equal(done.status,'completed',JSON.stringify(done.items.map(i=>i.stages))); assert.equal(f.providerCalls.length,4);
  const vision=f.providerCalls[0].payload; assert.equal(vision.model,'gpt-5.5');assert.equal(vision.input[0].content.filter(c=>c.type==='input_image').length,3);assert.ok(vision.input[0].content.filter(c=>c.type==='input_image').every(c=>c.detail==='high'));
  for(const call of f.providerCalls.filter(c=>c.operation==='image')) {assert.equal(call.payload.references.length,1); assert.equal(call.payload.complexity,undefined);assert.match(call.payload.prompt,/#607D8B/); const original=Buffer.from(call.payload.references[0].split(',')[1],'base64');assert.ok(ids.some(id=>f.imports.read(id).bytes.equals(original)));}
- const files=done.items[0].files;assert.equal(files.filter(x=>/^photo-.*\.jpg$/.test(x.name)).length,3);assert.equal(files.filter(x=>/^photo-.*\.png$/.test(x.name)).length,3);assert.ok(files.some(x=>x.name==='gallery.html'));
+ const files=done.items[0].files;assert.equal(files.filter(x=>/^photo-.*\.webp$/.test(x.name)).length,3);assert.equal(files.filter(x=>/^photo-.*\.(jpg|png)$/.test(x.name)).length,0);assert.ok(files.some(x=>x.name==='gallery.html'));
  const manifest=JSON.parse(f.batches.artifacts.read(files.find(x=>x.name==='manifest.json').id).data);assert.equal(manifest.profiles.photoProfile,PHOTO_PROFILE_VERSION);
  const zip=f.batches.artifacts.zip(f.batches.item(done.items[0].id));assert.equal(zip.readUInt32LE(0),0x04034b50);assert.ok(zip.includes(Buffer.from('prompts.json')));assert.ok(zip.includes(Buffer.from('Original and edited photographs')));
 });
@@ -87,6 +88,7 @@ test('palette, selection, prompt versions and analysis cache survive settings ch
 for (const version of [2,3,4]) test(`frozen v${version} jobs keep their instructions and prompt shape after the v5 update`,async t=>{
  const f=await referenceFixture(t);const row=await f.upload(1,7);const b=f.batches.create([{importId:row.id}],f.settings);
  const item=f.batches.item(b.items[0].id),config=JSON.parse(item.config_json);
+ delete config.imageStorage;
  const oldPalette={cookware:'#112233',surface:'#ccbbaa',...(version>=3?{utensil:'#664422'}:{})};
  Object.assign(config,{palette:oldPalette,photoProfile:`recipe-photo-editor-v${version}`,photoInstructions:`Saved v${version} photo instructions: retain original wooden utensil finish.`,analysisProfile:'recipe-photo-understanding-v1',analysisInstructions:'Saved v1 understanding instructions.'});
  if(version===4)Object.assign(config,require('./fixtures/photo-profile-v4.json'));
@@ -99,6 +101,7 @@ for (const version of [2,3,4]) test(`frozen v${version} jobs keep their instruct
  const expected=`recipe-photo-editor-v${version}\n${config.photoInstructions}\nSelected cookware/bowl color: #112233. Selected surrounding surface color: #ccbbaa.${version>=3?' Selected spoon/utensil color: #664422.':''} Keep this palette consistent throughout this recipe.\nConfirmed photograph context: ${JSON.stringify(analysis)}\nOutput dimensions: 1536x864. Use this photograph's own original reference. Return one edited photograph.`;
  assert.equal(image.prompt,expected);assert.equal(f.providerCalls[0].payload.instructions,config.analysisProfile+'\n'+config.analysisInstructions);
  assert.deepEqual(f.batches.detail(b.id).settings.palette,oldPalette);assert.equal(f.batches.item(item.id).config_json,JSON.stringify(config));
+ assert.ok(f.batches.detail(b.id).items[0].files.some(f=>f.name.endsWith('.jpg')));assert.ok(!f.batches.detail(b.id).items[0].files.some(f=>f.name.endsWith('.webp')));
  const calls=f.providerCalls.length;f.batches.retry(item.id,'photo:'+row.photos[0].id);await f.drainBatch();assert.equal(f.providerCalls.length,calls);
 });
 test('changed selections invalidate approval and a refreshed estimate snapshots only the new selection',async t=>{
@@ -178,5 +181,5 @@ test('migration 4 backs up a real version-3 batch and preserves its stages, rece
  old.prepare("INSERT INTO tracked_sites(id,name,url,site_key,status,created_at) VALUES('site','Old','https://food.example/','food.example','active','2026-01-01')").run();old.prepare("INSERT INTO recipe_records(id,site_id,canonical_url,first_seen_at,last_seen_at,origin) VALUES(1,'site','https://food.example/soup','2026-01-01','2026-01-01','baseline_existing')").run();
  old.prepare("INSERT INTO content_batches(id,created_at,status,settings_json,quote_json) VALUES('batch','2026-01-01','completed',?,?)").run(JSON.stringify({textModel:'gpt-5.4-mini',images:true}),JSON.stringify({createdAt:'2026-01-01',lines:[]}));old.prepare("INSERT INTO content_items(id,batch_id,recipe_id,basis,state) VALUES('item','batch',1,'original','completed')").run();
  old.prepare("INSERT INTO content_stages(item_id,kind,state,updated_at) VALUES('item','featured','done','2026-01-01')").run();old.prepare("INSERT INTO api_calls(id,batch_id,stage_id,model,operation,state,reserved_usd,actual_usd,created_at,response_path,request_hash) VALUES('call','batch',1,'gpt-image-2.6-sunburst','image','succeeded',.1,.05,'2026-01-01','research/api-receipts/old.json','saved-request-hash')").run();old.prepare("INSERT INTO artifacts(id,item_id,name,relative_path,sha256,size_bytes,media_type,created_at) VALUES('file','item','featured.jpg','articles/old.jpg','saved-checksum',100,'image/jpeg','2026-01-01')").run();old.close();
- const updated=await IntelligenceStore.open(root);try{assert.equal(updated.db.pragma('user_version',{simple:true}), 6);assert.deepEqual(updated.db.pragma('foreign_key_check'),[]);const batch=new BatchStore(updated).detail('batch');assert.equal(batch.settings.imageWorkflow,undefined);assert.equal(batch.items[0].stages[0].kind,'featured');assert.equal(batch.items[0].files[0].name,'featured.jpg');assert.equal(batch.budget.actual,.05);const backupName=fs.readdirSync(path.join(root,'backups')).find(n=>n.startsWith('before-migration-4'));assert.ok(backupName);const backup=new Database(path.join(root,'backups',backupName),{readonly:true});try{assert.equal(backup.pragma('user_version',{simple:true}),3);assert.equal(backup.prepare('SELECT count(*) n FROM api_calls').get().n,1);}finally{backup.close();}}finally{updated.close();}
+ const updated=await IntelligenceStore.open(root);try{assert.equal(updated.db.pragma('user_version',{simple:true}), 7);assert.deepEqual(updated.db.pragma('foreign_key_check'),[]);const batch=new BatchStore(updated).detail('batch');assert.equal(batch.settings.imageWorkflow,undefined);assert.equal(batch.items[0].stages[0].kind,'featured');assert.equal(batch.items[0].files[0].name,'featured.jpg');assert.equal(batch.budget.actual,.05);const backupName=fs.readdirSync(path.join(root,'backups')).find(n=>n.startsWith('before-migration-4'));assert.ok(backupName);const backup=new Database(path.join(root,'backups',backupName),{readonly:true});try{assert.equal(backup.pragma('user_version',{simple:true}),3);assert.equal(backup.prepare('SELECT count(*) n FROM api_calls').get().n,1);}finally{backup.close();}}finally{updated.close();}
 });

@@ -11,6 +11,7 @@ import { PHOTO_PROFILE_VERSION, ANALYSIS_PROFILE_VERSION, PHOTO_INSTRUCTIONS, AN
 import { storagePath } from "./paths";
 import { digest } from "./artifacts";
 import { normalizeUrl, publicUrl } from "./urls";
+import { IMAGE_STORAGE_VERSION } from "./imageStorage";
 
 const now = () => new Date().toISOString();
 export const isPhotoStage = (kind: string) => kind.startsWith("photo:") || kind.startsWith("analysis:");
@@ -35,7 +36,7 @@ export function prepareImportEstimate(b: BatchStore, importId: string, input: Pa
 export function createReferenceBatch(b: BatchStore, selections: Selection[], input: Partial<ContentSettings>) {
   if (!Array.isArray(selections) || !selections.length || selections.length > 20) throw new Error("Select between one and twenty recipes or photo sets.");
   if (new Set(selections.map(s => s.importId || s.recipeId)).size !== selections.length) throw new Error("Select each recipe once.");
-  const settings = validateContentSettings({ ...contentSettings(b.store), ...input }); const imports = new ImportStore(b.store);
+  const settings: ContentSettings = { ...validateContentSettings({ ...contentSettings(b.store), ...input }), imageStorage: IMAGE_STORAGE_VERSION }; const imports = new ImportStore(b.store);
   const choices = selections.map(s => {
     if (s.importId && s.recipeId !== undefined) throw new Error("Choose an import or a historical recipe, not both.");
     if (s.alternativeUrls && (!Array.isArray(s.alternativeUrls) || s.alternativeUrls.length > 5)) throw new Error("Provide at most five alternative recipe URLs.");
@@ -88,7 +89,7 @@ export function prepareReferenceBatch(b: BatchStore, id: string) {
       for (let i = 0; i < photos.length; i += 10) itemLines.push({ itemId: item.id, kind: `analysis:${i / 10}`, count: photos.slice(i, i + 10).length, ...analysisEstimate(photos.slice(i, i + 10)) });
       for (const p of photos) itemLines.push({ itemId: item.id, kind: `photo:${p.id}`, referenceId: p.id, ...photoEstimate(settings) });
     } else if (settings.images) for (const kind of ["featured", "alternate", "pinterest"]) itemLines.push({ itemId: item.id, kind, ...stageEstimate(kind, settings) });
-    const frozen = { importRevision: imported.revision, sourceUrl: source?.url || imported.url, palette: settings.palette, photoProfile: PHOTO_PROFILE_VERSION, photoInstructions: PHOTO_INSTRUCTIONS, analysisProfile: ANALYSIS_PROFILE_VERSION, analysisInstructions: ANALYSIS_INSTRUCTIONS, writingProfile: writingProfile(settings.articleFormat), writingRequest: source && settings.output !== "images_only" ? writingPayload(source, settings) : null, lines: itemLines };
+    const frozen = { importRevision: imported.revision, sourceUrl: source?.url || imported.url, palette: settings.palette, imageStorage: settings.imageStorage, photoProfile: PHOTO_PROFILE_VERSION, photoInstructions: PHOTO_INSTRUCTIONS, analysisProfile: ANALYSIS_PROFILE_VERSION, analysisInstructions: ANALYSIS_INSTRUCTIONS, writingProfile: writingProfile(settings.articleFormat), writingRequest: source && settings.output !== "images_only" ? writingPayload(source, settings) : null, lines: itemLines };
     db.transaction(() => {
       db.prepare("DELETE FROM content_photos WHERE item_id=?").run(item.id);
       if (!hasCalls) db.prepare("DELETE FROM content_stages WHERE item_id=? AND (kind LIKE 'photo:%' OR kind LIKE 'analysis:%')").run(item.id);

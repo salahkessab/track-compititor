@@ -36,10 +36,14 @@ The password is encrypted using Windows DPAPI for the current Windows account. I
 
 1. Open the recipe under **My articles**.
 2. Choose the **WordPress destination**. With multiple connections, choose a website explicitly.
-3. Click **Upload images and copy**. Each finished, edited JPEG used by the saved article uploads to that destination's Media Library. Original reference photographs are excluded.
+3. Click **Upload images and copy**. Each finished, edited image used by the saved article uploads to that destination's Media Library as **WebP**. Existing WebP files upload unchanged. Older JPEG and PNG files are converted locally with lossless encoding and checked for identical decoded pixels, dimensions, colour profile and orientation before uploading. This applies to direct draft/live sending too. Original reference photographs are excluded. A WordPress host that rejects WebP reports an upload error rather than silently changing format or quality.
 4. Paste into the WordPress visual editor. The copied HTML contains the uploaded image URLs and media IDs. Select a featured image in WordPress as usual.
 
 Uploads reuse existing finished images; there are no AI generation calls. This copy workflow remains available without the bridge. Direct draft/live sending uses the bridge workflow above. The original local HTML, saved articles, images and paid-stage records are preserved.
+
+WordPress exports require WebP even when a lossless file is larger than its original JPEG. This introduces no additional pixel loss; it cannot restore detail already lost in an older JPEG. Files that cannot be converted exactly, such as 16-bit PNGs, or exceed the 10 MB upload limit remain local and report an error. There is no lossy fallback. Previously uploaded attachments and uncertain uploads retain their identity and recovery behavior; existing WordPress images are not automatically replaced or duplicated. WordPress-generated thumbnail sizes and any host-side image optimizer remain controlled by the destination website.
+
+The upload receipt records the source checksum and the actual WebP checksum, type, size and conversion verification. The local source checksum remains the stable upload identity so interrupted transfers from older versions can still reconcile safely.
 
 If the browser blocks clipboard access after a long upload, click **Copy uploaded article**, or use **Download WordPress HTML**. Both reuse the completed uploads.
 

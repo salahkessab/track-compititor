@@ -57,5 +57,5 @@ test('pasted recipes generate a saved article and three images without re-fetchi
   const result = f.batches.detail(batch.id);
   assert.equal(result.status, 'completed');
   assert.ok(result.items[0].files.some(file => file.name === 'article.html'));
-  assert.ok(result.items[0].files.some(file => file.name === 'featured.jpg'));
+  assert.ok(result.items[0].files.some(file => file.name === 'featured.webp'));
 });

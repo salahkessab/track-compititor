@@ -14,6 +14,7 @@ import { ImportStore } from "./imports";
 import { PHOTO_PROFILE_VERSION, ANALYSIS_PROFILE_VERSION } from "./photoProfile";
 import { createReferenceBatch, prepareReferenceBatch, validateReferenceApproval, nextReferenceStage, processReferenceStage, isPhotoStage } from "./referenceWorkflow";
 import { deletionAvailability } from "./deleteGeneration";
+import { IMAGE_STORAGE_VERSION } from "./imageStorage";
 
 const now = () => new Date().toISOString();
 const IMAGE_STAGES = ["featured", "alternate", "pinterest"];
@@ -50,7 +51,7 @@ export class BatchStore {
     if ((input.imageWorkflow || contentSettings(this.store).imageWorkflow) === "reference" || selections?.some(s => s.importId)) return createReferenceBatch(this, selections, input);
     if (!Array.isArray(selections) || !selections.length || selections.length > 20) throw new Error("Select between 1 and 20 verified recipes.");
     if (new Set(selections.map(s => s.recipeId)).size !== selections.length) throw new Error("A recipe can appear only once in a batch.");
-    const settings = validateContentSettings({ ...contentSettings(this.store), ...input });
+    const settings: ContentSettings = { ...validateContentSettings({ ...contentSettings(this.store), ...input }), imageStorage: IMAGE_STORAGE_VERSION };
     const choices = selections.map(choice => {
       if (!Number.isSafeInteger(choice.recipeId)) throw new Error("Invalid recipe selection.");
       const record = this.store.db.prepare("SELECT * FROM recipe_records WHERE id=? AND verification_status='verified' AND duplicate_of IS NULL").get(choice.recipeId) as any;

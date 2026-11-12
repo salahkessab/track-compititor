@@ -101,7 +101,7 @@ test('backup API produces a consistent database that reopens with preserved hist
   try {
     assert.equal(copy.pragma('integrity_check', { simple: true }), 'ok');
     assert.equal(copy.prepare('SELECT name FROM tracked_sites').get().name, 'Backup');
-    assert.equal(copy.pragma('user_version', { simple: true }), 6);
+    assert.equal(copy.pragma('user_version', { simple: true }), 7);
   } finally { copy.close(); }
   assert.equal(store.integrity(), 'ok');
 });
@@ -128,7 +128,7 @@ test('concurrent Phase 1 database opens back up and apply additive migrations on
     PRAGMA user_version=1;`); old.close();
   const [upgraded, other] = await Promise.all([IntelligenceStore.open(root), IntelligenceStore.open(root)]);
   t.after(() => { if (upgraded.db.open) upgraded.close(); if (other.db.open) other.close(); });
-  assert.equal(upgraded.db.pragma('user_version', { simple: true }), 6);
+  assert.equal(upgraded.db.pragma('user_version', { simple: true }), 7);
   assert.equal(upgraded.db.prepare('SELECT title FROM recipe_records WHERE id=1').get().title, 'Saved soup');
   assert.equal(upgraded.db.prepare('SELECT count(*) n FROM content_batches').get().n, 0);
   const backups = fs.readdirSync(path.join(root, 'backups')).filter(n => n.startsWith('before-migration-2')); assert.ok(backups.length >= 1);

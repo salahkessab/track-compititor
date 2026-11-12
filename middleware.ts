@@ -5,6 +5,9 @@ import { NextResponse, type NextRequest } from "next/server";
 // Username can be anything; password must match APP_PASSWORD.
 
 export function middleware(req: NextRequest) {
+  const server = process.env.RECIPE_INTELLIGENCE_MODE === "server" && !process.env.VERCEL;
+  if (server && req.nextUrl.pathname === "/api/server-health") return NextResponse.next();
+  if (server && !process.env.APP_PASSWORD) return new NextResponse("Server authentication is not configured.", { status: 503 });
   // These local-only routes enforce their own launch session and origin checks.
   if (process.env.RECIPE_INTELLIGENCE_LOCAL === "1" && !process.env.VERCEL && req.nextUrl.pathname.startsWith("/api/recipe-intelligence/")) return NextResponse.next();
   const password = process.env.APP_PASSWORD;
@@ -12,14 +15,15 @@ export function middleware(req: NextRequest) {
 
   const header = req.headers.get("authorization");
   if (header?.startsWith("Basic ")) {
-    const decoded = atob(header.slice(6));
-    const [, pwd] = decoded.split(":");
-    if (pwd === password) return NextResponse.next();
+    try {
+      const decoded = atob(header.slice(6)), colon = decoded.indexOf(":");
+      if (colon > 0 && decoded.slice(colon + 1) === password) return NextResponse.next();
+    } catch { /* Malformed credentials are rejected. */ }
   }
 
   return new NextResponse("Authentication required.", {
     status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Horse Studio", charset="UTF-8"' },
+    headers: { "WWW-Authenticate": `Basic realm="${server ? "Recipe Intelligence" : "Horse Studio"}", charset="UTF-8"` },
   });
 }
 

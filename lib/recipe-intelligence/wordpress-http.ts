@@ -51,10 +51,10 @@ export const wordpressRequest: WordPressTransport = async (input, options) => {
   });
 };
 
-export function mediaMultipart(bytes: Buffer, filename: string, fields: Record<string, string>) {
+export function mediaMultipart(bytes: Buffer, filename: string, fields: Record<string, string>, mediaType: "image/jpeg" | "image/png" | "image/webp" = "image/jpeg") {
   const boundary = `ri-${randomBytes(24).toString("hex")}`;
   const chunks: Buffer[] = [];
   for (const [name, value] of Object.entries(fields)) chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
-  chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/jpeg\r\n\r\n`), bytes, Buffer.from(`\r\n--${boundary}--\r\n`));
+  chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mediaType}\r\n\r\n`), bytes, Buffer.from(`\r\n--${boundary}--\r\n`));
   return { body: Buffer.concat(chunks), contentType: `multipart/form-data; boundary=${boundary}` };
 }

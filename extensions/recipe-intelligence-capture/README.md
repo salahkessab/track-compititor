@@ -43,11 +43,11 @@ A webpage must be readable in Chrome. The extension does not solve access challe
 
 ## Connection and permissions
 
-The extension finds authenticated Recipe Intelligence tabs at `http://127.0.0.1`. No fixed port, API key or copied launcher token is needed. It stores only the verified app origin and storage folder. Queries, fragments, launch tokens and credentials are never saved as connection settings. If multiple local workspaces are open without a remembered match, choose the intended destination. An interrupted capture remains bound to its original folder.
+The extension connects to authenticated Recipe Intelligence tabs on HTTPS or `http://127.0.0.1`. Open the cloud app with `?tab=recipe-intelligence`, click the extension, or enter the exact app address in Connection settings. It does not probe unrelated HTTPS tabs. No API key or copied launcher token is needed. It stores only the verified app origin and workspace identity. Queries, fragments, launch tokens and credentials are never saved as connection settings. If multiple workspaces are open without a remembered match, choose the intended destination. An interrupted capture remains bound to its original workspace.
 
 **Connection settings** also accepts the local app address shown inside Recipe Intelligence. The extension can reopen a remembered app tab while the local application is running. If the application is stopped or the browser session expires, start it with the Windows shortcut in the same Chrome profile. Chrome cannot start the Windows worker through this extension. A changed port can be recovered after the launcher opens the app at its new address.
 
-The hosted site can supply the extension download and setup instructions. Processing still uses the local Windows worker and SQLite storage; entering the hosted website as the connection address is not supported.
+The Vercel studio can supply the extension download and setup instructions, but does not run the persistent worker. A configured HTTPS server workspace (including the InstaBox deployment) supports capture imports directly and works without the Windows worker. Open the intended workspace before connecting the extension.
 
 HTTP/HTTPS host access allows photographs to be fetched from the page's image CDN and lets the extension find the local app. There are no automatically running content scripts, remote executable scripts, analytics, third-party upload services, cookie permissions or externally callable extension endpoints. Direct photo downloads omit credentials and reject redirects. A fallback may copy an already rendered image only when Chrome permits canvas access.
 

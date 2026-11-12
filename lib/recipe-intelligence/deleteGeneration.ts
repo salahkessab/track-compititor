@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { IntelligenceStore } from "./database";
 import { assertInside, storagePath } from "./paths";
+import { removeCloudPaths } from "./r2";
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const removing = new Set(["deleting", "delete_failed"]);
@@ -83,7 +84,11 @@ function plan(store: IntelligenceStore, id: string) {
   };
   for (const relative of roots) visit(relative);
   const source = item.source_json ? JSON.parse(item.source_json) : null;
-  return { item, files, directories, removeImport, summary: { id, title: source?.title || "this recipe", bytes: files.reduce((sum, file) => sum + file.size, 0), fileCount: files.length, sharedSource: !!item.import_id && !removeImport } };
+  // Include paths whose local cache might be missing but still exist in R2.
+  for (const call of calls) roots.push(`research/api-receipts/${call.id}.json`);
+  const requests = store.db.prepare("SELECT request_path FROM content_stages WHERE item_id=? AND request_path IS NOT NULL").all(id) as any[];
+  for (const request of requests) if (request.request_path.startsWith(`research/requests/${id}-`)) roots.push(request.request_path);
+  return { item, files, directories, roots, removeImport, summary: { id, title: source?.title || "this recipe", bytes: files.reduce((sum, file) => sum + file.size, 0), fileCount: files.length, sharedSource: !!item.import_id && !removeImport } };
 }
 export function previewGenerationDeletion(store: IntelligenceStore, id: string) { return plan(store, id).summary; }
 
@@ -96,6 +101,7 @@ export function deleteGeneration(store: IntelligenceStore, id: string, confirmed
     if (current.state === "deleted") return { deleted: true, bytesFreed: 0, batchId: current.batch_id, batchEmpty: !store.db.prepare("SELECT 1 FROM content_items WHERE batch_id=? AND state<>'deleted'").get(current.batch_id) };
     const deletion = plan(store, id);
     store.db.prepare("UPDATE content_items SET state='deleting',error=NULL WHERE id=?").run(id);
+    removeCloudPaths(store, deletion.roots);
     let bytesFreed = 0;
     try {
       for (const file of deletion.files) {

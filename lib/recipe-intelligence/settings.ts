@@ -14,6 +14,7 @@ export type ContentSettings = {
   imageWorkflow?: "reference" | "legacy";
   output?: "article_images" | "article_only" | "images_only";
   palette?: PhotoPalette;
+  imageStorage?: "lossless-webp-v1";
 };
 export const DEFAULT_CONTENT_SETTINGS: ContentSettings = {
   basis: "original", mode: "full", textModel: "gpt-5.5", imageModel: "gpt-image-2.6-sunburst",

@@ -19,9 +19,10 @@ function fixture({tabs=[{id:1,url:first}],saved,sessions={[first]:{ready:true,ro
   };
   return {connection:createConnection(browser,appBridge,async()=>{}),storage,calls,created,updates,windows,tabs,sessions};
 }
-test('connection accepts only loopback app addresses and never stores pasted launch secrets',async()=>{
+test('connection accepts HTTPS or loopback app addresses and never stores pasted launch secrets',async()=>{
   assert.equal(appOrigin(first+'/?tab=recipe-intelligence#ri-token=private'),first);
-  for(const value of ['https://example.com','http://127.0.0.1.evil.example','http://user:secret@127.0.0.1','http://192.168.1.1','file:///C:/data','not a URL']) assert.throws(()=>appOrigin(value));
+  assert.equal(appOrigin('https://app.example/path?secret=x#key'),'https://app.example');
+  for(const value of ['http://example.com','https://user:secret@example.com','https://192.168.1.1','http://127.0.0.1.evil.example','http://user:secret@127.0.0.1','http://192.168.1.1','file:///C:/data','not a URL']) assert.throws(()=>appOrigin(value));
   const f=fixture({tabs:[{id:1,url:first+'/?key=secret#ri-token=private'}]});
   const app=await f.connection.connect();assert.equal(app.root,'E:\\Recipes');
   assert.deepEqual(f.storage,{recipeIntelligenceConnection:{origin:first,root:'E:\\Recipes'}});
@@ -70,4 +71,10 @@ test('opening a result does not replace a repurposed tab or navigate outside the
   await f.connection.focus(app);assert.equal(f.updates.length,0);assert.equal(f.created.length,1);
   await assert.rejects(f.connection.focus(app,second+'/'),/destination does not match/);
   await assert.rejects(f.connection.focus(app,'https://evil.example/'));
+});
+test('cloud connection remembers the server workspace and does not probe unrelated HTTPS tabs',async()=>{
+  const cloud='https://recipes.example', f=fixture({tabs:[{id:1,url:cloud+'/?tab=recipe-intelligence'},{id:2,url:'https://unrelated.example'}],sessions:{[cloud]:{ready:true,root:'workspace:persistent-id'}}});
+  const connected=await f.connection.connect();assert.equal(connected.origin,cloud);assert.equal(f.calls.length,1);assert.equal(f.calls[0].target.tabId,1);
+  f.tabs.splice(0,1);await f.connection.connect();assert.equal(f.created.length,1);assert.equal(f.created[0].url,cloud+'/?tab=recipe-intelligence');
+  assert.deepEqual(f.storage.recipeIntelligenceConnection,{origin:cloud,root:'workspace:persistent-id'});
 });

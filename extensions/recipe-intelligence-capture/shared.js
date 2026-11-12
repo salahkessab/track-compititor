@@ -13,11 +13,11 @@
   // Executed only in a discovered loopback app tab. It uses that tab's existing
   // HttpOnly session, leaving authentication and CSRF checks unchanged.
   async function appBridge(message) {
-    if (location.protocol !== 'http:' || location.hostname !== '127.0.0.1' || location.origin !== message.origin) return { error: 'The local app tab changed. Reopen Recipe Intelligence.', status: 409 };
+    if (!(location.protocol === 'https:' || location.protocol === 'http:' && location.hostname === '127.0.0.1') || location.origin !== message.origin) return { error: 'The app tab changed. Reopen Recipe Intelligence.', status: 409 };
     const uuid = /^[a-f0-9-]{36}$/i;
     async function api(route, method = 'GET', data, headers = {}) {
       const response = await fetch(`/api/recipe-intelligence/${route}`, { method, credentials:'same-origin', cache:'no-store', signal:AbortSignal.timeout(message.op === 'probe' ? 3000 : 45000), headers:{'X-Recipe-Intelligence':'1', ...(data instanceof Uint8Array ? {} : {'Content-Type':'application/json'}), ...headers}, ...(data === undefined ? {} : {body:data instanceof Uint8Array ? data : JSON.stringify(data)}) });
-      const result = await response.json();
+      const result = await response.json().catch(() => ({error:response.status===401 ? 'Sign in to Recipe Intelligence in this browser profile.' : 'The app did not return a valid response.'}));
       if (!response.ok) { const error = new Error(result.error || 'The local app could not finish this request.'); error.status = response.status; throw error; }
       return result;
     }
@@ -25,7 +25,7 @@
       if (message.op === 'probe') {
         const capability = await api('capabilities');
         if (!capability.enabled || capability.browserCapture !== 1) return {error:'This local app needs the browser capture update.',status:409};
-        const snapshot = await api('snapshot'); return { ready:true, root:snapshot.settings.root };
+        const snapshot = await api('snapshot'); return { ready:true, root:snapshot.runtime === 'server' ? `workspace:${snapshot.settings.workspaceId}` : snapshot.settings.root };
       }
       if (message.op === 'begin') return await api('imports/browser', 'POST', message.data);
       if (!uuid.test(message.id || '')) throw new Error('Invalid import ID.');

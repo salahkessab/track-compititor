@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prepareRoot, storagePath } from "./paths";
 import { normalizeSite, normalizeUrl, sameSite } from "./urls";
 import type { Candidate, ScanItem, Site, SiteStatus, TaskKind } from "./types";
-import { CURRENT_SCHEMA, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6 } from "./migrations";
+import { CURRENT_SCHEMA, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6, MIGRATION_7 } from "./migrations";
 
 const SCHEMA = `
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -114,9 +114,14 @@ export class IntelligenceStore {
         if (version > 0) await db.backup(storagePath(root, "backups", `before-migration-6-${Date.now()}-${randomUUID()}.sqlite`));
         db.transaction(() => { if (Number(db.pragma("user_version", { simple: true })) < 6) db.exec(MIGRATION_6); }).immediate();
       }
+      if (Number(db.pragma("user_version", { simple: true })) < 7) {
+        if (version > 0) await db.backup(storagePath(root, "backups", `before-migration-7-${Date.now()}-${randomUUID()}.sqlite`));
+        db.transaction(() => { if (Number(db.pragma("user_version", { simple: true })) < 7) db.exec(MIGRATION_7); }).immediate();
+      }
       db.pragma("journal_mode = WAL"); db.pragma("synchronous = FULL");
       const store = new IntelligenceStore(db, root);
       store.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('reporting_timezone','Africa/Casablanca')").run();
+      store.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('workspace_id',?)").run(randomUUID());
       return store;
     } catch (error) { db.close(); throw error; }
   }
@@ -345,7 +350,7 @@ export class IntelligenceStore {
         urls: (this.db.prepare("SELECT count(*) n FROM recipe_records WHERE site_id=?").get(site.id) as { n: number }).n,
         sources: this.db.prepare("SELECT * FROM discovery_sources WHERE site_id=? ORDER BY CASE status WHEN 'available' THEN 0 ELSE 1 END,id LIMIT 200").all(site.id),
       })), runs, worker: { online: !!lease && lease.expires_at > Date.now(), heartbeat_at: lease?.heartbeat_at ?? null },
-      settings: { root: this.root, timezone: (this.db.prepare("SELECT value FROM settings WHERE key='reporting_timezone'").get() as { value: string }).value },
+      settings: { root: this.root, workspaceId: (this.db.prepare("SELECT value FROM settings WHERE key='workspace_id'").get() as { value: string }).value, timezone: (this.db.prepare("SELECT value FROM settings WHERE key='reporting_timezone'").get() as { value: string }).value },
     };
   }
   history(siteId: string, page = 0) {

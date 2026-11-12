@@ -1,5 +1,5 @@
 // Additive migrations preserve the original discovery index and its checkpoints.
-export const CURRENT_SCHEMA = 6;
+export const CURRENT_SCHEMA = 7;
 export const MIGRATION_2 = `
 ALTER TABLE recipe_records ADD COLUMN publication_json TEXT;
 ALTER TABLE recipe_records ADD COLUMN verification_reason TEXT;
@@ -137,4 +137,19 @@ CREATE TABLE wordpress_exports (
  PRIMARY KEY(site_url,item_id)
 );
 PRAGMA user_version=6;
+`;
+
+// Object storage metadata only; credentials remain in the server environment.
+export const MIGRATION_7 = `
+CREATE TABLE r2_objects (
+ id INTEGER PRIMARY KEY, destination TEXT NOT NULL, relative_path TEXT NOT NULL,
+ sha256 TEXT NOT NULL, object_key TEXT NOT NULL, size_bytes INTEGER NOT NULL, media_type TEXT NOT NULL,
+ mtime_ms REAL NOT NULL, is_current INTEGER NOT NULL DEFAULT 1,
+ state TEXT NOT NULL CHECK(state IN ('pending','uploading','synced','failed','superseded','delete_pending','deleted')),
+ attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, error TEXT, updated_at TEXT NOT NULL,
+ UNIQUE(destination,relative_path,sha256)
+);
+CREATE INDEX r2_runnable ON r2_objects(destination,state,next_attempt,id);
+CREATE TABLE r2_deleted_paths (relative_path TEXT PRIMARY KEY);
+PRAGMA user_version=7;
 `;

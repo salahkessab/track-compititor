@@ -53,17 +53,17 @@ test('review before images saves the article first, then creates exact-size imag
   const read = name => f.batches.artifacts.read(item.files.find(x => x.name === name).id).data;
   assert.equal(load(read('article.html'))('img').length, 0);
   f.batches.approveItem(item.id); await f.drainBatch(); item = f.batches.detail(b.id).items[0];
-  for (const [name, width] of [['featured.jpg', 1200], ['alternate.jpg', 1200], ['pinterest.jpg', 1000]]) {
+  for (const [name, width] of [['featured.webp', 1200], ['alternate.webp', 1200], ['pinterest.webp', 1000]]) {
     const file = f.batches.artifacts.read(item.files.find(f => f.name === name).id); const image = await sharp(file.data).metadata(); assert.equal(image.width, width); assert.equal(image.height, 1500);
   }
   assert.equal(f.providerCalls.filter(c => c.operation === 'image').length, 3); assert.equal(item.state, 'completed');
   for (const call of f.providerCalls.filter(c => c.operation === 'image')) assert.equal('complexity' in call.payload, false);
   const $ = load(read('article.html')); assert.equal($('img').length, 3);
-  for (const [i, name] of ['featured.jpg', 'alternate.jpg', 'pinterest.jpg'].entries()) {
-    assert.equal($('img').eq(i).attr('src'), `data:image/jpeg;base64,${read(name).toString('base64')}`);
+  for (const [i, name] of ['featured.webp', 'alternate.webp', 'pinterest.webp'].entries()) {
+    assert.equal($('img').eq(i).attr('src'), name);
     assert.ok(read('article.md').toString().includes(`](${name})`));
   }
-  assert.deepEqual(JSON.parse(read('recipe.json')).recipeCard.image, ['featured.jpg', 'alternate.jpg', 'pinterest.jpg']);
+  assert.deepEqual(JSON.parse(read('recipe.json')).recipeCard.image, ['featured.webp', 'alternate.webp', 'pinterest.webp']);
   assert.equal(JSON.parse(read('seo.json')).wordCount, wordsBefore);
   f.batches.artifacts.article(f.batches.item(item.id), item.article, item.source);
   assert.equal(load(read('article.html'))('img').length, 3); assert.equal(f.providerCalls.length, 4);
@@ -148,10 +148,10 @@ test('image failure does not stop other images or articles; targeted retry reuse
     imageCalls++; if (imageCalls === 1) throw new ProviderFailure('Model request rejected', true);
     return { body: { data: [{ b64_json: png }], usage: { input_tokens: 10, output_tokens: 1372, input_tokens_details: { text_tokens: 10, image_tokens: 0 } } }, requestId: 'image' };
   } }); png = f.image.toString('base64'); const r = f.seed(); const b = f.batches.create([{ recipeId: r.id }], { ...f.defaults, images: true }); f.approve(b); await f.drainBatch();
-  let item = f.batches.detail(b.id).items[0]; assert.equal(item.state, 'partial'); assert.ok(item.files.some(f => f.name === 'alternate.jpg')); assert.ok(item.files.some(f => f.name === 'article.html'));
+  let item = f.batches.detail(b.id).items[0]; assert.equal(item.state, 'partial'); assert.ok(item.files.some(f => f.name === 'alternate.webp')); assert.ok(item.files.some(f => f.name === 'article.html'));
   f.batches.retry(item.id, 'featured'); await f.drainBatch(); item = f.batches.detail(b.id).items[0]; assert.equal(item.state, 'completed'); assert.equal(imageCalls, 4); assert.equal(f.providerCalls.filter(c => c.operation === 'text').length, 1);
   f.batches.retry(item.id, 'featured', true); await f.drainBatch(); assert.equal(imageCalls, 5); assert.equal(f.providerCalls.filter(c => c.operation === 'text').length, 1);
-  const saved = f.store.db.prepare("SELECT * FROM artifacts WHERE item_id=? AND name='featured.jpg'").get(item.id);
+  const saved = f.store.db.prepare("SELECT * FROM artifacts WHERE item_id=? AND name='featured.webp'").get(item.id);
   fs.writeFileSync(path.join(f.root, saved.relative_path), 'corrupt'); assert.throws(() => f.batches.artifacts.read(saved.id), /checksum/);
   f.batches.retry(item.id, 'featured'); await f.drainBatch(); assert.equal(imageCalls, 5); assert.equal((await sharp(f.batches.artifacts.read(saved.id).data).metadata()).width, 1200);
 });
@@ -189,7 +189,7 @@ test('article regeneration creates a new version and reuses all completed images
   assert.equal(item.version, 2); assert.equal(item.state, 'completed'); assert.equal(f.providerCalls.filter(c => c.operation === 'image').length, imageCalls);
   assert.equal(f.providerCalls.filter(c => c.operation === 'text').length, 2);
   assert.ok(fs.existsSync(path.join(f.root, 'articles', item.id, 'v1', 'article.html')));
-  assert.ok(fs.existsSync(path.join(f.root, 'articles', item.id, 'v2', 'featured.jpg')));
+  assert.ok(fs.existsSync(path.join(f.root, 'articles', item.id, 'v2', 'featured.webp')));
 });
 
 test('missing usage remains reserved without blocking other work or discarding its successful article', async t => {
