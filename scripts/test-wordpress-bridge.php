@@ -88,6 +88,53 @@ $payload['status'] = 'publish'; $payload['confirmPublish'] = true;
 check(request_bridge('POST', 'exports', $payload)->get_data()['status'] === 'publish', 'native draft publishes');
 check(get_post_status($native['recipeId']) === 'publish', 'native recipe publication follows its parent');
 check(strpos(get_post($native['postId'])->post_content, '<!-- wp:wp-recipe-maker/recipe ') !== false, 'Gutenberg native card block');
+// Scheduling uses native WordPress UTC dates and cron, independent of the desktop worker.
+update_option('timezone_string', 'Africa/Casablanca');
+$profile = request_bridge('GET', 'profile')->get_data();
+check($profile['scheduling'] === true && $profile['timezone'] === 'Africa/Casablanca', 'bridge advertises native scheduling and site timezone');
+$schedule = $payload; $schedule['exportId'] = hash('sha256', random_bytes(20));
+$schedule['status'] = 'future'; $schedule['confirmPublish'] = false;
+$timestamp = time() + 86400;
+$schedule['scheduledAt'] = gmdate('Y-m-d\TH:i:s', $timestamp) . '.000Z';
+check(request_bridge('POST', 'exports', $schedule)->get_status() === 403, 'schedule requires explicit confirmation');
+$schedule['confirmSchedule'] = true;
+$invalid = $schedule; $invalid['scheduledAt'] = gmdate('Y-m-d\TH:i:s', time() - 60) . '.000Z';
+check(request_bridge('POST', 'exports', $invalid)->get_status() === 400, 'past schedule rejected before creation');
+$scheduled_response = request_bridge('POST', 'exports', $schedule);
+check($scheduled_response->get_status() === 200, 'native scheduled export: ' . wp_json_encode($scheduled_response->get_data()));
+$scheduled = $scheduled_response->get_data(); $post_id = $scheduled['postId'];
+check($scheduled['status'] === 'future' && $scheduled['scheduledAt'] === $schedule['scheduledAt'], 'scheduled receipt preserves UTC publication time');
+check(get_post_status($post_id) === 'future', 'scheduled article remains unpublished');
+check(get_post_status($scheduled['recipeId']) === 'future', 'native recipe card stays scheduled with its parent');
+check(get_post($post_id)->post_date === get_date_from_gmt(gmdate('Y-m-d H:i:s', $timestamp)), 'WordPress local date matches site timezone');
+check(wp_next_scheduled('publish_future_post', [$post_id]) === $timestamp, 'WordPress owns the scheduled publication event');
+check(wp_next_scheduled('publish_future_post', [$scheduled['recipeId']]) === $timestamp, 'native recipe card has the same scheduled publication event');
+check(request_bridge('POST', 'exports', $schedule)->get_data()['postId'] === $post_id, 'duplicate scheduled export reuses same post');
+check_and_publish_future_post($post_id);
+check(get_post_status($post_id) === 'future', 'early cron does not publish before the due time');
+$timestamp += 3600; $schedule['scheduledAt'] = gmdate('Y-m-d\TH:i:s', $timestamp) . '.000Z';
+$rescheduled = request_bridge('POST', 'exports', $schedule)->get_data();
+check($rescheduled['postId'] === $post_id && $rescheduled['scheduledAt'] === $schedule['scheduledAt'], 'reschedule updates the existing post');
+check(wp_next_scheduled('publish_future_post', [$post_id]) === $timestamp, 'reschedule replaces the earlier cron event');
+// Simulate the clock reaching this isolated post's due time without waiting a day.
+global $wpdb;
+$saved_user = get_current_user_id(); wp_set_current_user(0);
+foreach ([$post_id, $scheduled['recipeId']] as $due_id) {
+    $wpdb->update($wpdb->posts, ['post_date_gmt' => gmdate('Y-m-d H:i:s', time() - 10), 'post_date' => get_date_from_gmt(gmdate('Y-m-d H:i:s', time() - 10))], ['ID' => $due_id]);
+    clean_post_cache($due_id); check_and_publish_future_post($due_id);
+}
+wp_set_current_user($saved_user);
+check(get_post_status($post_id) === 'publish', 'native WordPress cron publishes when due');
+check(get_post_status($scheduled['recipeId']) === 'publish', 'native recipe card publishes with the scheduled article');
+check(request_bridge('GET', 'exports/' . $schedule['exportId'])->get_data()['status'] === 'publish', 'scheduled receipt lookup reflects publication');
+check(get_post_thumbnail_id($post_id) === $media[0], 'scheduled publication retains featured image');
+$promoted = $payload; $promoted['exportId'] = hash('sha256', random_bytes(20)); $promoted['status'] = 'draft';
+$draft_id = request_bridge('POST', 'exports', $promoted)->get_data()['postId'];
+$promoted['status'] = 'future'; $promoted['confirmSchedule'] = true; $promoted['scheduledAt'] = gmdate('Y-m-d\TH:i:s', time() + 86400) . '.000Z';
+check(request_bridge('POST', 'exports', $promoted)->get_data()['postId'] === $draft_id && get_post_status($draft_id) === 'future', 'existing draft can be scheduled');
+$promoted['status'] = 'publish'; $promoted['confirmPublish'] = true;
+check(request_bridge('POST', 'exports', $promoted)->get_data()['status'] === 'publish', 'publish now overrides an existing future date');
+check(!wp_next_scheduled('publish_future_post', [$draft_id]), 'publish now clears pending scheduled event');
 // Create another private draft for the access test.
 $payload['exportId'] = hash('sha256', random_bytes(20)); $payload['status'] = 'draft';
 $private = request_bridge('POST', 'exports', $payload)->get_data();
@@ -145,6 +192,12 @@ check(get_post_thumbnail_id($token_draft['postId']) === $uploaded['id'], 'token 
 check(get_post_type($token_draft['recipeId']) === 'wprm_recipe', 'token export creates native recipe card');
 check(get_current_user_id() === 0, 'nested native-card request restores anonymous user');
 check(token_request('POST', 'exports', $token, $editor_slug, $payload)->get_data()['postId'] === $token_draft['postId'], 'token export is idempotent');
+$payload['status'] = 'future'; $payload['scheduledAt'] = gmdate('Y-m-d\TH:i:s', time() + 86400) . '.000Z';
+check(token_request('POST', 'exports', $token, $editor_slug, $payload)->get_status() === 403, 'Site Token scheduling requires confirmation');
+$payload['confirmSchedule'] = true;
+$token_schedule = token_request('POST', 'exports', $token, $editor_slug, $payload)->get_data();
+check($token_schedule['postId'] === $token_draft['postId'] && $token_schedule['status'] === 'future', 'Site Token schedules the same draft');
+check(get_current_user_id() === 0, 'scheduled token action restores anonymous identity');
 $payload['status'] = 'publish';
 check(token_request('POST', 'exports', $token, $editor_slug, $payload)->get_status() === 403, 'token live publishing still requires explicit confirmation');
 $payload['confirmPublish'] = true;

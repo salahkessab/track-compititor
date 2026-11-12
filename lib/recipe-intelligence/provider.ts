@@ -121,10 +121,11 @@ export function stageEstimate(kind: string, settings: ContentSettings, character
   const research = kind === "research";
   const profile = writingModelProfile(settings.textModel);
   if (!profile) throw new Error("No verified writing-model pricing profile exists.");
-  const outputTokens = research ? 3000 : 6500;
+  const editorial = kind === "editorial";
+  const outputTokens = research ? 3000 : editorial ? 1800 : 6500;
   // Reserve full bounded output and generous input including search content.
   const inputTokens = research ? 100000 : characters + 2000;
-  return { estimated: textCost({ input_tokens: research ? 16000 : Math.ceil(characters / 3), output_tokens: research ? 2000 : 3000 }, research ? 1 : 0, settings.textModel)!,
+  return { estimated: textCost({ input_tokens: research ? 16000 : Math.ceil(characters / 3), output_tokens: research ? 2000 : editorial ? 900 : 3000 }, research ? 1 : 0, settings.textModel)!,
     reservation: textCost({ input_tokens: inputTokens, output_tokens: outputTokens }, research ? 1 : 0, settings.textModel)!,
     basis: `${profile.label}: $${profile.input}/M input, $${profile.cachedInput}/M cached input, $${profile.output}/M output; optional web search $0.01/call, at most one call.${profile.longContextThreshold ? " Above 272K input tokens: 2x input and 1.5x output rates." : ""}` };
 }

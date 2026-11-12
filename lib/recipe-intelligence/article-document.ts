@@ -8,11 +8,15 @@ export type BlogSections = {
   timeNote: SupportedText[]; variations: SupportedText[]; serving: SupportedText[];
   storage: SupportedText[]; proTips: SupportedText[]; faqs: (SupportedText & { question: string })[]; conclusion: string;
 };
-export type Article = { articleTitle?: string; seoTitle: string; metaDescription: string; slug: string; introduction: string; instructions: string[]; tips: string[]; storage: string[]; format?: ArticleFormat; blog?: BlogSections; wordCount?: number; editorialNotes?: string[] };
+export type Article = { articleTitle?: string; seoTitle: string; metaDescription: string; slug: string; introduction: string; instructions: string[]; tips: string[]; storage: string[]; format?: ArticleFormat; blog?: BlogSections; wordCount?: number; editorialNotes?: string[]; sectionOrder?: string[] };
 export const publicationTitle = (article: Article, recipe: RecipeSnapshot) => article.articleTitle?.trim() || recipe.title;
 export const escapeHtml = (v: unknown) => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export const andText = (text: string) => text.replace(/\s*&\s*/g, " and ");
 export const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+// Remove only the personal framing, retaining the named ingredient and its amount.
+// Raw imported entries remain untouched in the private recipe snapshot.
+export const publicationIngredient = (value: string) => value.replace(/\bI (?:use|used|prefer|like)\s+/gi, '').replace(/\(\(([^()]*)\)\)/g, '($1)');
+export const privateSourceLanguage = (text: string) => /\b(?:I\s+(?:use[ds]?|suggest|recommend|find|like|prefer|made|tested|found|have|think)|my\s+(?:family|kitchen|recipe|test|version)|mine\s+is|our\s+kitchen|the\s+(?:original\s+)?source\s+(?:says|recommends|suggests|specifically|notes|provides)|(?:original|source)\s+(?:author|article)|according\s+to\s+the\s+source)\b/i.test(text);
 export function publicationTimes(recipe: RecipeSnapshot) {
   const times = { prepTime: recipe.prepTime, cookTime: recipe.cookTime, totalTime: recipe.totalTime };
   const duration = /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(times.cookTime);
@@ -48,7 +52,7 @@ export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[
     if (!general && (!ids.length || ids.some(id => !refs[id]))) { warnings.push(`${section}: unsupported advice was omitted because its source references were missing.`); return null; }
     const evidence = ids.map(id => refs[id]).join(" ");
     if (numbers(text).some(n => !numbers(evidence).includes(n)) || general && /\b(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?|overnight)\b/i.test(text)) { warnings.push(`${section}: an unsupported numerical claim or duration was omitted.`); return null; }
-    if (/\b(?:my (?:family|grandmother|grandma|mother)|I (?:tested|grew up|remember|always make))\b/i.test(text)) { warnings.push(`${section}: an unsupported personal anecdote was omitted.`); return null; }
+    if (/\b(?:my (?:family|grandmother|grandma|mother)|I (?:tested|grew up|remember|always make))\b/i.test(text) || master && privateSourceLanguage(text)) { warnings.push(`${section}: source attribution or a personal claim was omitted. Rewrite as standalone factual guidance without first person or source mentions.`); return null; }
     return { text, evidenceIds: ids, ...(master ? { basis: general ? "culinary_knowledge" as const : "source" as const } : {}) };
   };
   const claims = (key: string, max = 5) => (Array.isArray(raw?.[key]) ? raw[key] : []).slice(0, max).flatMap((v: any) => { const row = claim(v, key); return row ? [row] : []; });
@@ -56,7 +60,7 @@ export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[
     const row = claim(v, "Ingredient notes"); const index = v?.ingredientIndex;
     return row && Number.isInteger(index) && index >= 0 && index < recipe.ingredients.length ? [{ ...row, ingredientIndex: index }] : [];
   });
-  const faqs = (Array.isArray(raw?.faqs) ? raw.faqs : []).slice(0, 5).flatMap((v: any) => { const row = claim(v, "FAQs"); const question = prose(v?.question, 250); return row && question ? [{ ...row, question }] : []; });
+  const faqs = (Array.isArray(raw?.faqs) ? raw.faqs : []).slice(0, 5).flatMap((v: any) => { const row = claim(v, "FAQs"); const question = prose(v?.question, 250); if (!row || !question) return []; const answer = row.text.startsWith(question) ? row.text.slice(question.length).trim() : row.text; return answer ? [{ ...row, text: answer, question }] : []; });
   const blog = { whyMake: claims("whyMake"), ingredientNotes, timeNote: master ? [] : claims("timeNote", 2), variations: claims("variations"), serving: claims("serving", 3), storage: claims("storage", 4), proTips: claims("proTips"), faqs, conclusion: master ? "" : prose(raw?.conclusion, 2500) };
   if (!master) {
     if (!blog.whyMake.length) warnings.push("Why make this recipe needs supported benefits.");
@@ -109,14 +113,17 @@ export function articleDocument(article: Article, recipe: RecipeSnapshot, images
       references("step", index + 1);
     });
     photograph("alternate");
-    section("Tips for the Best Results", blog.proTips, true);
-    section(`What to Serve With ${title}`, blog.serving);
-    section("Storage and Reheating", blog.storage);
-    section("Substitutions and Variations", blog.variations);
-    if (blog.faqs.length) { heading("Frequently Asked Questions"); for (const faq of blog.faqs) { heading(faq.question, 3); paragraphs(faq.text); } }
+    const optional: Record<string, () => void> = {
+      proTips: () => section("Tips for the Best Results", blog.proTips, true),
+      serving: () => section(article.sectionOrder ? "Serving Suggestions" : `What to Serve With ${title}`, blog.serving),
+      storage: () => section(article.sectionOrder && !/\b(?:reheat|rewarm|microwave|oven)\b/i.test(blog.storage.map(v => v.text).join(' ')) ? "Storage" : "Storage and Reheating", blog.storage),
+      variations: () => section("Substitutions and Variations", blog.variations),
+      faqs: () => { if (blog.faqs.length) { heading("Frequently Asked Questions"); for (const faq of blog.faqs) { heading(faq.question, 3); paragraphs(faq.text); } } },
+    };
+    for (const key of new Set([...(article.sectionOrder || []), ...Object.keys(optional)])) if (Object.hasOwn(optional, key)) optional[key]();
     html.push('<section data-ri-recipe-card="1">');
     heading("Complete Recipe Card"); heading(title, 3); paragraphs(article.metaDescription);
-    facts(); heading("Ingredients", 3); list(recipe.ingredients);
+    facts(); heading("Ingredients", 3); list(recipe.ingredients.map(publicationIngredient));
     heading("Instructions", 3); list(article.instructions, true);
     html.push('</section>');
   } else {

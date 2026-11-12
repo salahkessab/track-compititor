@@ -1,6 +1,24 @@
 import type { CheerioAPI } from "cheerio";
 
 export type SupportingEvidence = { id: string; kind: "ingredient_note" | "tip" | "variation" | "serving" | "storage"; heading: string; text: string };
+export type SourceReading = { version: 1; text: string; truncated: boolean };
+export function boundedSourceReading(full: string): SourceReading | undefined {
+  if (typeof full !== 'string') return;
+  let text = '', bytes = 0;
+  for (const ch of full) { const size = Buffer.byteLength(ch); if (bytes + size > 10000) break; text += ch; bytes += size; }
+  return text.length >= 40 ? { version: 1, text, truncated: text.length < full.length } : undefined;
+}
+// Private editorial reading only. Never treat narrative prose as recipe-card facts.
+export function sourceReading($: CheerioAPI): SourceReading | undefined {
+  const roots = $("article,main,[itemprop='articleBody'],.entry-content,.post-content").filter((_, el) => !$(el).parents('aside,nav,footer').length);
+  const selected = roots.filter((_, el) => $(el).find('h1').length === 1).first();
+  const bodies = $('.entry-content,.post-content,[itemprop="articleBody"]').filter((_, el) => !$(el).parents('aside,nav,footer').length);
+  const root = (bodies.length === 1 ? bodies : selected.length ? selected : roots.first()).clone();
+  if (!root.length) return;
+  root.find("script,style,noscript,nav,aside,footer,form,button,article,[hidden],[aria-hidden='true'],.comments,#comments,.author-box,.related,.related-posts,.related-articles,.recommended-posts,.recommended-articles,[class*='recirculation'],[class*='newsletter'],[class*='advertisement']").remove();
+  const blocks = root.find('h1,h2,h3,p,li').filter((_, el) => !$(el).parents('li,p').length).map((_, el) => $(el).text().replace(/\s+/g, ' ').trim()).get().filter(Boolean);
+  return boundedSourceReading(blocks.join('\n'));
+}
 export function recipeContext($: CheerioAPI): SupportingEvidence[] {
   const oneTitle = (element: Parameters<CheerioAPI>[0]) => {
     const titles = $(element).find("h1").map((_, h) => $(h).text().replace(/\s+/g, " ").trim().toLowerCase()).get().filter(Boolean);
@@ -10,6 +28,12 @@ export function recipeContext($: CheerioAPI): SupportingEvidence[] {
   // Distinct article titles still make optional guidance ambiguous.
   let roots = $("article").filter((_, e) => oneTitle(e));
   if (!roots.length) roots = $("main").filter((_, e) => oneTitle(e));
+  // Some themes put the page H1 above main. A unique article body under a
+  // single page title is still unambiguous; nested recommendation cards are removed below.
+  if (!roots.length && new Set($('h1').map((_, h) => $(h).text().trim().toLowerCase()).get().filter(Boolean)).size === 1) {
+    const bodies = $('.entry-content,.post-content,[itemprop="articleBody"]').filter((_, e) => !$(e).parents('aside,nav,footer').length);
+    if (bodies.length === 1) roots = bodies;
+  }
   if (roots.length !== 1) return [];
   const root = roots.first().clone();
   root.find("script,style,noscript,nav,aside,footer,form,article,[hidden],[aria-hidden='true'],[role='complementary'],[role='navigation'],[role='contentinfo'],[itemprop='comment'],#comments,.comments,.comment-list,.related,.related-posts,.related-articles,.recommended-posts,.recommended-articles,.yarpp-related").remove();

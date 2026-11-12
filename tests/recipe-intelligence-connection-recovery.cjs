@@ -79,3 +79,32 @@ test('a known rejection after an uncertain retry remains a normal failed stage w
   assert.equal(f.store.db.prepare("SELECT count(*) n FROM api_calls WHERE state='rejected'").get().n,1);
   assert.doesNotThrow(()=>f.batches.retry(item.id,'article'));
 });
+
+test('explicit research retry preserves the unknown charge and recipe version and continues once',async t=>{
+  let researchCalls=0;
+  const f=await contentFixture(t,{provider:async(op,payload)=>{
+    if(payload.tools){if(++researchCalls===1)throw new ProviderFailure('Interrupted research');return textResponse({});}
+    return textResponse(article());
+  }});
+  const recipe=f.seed(),batch=f.batches.create([{recipeId:recipe.id,independentResearch:true}],{...f.defaults,correction:false});
+  f.approve(batch,2.04);await f.drainBatch();
+  const item=f.batches.detail(batch.id).items[0],old=f.store.db.prepare('SELECT * FROM api_calls').get();
+  assert.equal(old.state,'uncertain');
+  assert.throws(()=>f.batches.retry(item.id,'research',true),/uncertain/);
+  assert.throws(()=>f.batches.retry(item.id,'research',false,true),/uncertain/);
+  f.batches.retry(item.id,'research',true,true);
+  assert.equal(f.batches.item(item.id).version,item.version);
+  assert.equal(f.batches.budget(batch.id).held,old.reserved_usd);
+  assert.throws(()=>f.batches.retry(item.id,'research',true,true),/not eligible/);
+  await f.drainBatch();
+  assert.equal(researchCalls,2);
+  const reviewed=f.batches.detail(batch.id).items[0];
+  assert.equal(reviewed.review_kind,'research');
+  assert.equal(f.providerCalls.filter(c=>!c.payload.tools).length,0);
+  f.batches.approveItem(item.id,reviewed.source.url);await f.drainBatch();
+  const retained=f.store.db.prepare('SELECT * FROM api_calls WHERE id=?').get(old.id);
+  assert.equal(retained.state,'uncertain');assert.equal(retained.actual_usd,null);
+  assert.equal(f.batches.detail(batch.id).status,'completed');
+  assert.equal(f.batches.get(batch.id).limit_usd,2.04);
+  assert.ok(f.batches.budget(batch.id).committed<=2.04);
+});

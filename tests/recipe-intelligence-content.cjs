@@ -88,11 +88,13 @@ test('known-source batch quotes reflect request size and can fit a twenty-cent m
   f.approve(b, 0.20); await f.drainBatch();
   assert.ok(f.batches.detail(b.id).budget.actual <= 0.20);
 });
-test('clear complete source is selected automatically; competing complete sources require only that recipe to be reviewed', async t => {
+test('research suggestions wait for a manual recipe choice while other recipes finish', async t => {
   const f = await contentFixture(t); const a = f.seed('ambiguous'); const b = f.seed('normal');
   const alternative = 'https://other.example/carrot-soup'; f.responses.set(alternative, html());
   const batch = f.batches.create([{ recipeId: a.id, basis: 'best_complete', alternativeUrls: [alternative] }, { recipeId: b.id }], f.defaults); f.approve(batch); await f.drainBatch();
-  let result = f.batches.detail(batch.id); const ambiguous = result.items.find(i => i.recipe_id === a.id); assert.equal(ambiguous.state, 'review'); assert.equal(ambiguous.review_kind, 'source'); assert.equal(result.items.find(i => i.recipe_id === b.id).state, 'completed');
+  let result = f.batches.detail(batch.id); const ambiguous = result.items.find(i => i.recipe_id === a.id); assert.equal(ambiguous.state, 'review'); assert.equal(ambiguous.review_kind, 'research'); assert.equal(result.items.find(i => i.recipe_id === b.id).state, 'completed');
+  assert.notEqual(ambiguous.source.url, alternative); assert.equal(ambiguous.research.length, 2);
+  assert.throws(() => f.batches.approveItem(ambiguous.id, 'https://unlisted.example/recipe'), /source|recipe/i);
   assert.equal(f.providerCalls.length, 1); f.batches.approveItem(ambiguous.id, alternative); await f.drainBatch();
   result = f.batches.detail(batch.id); assert.equal(result.status, 'completed'); assert.equal(result.items.find(i => i.recipe_id === a.id).source.url, alternative);
   const full = extractArticle(html(), 'https://a.example/soup').recipe; const sparse = { ...full, yield: '', prepTime: '', cookTime: '', totalTime: '' };

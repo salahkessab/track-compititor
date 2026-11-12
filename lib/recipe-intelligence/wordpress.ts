@@ -11,7 +11,7 @@ import { credentialProtection, type SecretProtection } from "./local-secrets";
 import { mediaMultipart, wordpressRequest, wordpressSite, type WordPressTransport, type WordPressResponse } from "./wordpress-http";
 import { GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
 
-export type WordPressProfile = { version: string; protocol: 1; recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string };
+export type WordPressProfile = { version: string; protocol: 1; recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string; scheduling?: boolean; timezone?: string };
 type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string; bridge?: WordPressProfile; authMethod?: "application_password" | "bridge_token"; userSlug?: string };
 type Media = { id: number; sourceUrl: string };
 type Image = { sha256: string; name: string; alt: string; bytes: Buffer; source: string; mediaType: "image/jpeg" | "image/png" | "image/webp" };
@@ -130,7 +130,7 @@ export class WordPressStore {
   private profile(data: any, siteUrl: string): WordPressProfile {
     if (data.protocol !== 1 || typeof data.version !== "string" || !/^[a-f0-9]{64}$/.test(data.revision) || typeof data.recipeCard !== "string" || typeof data.recipeCardLabel !== "string") throw new Error("Update the WordPress bridge to a compatible version.");
     const bridge: WordPressProfile = { protocol: 1, version: data.version.slice(0, 30), recipeCard: data.recipeCard.slice(0, 50), recipeCardLabel: data.recipeCardLabel.slice(0, 100), revision: data.revision,
-      ready: data.ready === true && ["builtin", "wprm"].includes(data.recipeCard), canPublish: data.canPublish === true,
+      ready: data.ready === true && ["builtin", "wprm"].includes(data.recipeCard), canPublish: data.canPublish === true, scheduling: data.scheduling === true, timezone: typeof data.timezone === 'string' ? data.timezone.slice(0, 80) : undefined,
       settingsUrl: new URL("wp-admin/options-general.php?page=recipe-intelligence", siteUrl).href };
     return bridge;
   }

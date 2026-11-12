@@ -1,7 +1,7 @@
 import { load } from "cheerio";
 import { normalizeUrl, sameSite, sourceUrl } from "./urls";
 import { extractHtmlRecipe } from "./html-recipe";
-import { recipeContext, type SupportingEvidence } from "./recipe-context";
+import { recipeContext, sourceReading, type SourceReading, type SupportingEvidence } from "./recipe-context";
 
 export type PublicationDate = { raw: string; precision: "date" | "instant" | "local"; date: string; utc?: string; timezone?: string };
 export type DateEvidence = { kind: "recipe" | "article" | "metadata" | "feed" | "modified"; value: string; parsed: PublicationDate | null };
@@ -11,6 +11,7 @@ export type RecipeSnapshot = {
   description: string; imageDescription: string; tips: string[]; storage: string[]; retrievedAt: string;
   extractionMethod?: "html_sections"; sourceNotes?: string[];
   evidenceVersion?: 1; supportingEvidence?: SupportingEvidence[];
+  sourceReading?: SourceReading;
   displayTimes?: Partial<Record<"prepTime" | "cookTime" | "totalTime", string>>;
 };
 export type ArticleEvidence = {
@@ -106,7 +107,7 @@ export function extractArticle(html: string, url: string, feedDates: string[] = 
     prepTime: plain(r.prepTime, 100), cookTime: plain(r.cookTime, 100), totalTime: plain(r.totalTime, 100),
     description: plain(r.description, 3000), imageDescription: plain(r.image?.caption, 1000), tips: [], storage: [], retrievedAt: new Date().toISOString(),
   } : htmlRecipe.recipe;
-  if (recipe) { recipe.evidenceVersion = 1; recipe.supportingEvidence = recipeContext($); }
+  if (recipe) { recipe.evidenceVersion = 1; recipe.supportingEvidence = recipeContext($); const reading = sourceReading($); if (reading) recipe.sourceReading = reading; }
   const result: ArticleEvidence = { canonical, title: recipe?.title || plain($("h1").first().text() || $("title").text(), 500), recipe, dates, status: "uncertain", publication: null, reason: "Original publication date is missing or has no explicit timezone." };
   if (!recipe) { result.status = recipes.length > 1 || htmlRecipe.reason ? "uncertain" : "not_recipe"; result.reason = recipes.length > 1 ? "Multiple recipe entities require review." : htmlRecipe.reason || "No relevant Recipe structured data or unambiguous labelled ingredient and method sections were found."; return result; }
   const articleDates = dates.filter(d => ["recipe", "article", "metadata"].includes(d.kind));

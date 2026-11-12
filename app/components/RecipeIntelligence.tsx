@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Source = { id: number; url: string; kind: string; status: string; error: string | null; last_success_at: string | null };
 type Site = { id: string; name: string; url: string; status: "active" | "paused"; urls: number; sources: Source[]; last_scan_at: string | null; last_success_at: string | null; baseline_completed_at: string | null };
 type Run = { id: string; site_id: string; site_name: string; status: string; total: number; processed: number; errors: number; remaining: number; message: string | null; created_at: string; coverage: string };
-type Snapshot = { serverBackup?: { savedAt: string | null; error: string | null }; runtime?: "server" | "local"; sites: Site[]; runs: Run[]; worker: { online: boolean; heartbeat_at: string | null }; settings: { root: string; timezone: string }; contentSettings?: unknown; reports?: unknown[]; batches?: unknown[]; providerConfigured?: boolean; objectStorage?: { enabled: boolean; bucket?: string; synced: number; pending: number; failed: number; error?: string | null } };
+type Snapshot = { readOnly?: boolean; serverBackup?: { savedAt: string | null; error: string | null }; runtime?: "server" | "local"; sites: Site[]; runs: Run[]; worker: { online: boolean; heartbeat_at: string | null }; settings: { root: string; timezone: string }; contentSettings?: unknown; reports?: unknown[]; batches?: unknown[]; providerConfigured?: boolean; objectStorage?: { enabled: boolean; bucket?: string; synced: number; pending: number; failed: number; error?: string | null } };
 type History = { total: number; rows: { id: number; canonical_url: string; title: string; first_seen_at: string; origin: string; sources: string; evidence: string }[] };
 type Event = { id: number; at: string; level: string; message: string; url: string | null };
 const button = "rounded-xl border border-gray-200 bg-purple-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40 ui-secondary";
@@ -142,7 +142,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
       </div>
       {enabled && snapshot && <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
         {["websites", "reports"].includes(view) && <><span>{snapshot.sites.length} / 10 websites</span><span>{snapshot.sites.reduce((sum, site) => sum + site.urls, 0).toLocaleString()} discovered URLs</span></>}
-        <span className={snapshot.worker.online ? "text-green-700" : "text-amber-700"}>{snapshot.worker.online ? (snapshot.runtime === "server" ? "Cloud workspace ready · works while your computer is off" : "Ready · updates automatically") : snapshot.runtime === "server" ? "Server worker starting or offline" : "Worker starting or offline · use the Windows launcher"}</span>
+        <span className={snapshot.worker.online ? "text-green-700" : "text-amber-700"}>{snapshot.readOnly ? "Recovery view · saved recipes available · generation paused" : snapshot.worker.online ? (snapshot.runtime === "server" ? "Cloud workspace ready · works while your computer is off" : "Ready · updates automatically") : snapshot.runtime === "server" ? "Server worker starting or offline" : "Worker starting or offline · use the Windows launcher"}</span>
       </div>}
     </div>
     {error && <div role="alert" className="rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-700">{error}{snapshot && <button className={`${button} ml-3`} disabled={busy} onClick={() => void act(reload)}>Reconnect</button>}</div>}
@@ -158,6 +158,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
           }}>{title}</a>)}
       </nav>
       {["start", "settings"].includes(view) && <CaptureSetup local server={snapshot.runtime === "server"} />}
+      {snapshot.readOnly && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Recovery view: you can open and download saved recipes. Generation and changes are paused while the local worker is being reviewed.</p>}
       <IntelligenceContent view={view} snapshot={snapshot} request={request} refresh={reload} navigate={navigate} active={active} />
       {view === "websites" && <>
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg">Your websites</h2><p className="mt-1 text-sm text-gray-600">Scan when you want, then use Find recipes to choose a publication date. Both steps are free.</p></div><button className={primary} disabled={busy || !snapshot.worker.online || !snapshot.sites.some(site => site.status === "active")} onClick={() => void scan()}>Scan all active websites</button></div>

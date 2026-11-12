@@ -1,6 +1,6 @@
 # WordPress publishing and recipe cards
 
-Recipe Intelligence can connect to multiple WordPress websites. Each connection is independent of tracked discovery websites, and there is no hard-coded destination. The recommended method uses Recipe Intelligence Bridge 1.1, a Site Token and an authorized User Slug. Existing WordPress Application Password connections remain supported. The bridge adds direct draft/live posting and a per-site default recipe card.
+Recipe Intelligence can connect to multiple WordPress websites. Each connection is independent of tracked discovery websites, and there is no hard-coded destination. The recommended method uses Recipe Intelligence Bridge 1.2, a Site Token and an authorized User Slug. Existing WordPress Application Password connections remain supported. The bridge supports drafts, immediate publishing, native WordPress scheduling and a per-site default recipe card.
 
 ## Install the bridge and choose a recipe card
 
@@ -21,7 +21,17 @@ The app builds the card from the saved `recipe.json`, using the same supported f
 
 Every export snapshots the card setting, recipe data, content and destination. Changing the source article or website settings requires another review. Sending an unchanged draft again returns the existing post, and **Publish live** can publish that same draft. Already-exported content is not overwritten when the local article changes; use **Open in WordPress** to edit the existing post. Interrupted sends retain receipts and use read-only reconciliation via **Check saved post**, without blindly resending or creating duplicates.
 
-Draft/live state is selected in the app for each send; there is no scheduled publishing. New posts belong to the connected WordPress user and use the site's default category. Original reference photos remain local references and are never used as exported article images.
+New posts belong to the connected WordPress user and use the site's default category. Original reference photos remain local references and are never used as exported article images.
+
+## Single, bulk and scheduled publication
+
+In **My articles**, use **Publish / schedule** beside one saved article. For several articles, check their boxes (or **Select saved articles on this page**) and use **Publish selected** or **Schedule selected**. Selection alone sends nothing. Choose one destination for the group; choose **Save draft**, **Publish now** or **Schedule** separately for each article.
+
+For schedules, enter each article's date and time in the reporting timezone shown in the dialog (for example **Africa/Casablanca**). The app converts it to UTC using timezone rules; invalid or ambiguous clock-change times are rejected. Times must remain at least one minute in the future when sent. **Prepare articles and upload images** uploads saved generated images, without generating new images or creating posts. Review the prepared articles, destination and times, then confirm and send. Results and errors appear per article; a failed row does not prevent other rows from finishing. Keep the app and dialog open until the sends finish. Preparation, upload and post receipts prevent duplicate work on retries.
+
+Scheduling requires **Bridge 1.2 or newer** on each destination. Update from the app's plugin ZIP and click **Sync website settings**. Existing drafts can become scheduled posts, existing schedules can move to a new time, and **Publish now** can publish a scheduled post immediately. These actions update the same remote post; already-published posts are never automatically reverted to drafts. The publication badge records the last confirmed remote state; **Check saved post** refreshes it after a scheduled publication.
+
+WordPress owns the `future` post and its `publish_future_post` cron event after the receipt is confirmed, so the desktop app can be closed. Normal [WP-Cron runs on site visits](https://developer.wordpress.org/plugins/cron/), which can delay publication on quiet sites. For dependable timing, configure your hosting provider's [system scheduler to run WordPress cron](https://developer.wordpress.org/plugins/cron/hooking-wp-cron-into-the-system-task-scheduler/).
 
 ## Connect a website
 

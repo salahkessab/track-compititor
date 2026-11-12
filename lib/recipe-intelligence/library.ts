@@ -32,7 +32,7 @@ export function articleLibrary(b: BatchStore, page = 0, search = "", archived = 
     const publications = (b.store.db.prepare("SELECT site_url,state,result_json,updated_at FROM wordpress_exports WHERE item_id=? ORDER BY site_url").all(item.id) as any[]).map(saved => {
       let result: any = {}; try { result = JSON.parse(saved.result_json || '{}'); } catch { /* Unknown saved result stays unconfirmed. */ }
       const labels: Record<string, string> = { draft: 'Draft', publish: 'Published', pending: 'Pending review', private: 'Private', future: 'Scheduled' };
-      return { site: new URL(saved.site_url).hostname, status: saved.state === 'ready' ? labels[result.status] || 'Unconfirmed' : saved.state === 'sending' ? 'Sending' : 'Unconfirmed', checkedAt: saved.updated_at };
+      return { site: new URL(saved.site_url).hostname, status: saved.state === 'ready' ? labels[result.status] || 'Unconfirmed' : saved.state === 'sending' ? 'Sending' : 'Unconfirmed', scheduledAt: result.status === 'future' ? result.scheduledAt || null : null, checkedAt: saved.updated_at };
     });
     return { id: item.id, batchId: batch.id, title: item.source?.title || item.title || "Recipe", state: item.state,
       archived: !!item.archived_at, deletion: item.deletion, publications,

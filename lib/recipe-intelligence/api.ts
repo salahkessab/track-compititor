@@ -87,6 +87,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     return json({ connected: true }, 200, { "Set-Cookie": `ri_session=${token}; Path=/api/recipe-intelligence; HttpOnly; SameSite=Strict` });
   }
   if (!serverMode() && !equal(cookie, token) && !equal(request.headers.get("x-ri-key"), token)) return json({ error: "Launch Recipe Intelligence to connect this browser to local storage." }, 401);
+  if (process.env.RECIPE_INTELLIGENCE_READ_ONLY === "1" && request.method !== "GET") return json({ error: "Recovery view: saved recipes and downloads are available. Generation and changes are paused while the local worker is being reviewed." }, 423);
   if (serverMode() && request.method !== "GET" && deploymentPause(localRoot())) return json({ error: "An app update is being installed. Your saved work is safe. Please try again shortly." }, 503, { "Retry-After": "30" });
   try {
     const database = await store();
@@ -96,7 +97,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     const publisher = new WordPressPublisher(wordpress);
     const storage = objectStorage(database);
     const credentials = new ProviderCredentials(database);
-    if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), runtime: serverMode() ? "server" : "local", serverBackup: serverBackupStatus(database), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: credentials.status().configured, providerConnection: credentials.status(), wordpress: wordpress.status(), objectStorage: storage.status() });
+    if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), readOnly: process.env.RECIPE_INTELLIGENCE_READ_ONLY === "1", runtime: serverMode() ? "server" : "local", serverBackup: serverBackupStatus(database), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: credentials.status().configured, providerConnection: credentials.status(), wordpress: wordpress.status(), objectStorage: storage.status() });
     if (area === "provider-key" && !id && request.method === "GET") return json(credentials.status());
     if (area === "provider-key" && !id && request.method === "POST") return json(await credentials.save((await body(request)).apiKey));
     if (area === "provider-key" && id === "test" && request.method === "POST") { await body(request); return json(await credentials.test()); }

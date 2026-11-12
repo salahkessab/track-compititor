@@ -176,6 +176,22 @@ test('article mapping uses supported ingredient and step positions while unmappe
  assert.ok(output.indexOf('step.jpg')>output.indexOf('Add broth.'));assert.ok(output.indexOf('unknown.jpg')>output.indexOf('Photo gallery'));assert.match(output,/<ol start="2">/);
 });
 
+test('replacing an article-only source invalidates its frozen writing request and requires a new approval',async t=>{
+ const f=await referenceFixture(t);const original=f.seed();
+ const source=JSON.parse(f.store.db.prepare('SELECT recipe_json FROM recipe_records WHERE id=?').get(original.id).recipe_json);
+ const imported=f.imports.create(original.url);await f.imports.process(imported.id,f.fetcher);
+ let b=f.batches.create([{importId:imported.id}],{...f.settings,output:'article_only',images:false,articleFormat:'compact_v1'});f.approve(b);
+ const itemId=b.items[0].id;const alternative={...source,url:'https://alternative.example/new-soup/',title:'Replacement soup',ingredients:['600 g carrots','750 ml water','1 tsp salt']};
+ f.store.db.prepare("UPDATE content_items SET state='review',review_kind='research',research_json=? WHERE id=?").run(JSON.stringify([{url:alternative.url,recipe:alternative}]),itemId);
+ f.batches.approveItem(itemId,alternative.url);
+ assert.equal(f.batches.item(itemId).config_json,null);assert.equal(f.batches.item(itemId).state,'preparing');
+ f.responses.set(alternative.url,html({...recipeData(),name:alternative.title,recipeIngredient:alternative.ingredients}));
+ await f.imports.process(f.batches.item(itemId).import_id,f.fetcher);
+ b=prepareReferenceBatch(f.batches,b.id);assert.equal(b.items[0].state,'awaiting_item_approval');
+ const frozen=JSON.parse(f.batches.item(itemId).config_json);assert.equal(frozen.sourceUrl,alternative.url);assert.match(JSON.stringify(frozen.writingRequest),/600 g carrots/);
+ await f.drainBatch();assert.equal(f.providerCalls.length,0);
+});
+
 test('migration 4 backs up a real version-3 batch and preserves its stages, receipts and legacy settings',async t=>{
  const Database=require('better-sqlite3');const {temporary}=require('./helpers/recipe-fixtures.cjs');const {prepareRoot}=require('../.intelligence-build/lib/recipe-intelligence/paths.js');const {MIGRATION_2,MIGRATION_3}=require('../.intelligence-build/lib/recipe-intelligence/migrations.js');
  const root=prepareRoot(temporary(t));const filename=path.join(root,'database/recipe-intelligence.sqlite');const old=new Database(filename);t.after(()=>{if(old.open)old.close();});const source=fs.readFileSync(path.join(__dirname,'../lib/recipe-intelligence/database.ts'),'utf8');const schema=source.match(/const SCHEMA = `([\s\S]*?)`;/)[1];old.exec(schema);old.exec(MIGRATION_2);old.exec(MIGRATION_3);

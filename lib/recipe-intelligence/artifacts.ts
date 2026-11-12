@@ -7,7 +7,7 @@ import { storagePath } from "./paths";
 import { IntelligenceStore } from "./database";
 import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
-import { andText, articleDocument, publicationTitle, publicationTimes, validateBlog, type Article, type ArticleImage } from "./article-document";
+import { andText, articleDocument, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
 import { IMAGE_STORAGE_VERSION, GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
 export type { Article } from "./article-document";
@@ -35,7 +35,7 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
   // A numerical change is corrected locally, preserving the supported cooking step.
   const numbers = (s: string) => (s.match(/\d+(?:[.,/]\d+)?|[¼½¾⅓⅔⅛⅜⅝⅞]/g) || []).join("|");
   const facts = (s: string) => {
-    const normalized = s.toLowerCase().replace(/teaspoons?/g, "tsp").replace(/tablespoons?/g, "tbsp").replace(/millilit(?:er|re)s?/g, "ml").replace(/grams?/g, "g").replace(/minutes?/g, "min").replace(/hours?/g, "hr").replace(/fahrenheit/g, "f").replace(/celsius/g, "c");
+    const normalized = s.toLowerCase().replace(/\b(?:e\.g\.|i\.e\.)/g, "").replace(/teaspoons?/g, "tsp").replace(/tablespoons?/g, "tbsp").replace(/millilit(?:er|re)s?/g, "ml").replace(/grams?/g, "g").replace(/minutes?/g, "min").replace(/hours?/g, "hr").replace(/fahrenheit/g, "f").replace(/celsius/g, "c");
     const units = normalized.match(/\b(?:tsp|tbsp|ml|kg|g|oz|lb|cups?|liters?|litres?|min|hr)\b|°\s*[fc]\b/g) || [];
     const methodGroups = [/\b(?:simmer)\w*/g, /\b(?:boil)\w*/g, /\b(?:bak|roast)\w*/g, /\b(?:fry|fried|frying)\b/g, /\b(?:steam)\w*/g, /\b(?:sauté|saute)\w*/g, /\b(?:blend|puree|purée)\w*/g, /\b(?:grill|broil)\w*/g, /\b(?:chill|refrigerat)\w*/g];
     return { units: units.sort().join("|"), methods: methodGroups.map((pattern, index) => pattern.test(normalized) ? index : -1).filter(n => n >= 0) };
@@ -57,6 +57,10 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
     if (format === "blog_1000_1200_v1") article.instructions = article.instructions.map(andText);
     article.blog = validateBlog(raw?.blog, recipe, warnings, format);
     if (format === "master_recipe_v1") article.editorialNotes = list(raw?.editorialNotes).slice(0, 10).map(note => text(note, 1500));
+    if (format === "master_recipe_v1") {
+      article.instructions.forEach((step, index) => { if (privateSourceLanguage(step)) warnings.push(`Step ${index + 1} still contains the source's first-person experience or attribution. Rewrite it as a neutral cooking instruction, preserving every numerical occurrence and method. Do not copy the source step.`); });
+      for (const [field, value] of Object.entries({ introduction: article.introduction, articleTitle: article.articleTitle || '', seoTitle: article.seoTitle, metaDescription: article.metaDescription })) if (privateSourceLanguage(value)) warnings.push(`${field}: remove first-person source experience and attribution; write independently.`);
+    }
     if (format === "master_recipe_v1" && recipe.cookTime && !publicationTimes(recipe).cookTime) article.editorialNotes!.push("The source lists zero cook time despite heated cooking steps. That inconsistent duration was omitted from the published card; no replacement time was invented.");
     const anecdote = /\b(?:my (?:family|grandmother|grandma|mother)|I (?:tested|grew up|remember|always make))\b/i;
     for (const key of ["introduction", "conclusion"] as const) {
@@ -177,7 +181,7 @@ export class ArtifactStore {
     const document = articleDocument(article, recipe, images);
     const times = publicationTimes(recipe);
     const recipeCard = { "@context": "https://schema.org", "@type": "Recipe", name: publicationTitle(article, recipe), description: article.format === "master_recipe_v1" ? article.metaDescription : article.introduction,
-      recipeIngredient: [...recipe.ingredients], recipeInstructions: article.instructions.map(text => ({ "@type": "HowToStep", text })),
+      recipeIngredient: recipe.ingredients.map(value => article.format === "master_recipe_v1" ? publicationIngredient(value) : value), recipeInstructions: article.instructions.map(text => ({ "@type": "HowToStep", text })),
       ...(recipe.yield ? { recipeYield: recipe.yield } : {}), ...(times.prepTime ? { prepTime: times.prepTime } : {}),
       ...(times.cookTime ? { cookTime: times.cookTime } : {}), ...(times.totalTime ? { totalTime: times.totalTime } : {}),
       ...(images.length ? { image: images.map(i => i.fileName) } : {}) };

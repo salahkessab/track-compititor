@@ -68,7 +68,7 @@ function component() {
       new Function('require', 'module', 'exports', childSource)(id => {
         if (id === './RecipeImports' || id === './RecipeWordPress' || id === './RecipeApiKey' || id === './RecipeLibrary') {
           const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components', id + '.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-          const imported = { exports: {} }; new Function('require','module','exports',code)(require,imported,imported.exports); return imported.exports;
+          const imported = { exports: {} }; new Function('require','module','exports',code)(dependency => dependency === './WordPressPublishDialog' ? require('./helpers/load-component.cjs')('WordPressPublishDialog') : require(dependency),imported,imported.exports); return imported.exports;
         }
         return id === '../../lib/openaiImageSettings' ? require('../.test-build/openaiImageSettings.js') : id === '../../lib/recipe-intelligence/format' ? require('../.intelligence-build/lib/recipe-intelligence/format.js') : id === '../../lib/recipe-intelligence/textModels' ? require('../.intelligence-build/lib/recipe-intelligence/textModels.js') : require(id);
       }, child, child.exports);
@@ -79,6 +79,43 @@ function component() {
   new Function('require', 'module', 'exports', source)(scopedRequire, mod, mod.exports);
   return mod.exports.RecipeIntelligence;
 }
+
+test('research cards expose visit and explicit replacement without automatic approval', async t => {
+  const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+  const source={url:'https://food.example/soup',title:'Original soup',ingredients:['1 carrot'],instructions:['Cook the carrot.']};
+  const alternative={...source,url:'https://other.example/soup',title:'Alternative soup'};
+  const item={id:'research-item',title:source.title,state:'review',review_kind:'research',source,research:[{url:source.url,recipe:source},{url:alternative.url,recipe:alternative},{url:'https://blocked.example/soup',recipe:null,error:'Website blocked extraction.'}],files:[],photos:[],warnings:[],stages:[],deletion:{allowed:true}};
+  const batch={id:'cc5700fc-1454-4e2e-918c-64f0a2530552',settings,status:'review',approved_at:'2026-11-12T12:00:00Z',limit_usd:2,quote:{estimated:1,lines:[]},budget:{actual:.01,held:0,uncertain:0,remaining:1.99},items:[item],calls:[]};
+  const calls=[]; const {root,Component}=await ui(t,async(url,init={})=>{
+    calls.push({url,init});
+    if(url.endsWith('/capabilities'))return Response.json({enabled:true});
+    if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,imports:[],batches:[{id:batch.id,title:source.title,count:1,status:'review'}]});
+    if(url.endsWith('/batches/'+batch.id))return Response.json(batch);
+    if(url.endsWith('/items/research-item/approve')){assert.deepEqual(JSON.parse(init.body),{sourceUrl:alternative.url});item.state='preparing';item.review_kind='photos';return Response.json({});}
+    throw Error(url);
+  },'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches&batchId=cc5700fc-1454-4e2e-918c-64f0a2530552');
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  const panel=document.querySelector('[aria-label="Research suggestions"]');assert.ok(panel);
+  assert.deepEqual([...panel.querySelectorAll('a')].map(a=>a.href),[source.url,alternative.url,'https://blocked.example/soup']);
+  const replacements=[...panel.querySelectorAll('button')].filter(b=>b.textContent==='Replace current recipe');
+  assert.equal(replacements.length,2);assert.equal(replacements[0].disabled,false);assert.equal(replacements[1].disabled,true);
+  assert.equal(calls.filter(c=>c.init.method==='POST').length,0);
+  await React.act(async()=>replacements[0].click());
+  assert.equal(calls.filter(c=>c.init.method==='POST').length,1);assert.match(document.body.textContent,/Review its new estimate/);
+});
+
+test('library opens single and bulk scheduling controls without publishing on selection', async t => {
+  const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+  const rows=['Soup','Lasagna'].map((title,i)=>({id:String(i),batchId:'batch',title,state:'completed',createdAt:'2026-11-12',approved:true,canApprove:false,actual:.1,held:0,photos:[],files:[{id:'html'+i,name:'article.html',media_type:'text/html'}],deletion:{allowed:true}}));
+  const calls=[];const fetcher=async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,batches:[],wordpress:{connections:[{id:'site',siteUrl:'https://food.example/'}]}});if(url.includes('/library?'))return Response.json({rows,total:2,pageSize:20});throw Error(url);};fetcher.library=true;
+  const {root,Component,click}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  await click('Publish / schedule');assert.match(document.querySelector('[role=dialog]').textContent,/1 article/);await click('Close');
+  await click('Select saved articles on this page');await click('Schedule selected');
+  assert.match(document.querySelector('[role=dialog]').textContent,/2 articles/);
+  assert.equal(document.querySelectorAll('input[type=datetime-local]').length,2);
+  assert.equal(calls.filter(c=>c.init.method==='POST').length,0);
+});
 async function ui(t, fetcher, url) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: url || 'http://127.0.0.1:34567/?tab=recipe-intelligence' });
   const values = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true, fetch: (url, init) => url.includes('/library?') && !fetcher.library ? Promise.resolve(Response.json({ rows: [], total: 0, page: 0, pageSize: 20 })) : fetcher(url, init) };

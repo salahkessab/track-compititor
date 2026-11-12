@@ -1,5 +1,5 @@
 // User-supplied Master Prompt V4, including the source-privacy addendum. Embedded for portable runtime use.
-export const MASTER_PROMPT_VERSION = "recipe-master-v4";
+export const MASTER_PROMPT_VERSION = "recipe-master-v5";
 export const MASTER_RECIPE_PROMPT = `# MASTER PROMPT V4 — PREMIUM RECIPE ARTICLE WRITER
 
 ## ROLE AND OBJECTIVE

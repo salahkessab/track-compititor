@@ -5,8 +5,9 @@ import { ArtifactStore, atomicWrite, digest } from "./artifacts";
 import { storagePath } from "./paths";
 import { publicUrl } from "./urls";
 import { WordPressStore } from "./wordpress";
+import { validateSchedule } from "./scheduling";
 
-type Result = { postId: number; status: string; editUrl: string; postUrl: string; recipeCard: string; recipeId: number | null };
+type Result = { postId: number; status: string; editUrl: string; postUrl: string; recipeCard: string; recipeId: number | null; scheduledAt: string | null };
 const active = new Set<string>();
 function result(value: any, site: string): Result {
   if (!Number.isSafeInteger(value?.postId) || value.postId < 1 || !["draft", "publish", "pending", "private", "future"].includes(value.status)) throw new Error("WordPress did not confirm a saved post.");
@@ -14,7 +15,8 @@ function result(value: any, site: string): Result {
     const url = publicUrl(value[name]);
     if (url.protocol !== "https:" || url.origin !== new URL(site).origin) throw new Error("WordPress returned an unexpected post address.");
   }
-  return { postId: value.postId, status: value.status, editUrl: value.editUrl, postUrl: value.postUrl, recipeCard: String(value.recipeCard), recipeId: Number.isSafeInteger(value.recipeId) ? value.recipeId : null };
+  const scheduledAt = value.status === 'future' && typeof value.scheduledAt === 'string' && Number.isFinite(Date.parse(value.scheduledAt)) ? new Date(value.scheduledAt).toISOString() : null;
+  return { postId: value.postId, status: value.status, editUrl: value.editUrl, postUrl: value.postUrl, recipeCard: String(value.recipeCard), recipeId: Number.isSafeInteger(value.recipeId) ? value.recipeId : null, scheduledAt };
 }
 function responseJson(response: { status: number; body: Buffer }) {
   if (response.status < 200 || response.status >= 300) throw new Error(`WordPress bridge returned HTTP ${response.status}. Check the website's plugin settings and drafts.`);
@@ -57,11 +59,14 @@ export class WordPressPublisher {
   }
   async send(itemId: string, input: Record<string, unknown>) {
     const connectionId = String(input.connectionId || "");
-    if (!["draft", "publish"].includes(String(input.status))) throw new Error("Choose Save draft or Publish live.");
+    if (!["draft", "publish", "future"].includes(String(input.status))) throw new Error("Choose Save draft, Publish live or Schedule.");
     if (input.status === "publish" && input.confirmPublish !== true) throw new Error("Confirm Publish live for this article and destination.");
+    if (input.status === 'future' && input.confirmSchedule !== true) throw new Error('Confirm the scheduled publication time and destination.');
+    const scheduledAt = input.status === 'future' ? validateSchedule(input.scheduledAt) : null;
     const prepared = await this.prepare(itemId, connectionId);
     if (!prepared.profile.ready) throw new Error("Choose an active supported default recipe card in WordPress Settings, then refresh.");
-    if (input.status === "publish" && !prepared.profile.canPublish) throw new Error("This WordPress user cannot publish posts. Save a draft instead.");
+    if (input.status !== "draft" && !prepared.profile.canPublish) throw new Error("This WordPress user cannot publish posts. Save a draft instead.");
+    if (input.status === 'future' && !prepared.profile.scheduling) throw new Error('Update Recipe Intelligence Bridge to 1.2 or newer on this website to schedule articles.');
     if (!prepared.ready) throw new Error("Upload all article images before sending the post.");
     if (input.reviewHash !== prepared.reviewHash) throw new Error("The article, images or website recipe-card settings changed. Review the updated export before sending.");
     const key = `${this.wp.store.root}|${prepared.exportId}`;
@@ -76,20 +81,22 @@ export class WordPressPublisher {
         if (response.status === 200) {
           const saved = result(responseJson(response), prepared.siteUrl);
           this.saveResult(prepared.exportId, saved);
-          if (input.status === "draft" || saved.status !== "draft") return saved;
-          // Explicitly publishing an existing draft is the sole allowed follow-up mutation.
+          if (input.status === 'draft' || saved.status === 'publish' || (input.status === 'future' && saved.status === 'future' && saved.scheduledAt === scheduledAt)) return saved;
+          if (!['draft', 'future'].includes(saved.status)) throw new Error('Manage this post’s current publication status in WordPress. No duplicate was created.');
+          // Only explicit publish/schedule actions can promote a draft or reschedule its existing post.
         } else {
           throw new Error("The earlier send has an uncertain outcome. Inspect WordPress drafts or try Check saved post; the app will not create a duplicate.");
         }
       }
+      if (scheduledAt) validateSchedule(scheduledAt);
       this.wp.store.db.transaction(() => {
         if (!this.wp.store.db.prepare("SELECT 1 FROM content_items WHERE id=? AND state NOT IN ('deleted','deleting','delete_failed')").get(itemId)) throw new Error("This recipe was deleted during preparation.");
         if (!previous && this.row(prepared.siteUrl, itemId)) throw new Error("Another request is sending this article.");
-        this.wp.store.db.prepare("INSERT INTO wordpress_exports(site_url,item_id,export_id,document_hash,profile_json,payload_json,state,updated_at) VALUES(?,?,?,?,?,?,'sending',?) ON CONFLICT(site_url,item_id) DO UPDATE SET state='sending',updated_at=excluded.updated_at")
+        this.wp.store.db.prepare("INSERT INTO wordpress_exports(site_url,item_id,export_id,document_hash,profile_json,payload_json,state,updated_at) VALUES(?,?,?,?,?,?,'sending',?) ON CONFLICT(site_url,item_id) DO UPDATE SET state='sending',receipt_path=NULL,updated_at=excluded.updated_at")
           .run(prepared.siteUrl, itemId, prepared.exportId, prepared.documentHash, JSON.stringify(prepared.profile), JSON.stringify(prepared.payload), new Date().toISOString());
       }).immediate();
       try {
-        const response = await this.wp.bridgeRequest(connectionId, "exports", { ...prepared.payload, status: input.status, confirmPublish: input.status === "publish" });
+        const response = await this.wp.bridgeRequest(connectionId, "exports", { ...prepared.payload, status: input.status, confirmPublish: input.status === "publish", ...(scheduledAt ? { scheduledAt, confirmSchedule: true } : {}) });
         const receipt = `exports/wordpress-receipts/${connectionId}/post-${prepared.exportId}-${randomUUID()}.json`;
         atomicWrite(this.wp.store.root, receipt, JSON.stringify({ status: response.status, body: response.body.toString("utf8") }));
         this.wp.store.db.prepare("UPDATE wordpress_exports SET receipt_path=? WHERE export_id=?").run(receipt, prepared.exportId);

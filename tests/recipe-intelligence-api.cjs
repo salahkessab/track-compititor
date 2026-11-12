@@ -6,7 +6,7 @@ const { temporary } = require('./helpers/recipe-fixtures.cjs');
 const { handleIntelligence } = require('../.intelligence-build/lib/recipe-intelligence/api.js');
 
 test('local API requires launcher credentials, exact loopback origin and CSRF headers; disabled mode never creates a database', async t => {
-  const root = temporary(t); const keys = ['RECIPE_INTELLIGENCE_ROOT', 'RECIPE_INTELLIGENCE_LOCAL', 'RECIPE_INTELLIGENCE_TOKEN', 'RECIPE_INTELLIGENCE_ORIGIN', 'VERCEL'];
+  const root = temporary(t); const keys = ['RECIPE_INTELLIGENCE_ROOT', 'RECIPE_INTELLIGENCE_LOCAL', 'RECIPE_INTELLIGENCE_TOKEN', 'RECIPE_INTELLIGENCE_ORIGIN', 'RECIPE_INTELLIGENCE_READ_ONLY', 'VERCEL'];
   const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   t.after(async () => {
     for (const promise of globalThis.recipeIntelligenceStores?.values() || []) (await promise).close();
@@ -29,6 +29,14 @@ test('local API requires launcher credentials, exact loopback origin and CSRF he
   const session = await request('session', 'POST', {}, { 'X-RI-Key': 'test-session-secret' });
   assert.equal(session.status, 200); assert.match(session.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
   const auth = { Cookie: 'ri_session=test-session-secret' };
+  process.env.RECIPE_INTELLIGENCE_READ_ONLY = '1';
+  assert.equal((await request('session', 'POST', {}, { 'X-RI-Key': 'test-session-secret' })).status, 200);
+  assert.equal((await request('sites', 'POST', { name: 'Blocked', url: 'https://food.example/' }, auth)).status, 423);
+  assert.equal((await request('items/test/retry', 'POST', { kind: 'research', regenerate: true, retryUncertain: true }, auth)).status, 423);
+  assert.equal((await request('items/test', 'DELETE', { confirmed: true }, auth)).status, 423);
+  assert.equal((await (await request('snapshot', 'GET', undefined, auth)).json()).readOnly, true);
+  assert.equal((await request('library', 'GET', undefined, auth)).status, 200);
+  delete process.env.RECIPE_INTELLIGENCE_READ_ONLY;
   assert.equal((await request('wordpress/target', 'POST', { siteUrl: 'https://site.example' }, { ...auth, Origin: 'https://attacker.example' })).status, 403);
   assert.equal((await request('wordpress/connect', 'POST', {}, { ...auth, 'X-Recipe-Intelligence': '' })).status, 403);
   assert.equal((await request('items/recipe/wordpress', 'POST', {}, { ...auth, 'X-Recipe-Intelligence': '' })).status, 403);

@@ -21,7 +21,7 @@ test('new default runs the complete master brief with a strict schema and no leg
   assert.equal(validateContentSettings({}).articleFormat,format);
   const payload=writingPayload(source(),DEFAULT_CONTENT_SETTINGS);
   assert.ok(payload.input.startsWith(MASTER_RECIPE_PROMPT));
-  assert.equal(MASTER_PROMPT_VERSION,'recipe-master-v4');
+  assert.equal(MASTER_PROMPT_VERSION,'recipe-master-v5');
   assert.match(payload.input,/MASTER PROMPT V4 — PREMIUM RECIPE ARTICLE WRITER/);
   assert.match(payload.input,/Quality matters more than word count/);
   assert.match(payload.input,/18\. SOURCE PRIVACY AND EDITORIAL INDEPENDENCE/);
@@ -72,16 +72,16 @@ test('general culinary explanations remain distinct from source facts; unsupport
   assert.doesNotMatch(checked.warnings.join(' '),/1,000|three supported FAQs|closing paragraph/);
 });
 
-test('a concise master article saves after one approved call, with editorial notes outside publishable output',async t=>{
+test('a concise master article saves after analysis and writing, with editorial notes outside publishable output',async t=>{
   const raw=draft();raw.editorialNotes=['Check the supplied serving-size discrepancy.'];
-  const f=await contentFixture(t,{provider:async()=>textResponse(raw)}),row=f.seed();
+  const f=await contentFixture(t,{provider:async(_op,payload)=>textResponse(payload.text.format.name==='recipe_editorial_brief'?{sourceFormat:'Practical guide',readerNeed:'Make smooth soup',angle:'Blended carrot texture',openingApproach:'Texture',openingBrief:'Explain the texture of the blended carrots.',focusPoints:[],sectionOrder:[],omitSections:[],avoidPatterns:[],sourceLimitations:[]}:raw)}),row=f.seed();
   const batch=f.batches.create([{recipeId:row.id}],{...f.defaults,articleFormat:format});
   assert.equal(batch.quote.promptVersion,MASTER_PROMPT_VERSION);
   await f.drainBatch();assert.equal(f.providerCalls.length,0);
   f.approve(batch);await f.drainBatch();
   const result=f.batches.detail(batch.id),item=result.items[0];
-  assert.equal(result.status,'completed');assert.equal(f.providerCalls.length,1,'No correction just for short length, optional sections or editorial notes');
-  assert.ok(f.providerCalls[0].payload.input.startsWith(MASTER_RECIPE_PROMPT));
+  assert.equal(result.status,'completed');assert.equal(f.providerCalls.length,2,'One analysis and one writing call; no correction just for short length, optional sections or editorial notes');
+  assert.ok(f.providerCalls[1].payload.input.startsWith(MASTER_RECIPE_PROMPT));
   assert.ok(item.warnings.some(w=>w.includes(raw.editorialNotes[0])));
   const read=name=>f.batches.artifacts.read(item.files.find(file=>file.name===name).id).data.toString();
   assert.match(read('editorial-notes.txt'),/serving-size discrepancy/);

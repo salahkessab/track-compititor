@@ -72,7 +72,7 @@ function runNode(args, env, log, owned) {
     child.once('exit', code => { owned?.delete(child); code === 0 ? resolve() : reject(new Error(`Local build failed (exit ${code}). See startup.log in the local application settings folder.`)); });
   });
 }
-async function prepareBuild(log, owned) {
+async function prepareBuild(log, owned, readOnly = false) {
   const previous = readJson(path.join(repo, '.intelligence-build', 'local-build.json'));
   const lockHash = createHash('sha256').update(fs.readFileSync(path.join(repo, 'package-lock.json'))).digest('hex');
   let dependenciesReady = true;
@@ -99,9 +99,9 @@ async function prepareBuild(log, owned) {
     }
   }
   const current = fingerprint();
-  if (previous?.fingerprint === current && fs.existsSync(path.join(repo, '.local-next', 'BUILD_ID')) && fs.existsSync(path.join(repo, '.intelligence-build', 'workers', 'recipe-intelligence.js'))) return;
-  log.write(`${new Date().toISOString()} Preparing the local worker and application.\n`);
-  await runNode([require.resolve('typescript/bin/tsc'), '-p', 'tsconfig.intelligence.json'], process.env, log, owned);
+  if (previous?.fingerprint === current && fs.existsSync(path.join(repo, '.local-next', 'BUILD_ID')) && (readOnly || fs.existsSync(path.join(repo, '.intelligence-build', 'workers', 'recipe-intelligence.js')))) return;
+  log.write(`${new Date().toISOString()} Preparing ${readOnly ? 'the recovery view (no worker)' : 'the local worker and application'}.\n`);
+  if (!readOnly) await runNode([require.resolve('typescript/bin/tsc'), '-p', 'tsconfig.intelligence.json'], process.env, log, owned);
   const nextEnvironmentFile = path.join(repo, 'next-env.d.ts');
   const originalNextEnvironment = fs.existsSync(nextEnvironmentFile) ? fs.readFileSync(nextEnvironmentFile) : null;
   try {
@@ -138,12 +138,13 @@ function openBrowser(instance) {
   else console.log('Local application is ready. Open it using the saved local launcher session.');
 }
 function parseArgs(args) {
-  const options = { noBrowser: false, choose: false, root: null, buildOnly: false };
+  const options = { noBrowser: false, choose: false, root: null, buildOnly: false, readOnly: false };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--root' && args[i + 1]) options.root = path.resolve(args[++i]);
     else if (args[i] === '--no-browser') options.noBrowser = true;
     else if (args[i] === '--choose-folder') options.choose = true;
     else if (args[i] === '--build-only') options.buildOnly = true;
+    else if (args[i] === '--read-only') options.readOnly = true;
     else throw new Error(`Unknown launcher option: ${args[i]}`);
   }
   return options;
@@ -155,7 +156,7 @@ async function main(args = process.argv.slice(2)) {
   const instanceFile = path.join(config, 'instance.json');
   const settingsFile = path.join(config, 'settings.json');
   const log = fs.createWriteStream(path.join(config, 'startup.log'), { flags: 'a', mode: 0o600 });
-  if (options.buildOnly) { try { await prepareBuild(log); } finally { log.end(); } return; }
+  if (options.buildOnly) { try { await prepareBuild(log, undefined, options.readOnly); } finally { log.end(); } return; }
   const instance = { version: 1, instanceId: randomUUID(), token: randomBytes(32).toString('hex'), pid: process.pid, repo, controlPort: 0, appPort: 0, ready: false, root: null };
   const children = new Set(); const outputStreams = new Set();
   let ownsLock = false, stopping = false, shutdownPromise, startupFailure;
@@ -221,7 +222,7 @@ async function main(args = process.argv.slice(2)) {
     const selected = options.root || (options.choose || !settings?.root ? await chooseRoot(settings?.root, children, log) : settings.root);
     if (!selected) { await shutdown(); return; }
     validateDrive(selected);
-    await prepareBuild(log, children);
+    await prepareBuild(log, children, options.readOnly);
     if (stopping) return;
     const { prepareRoot } = require(path.join(repo, '.intelligence-build', 'lib', 'recipe-intelligence', 'paths.js'));
     instance.root = prepareRoot(selected);
@@ -229,7 +230,7 @@ async function main(args = process.argv.slice(2)) {
     atomicJson(settingsFile, { version: 1, root: instance.root, port: instance.appPort });
     atomicJson(instanceFile, instance);
     const env = { ...process.env, RECIPE_INTELLIGENCE_LOCAL: '1', RECIPE_INTELLIGENCE_BUILD: '1', RECIPE_INTELLIGENCE_ROOT: instance.root,
-      RECIPE_INTELLIGENCE_TOKEN: instance.token, RECIPE_INTELLIGENCE_ORIGIN: `http://127.0.0.1:${instance.appPort}`, NEXT_TELEMETRY_DISABLED: '1' };
+      RECIPE_INTELLIGENCE_TOKEN: instance.token, RECIPE_INTELLIGENCE_ORIGIN: `http://127.0.0.1:${instance.appPort}`, RECIPE_INTELLIGENCE_READ_ONLY: options.readOnly ? '1' : '0', NEXT_TELEMETRY_DISABLED: '1' };
     delete env.VERCEL;
     function startChild(args, name, childEnv, ipc = false) {
       const stream = fs.createWriteStream(path.join(instance.root, 'logs', name), { flags: 'a', mode: 0o600 }); outputStreams.add(stream);
@@ -247,8 +248,11 @@ async function main(args = process.argv.slice(2)) {
     const workerEnv = { ...env };
     // Only the server-side content worker needs OpenAI. Discovery has no provider calls.
     for (const key of Object.keys(workerEnv)) if (key !== 'OPENAI_API_KEY' && /API_KEY|API_TOKEN|SECRET|FAL_KEY|APP_PASSWORD|RECIPE_INTELLIGENCE_TOKEN/i.test(key)) delete workerEnv[key];
-    const worker = startChild([path.join(repo, '.intelligence-build', 'workers', 'recipe-intelligence.js')], 'worker.log', workerEnv, true);
-    let workerReady = false; worker.on('message', message => { if (message?.type === 'ready') workerReady = true; });
+    let workerReady = options.readOnly;
+    if (!options.readOnly) {
+      const worker = startChild([path.join(repo, '.intelligence-build', 'workers', 'recipe-intelligence.js')], 'worker.log', workerEnv, true);
+      worker.on('message', message => { if (message?.type === 'ready') workerReady = true; });
+    }
     let appReady = false;
     for (let i = 0; i < 150 && !stopping && (!workerReady || !appReady); i++) {
       try {
@@ -260,7 +264,7 @@ async function main(args = process.argv.slice(2)) {
     if (stopping) { await shutdown(); if (startupFailure) throw startupFailure; return; }
     if (!workerReady || !appReady) throw new Error('Local startup timed out. Check startup.log and the logs folder inside your selected storage folder.');
     instance.ready = true; atomicJson(instanceFile, instance);
-    log.write(`${new Date().toISOString()} Ready on loopback port ${instance.appPort}. No monitoring starts until requested.\n`);
+    log.write(`${new Date().toISOString()} Ready on loopback port ${instance.appPort}. ${options.readOnly ? 'Recovery view only; worker and mutations are disabled.' : 'No monitoring starts until requested.'}\n`);
     if (!options.noBrowser) openBrowser(instance);
   } catch (error) { const interrupted = stopping; await shutdown(); if (!interrupted || startupFailure) throw error; }
 }

@@ -12,6 +12,7 @@ import { storagePath } from "./paths";
 import { digest } from "./artifacts";
 import { normalizeUrl, publicUrl } from "./urls";
 import { IMAGE_STORAGE_VERSION } from "./imageStorage";
+import { editorialPayload, EDITORIAL_VERSION } from "./editorial";
 
 const now = () => new Date().toISOString();
 export const isPhotoStage = (kind: string) => kind.startsWith("photo:") || kind.startsWith("analysis:");
@@ -77,7 +78,7 @@ function prepareReferenceBatchLocked(b: BatchStore, id: string) {
     const imported = new ImportStore(b.store).get(item.import_id);
     let source = item.source_json ? JSON.parse(item.source_json) : imported.recipe_json ? JSON.parse(imported.recipe_json) : null;
     const discovered = imported.recipe_json ? JSON.parse(imported.recipe_json) : null;
-    if (source && discovered && source.url === discovered.url && JSON.stringify([source.ingredients, source.instructions, source.yield, source.prepTime, source.cookTime, source.totalTime]) === JSON.stringify([discovered.ingredients, discovered.instructions, discovered.yield, discovered.prepTime, discovered.cookTime, discovered.totalTime])) source = { ...source, evidenceVersion: discovered.evidenceVersion, supportingEvidence: discovered.supportingEvidence, displayTimes: discovered.displayTimes };
+    if (source && discovered && source.url === discovered.url && JSON.stringify([source.ingredients, source.instructions, source.yield, source.prepTime, source.cookTime, source.totalTime]) === JSON.stringify([discovered.ingredients, discovered.instructions, discovered.yield, discovered.prepTime, discovered.cookTime, discovered.totalTime])) source = { ...source, evidenceVersion: discovered.evidenceVersion, supportingEvidence: discovered.supportingEvidence, displayTimes: discovered.displayTimes, sourceReading: discovered.sourceReading || source.sourceReading };
     const wantsPhotos = settings.images && settings.imageWorkflow === "reference";
     const photos = db.prepare("SELECT * FROM reference_photos WHERE import_id=? AND selected=1 AND state='ready' ORDER BY position").all(item.import_id) as any[];
     let reason = settings.images && settings.imageWorkflow === "reference" || !source ? (["queued", "running"].includes(imported.status) ? "Preparing recipe and original photographs." : imported.error && preparationError(imported.error)) : null;
@@ -86,20 +87,21 @@ function prepareReferenceBatchLocked(b: BatchStore, id: string) {
     if (!reason && wantsPhotos && (!imported.selection_confirmed || !photos.length)) reason = "Select the photographs to edit, or create an article-only/text-image job when no reference is usable.";
     if (reason) { pending++; db.prepare("UPDATE content_items SET state=?,review_kind='photos',error=? WHERE id=?").run(["queued", "running"].includes(imported.status) ? "preparing" : "photo_selection", reason, item.id); continue; }
     const itemLines: any[] = [];
-    if (settings.output !== "images_only") for (const kind of ["article", ...(settings.correction ? ["correction"] : []), ...(item.basis === "best_complete" || item.independent_research ? ["research"] : [])]) {
-      const inputBytes = Math.max(32000, Buffer.byteLength(JSON.stringify(writingPayload(source, settings))) + (kind === "correction" ? 12000 : 0));
+    const adaptive = settings.output !== "images_only" && settings.articleFormat === "master_recipe_v1";
+    if (settings.output !== "images_only") for (const kind of [...(adaptive ? ["editorial"] : []), "article", ...(settings.correction ? ["correction"] : []), ...(item.basis === "best_complete" || item.independent_research ? ["research"] : [])]) {
+      const inputBytes = Math.max(32000, Buffer.byteLength(JSON.stringify(kind === "editorial" ? editorialPayload(source, settings) : writingPayload(source, settings))) + (kind === "correction" ? 12000 : 0) + (adaptive ? kind === "editorial" ? 5000 : 8500 : 0));
       itemLines.push({ itemId: item.id, kind, inputBytes, ...stageEstimate(kind, settings, inputBytes) });
     }
     if (wantsPhotos) {
       for (let i = 0; i < photos.length; i += 10) itemLines.push({ itemId: item.id, kind: `analysis:${i / 10}`, count: photos.slice(i, i + 10).length, ...analysisEstimate(photos.slice(i, i + 10)) });
       for (const p of photos) itemLines.push({ itemId: item.id, kind: `photo:${p.id}`, referenceId: p.id, ...photoEstimate(settings) });
     } else if (settings.images) for (const kind of ["featured", "alternate", "pinterest"]) itemLines.push({ itemId: item.id, kind, ...stageEstimate(kind, settings) });
-    const frozen = { importRevision: imported.revision, sourceUrl: source?.url || imported.url, palette: settings.palette, imageStorage: settings.imageStorage, photoProfile: PHOTO_PROFILE_VERSION, photoInstructions: PHOTO_INSTRUCTIONS, analysisProfile: ANALYSIS_PROFILE_VERSION, analysisInstructions: ANALYSIS_INSTRUCTIONS, writingProfile: writingProfile(settings.articleFormat), writingRequest: source && settings.output !== "images_only" ? writingPayload(source, settings) : null, lines: itemLines };
+    const frozen = { importRevision: imported.revision, sourceUrl: source?.url || imported.url, palette: settings.palette, imageStorage: settings.imageStorage, photoProfile: PHOTO_PROFILE_VERSION, photoInstructions: PHOTO_INSTRUCTIONS, analysisProfile: ANALYSIS_PROFILE_VERSION, analysisInstructions: ANALYSIS_INSTRUCTIONS, writingProfile: writingProfile(settings.articleFormat), writingRequest: source && settings.output !== "images_only" ? writingPayload(source, settings) : null, ...(adaptive ? { editorialProfile: EDITORIAL_VERSION, editorialRequest: editorialPayload(source, settings) } : {}), lines: itemLines };
     db.transaction(() => {
       db.prepare("DELETE FROM content_photos WHERE item_id=?").run(item.id);
       if (!hasCalls) db.prepare("DELETE FROM content_stages WHERE item_id=? AND (kind LIKE 'photo:%' OR kind LIKE 'analysis:%')").run(item.id);
       if (wantsPhotos) photos.forEach((p, i) => db.prepare("INSERT INTO content_photos(id,item_id,reference_id,position,source_url,relative_path,sha256,width,height,mime_type,caption) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(randomUUID(), item.id, p.id, i, p.source_url, p.relative_path, p.sha256, p.width, p.height, p.mime_type, p.caption));
-      const kinds = ["source", "research", "select", "article", "correction", "save_article", ...(wantsPhotos ? itemLines.filter(l => isPhotoStage(l.kind)).map(l => l.kind) : settings.images ? ["featured", "alternate", "pinterest"] : [])];
+      const kinds = ["source", "research", "select", ...(adaptive ? ["editorial"] : []), "article", "correction", "save_article", ...(wantsPhotos ? itemLines.filter(l => isPhotoStage(l.kind)).map(l => l.kind) : settings.images ? ["featured", "alternate", "pinterest"] : [])];
       for (const kind of kinds) db.prepare("INSERT OR IGNORE INTO content_stages(item_id,kind,state,updated_at) VALUES(?,?,'waiting',?)").run(item.id, kind, now());
       const start = item.selection_reason ? (settings.output === "images_only" ? "source" : "article") : "source";
       b.stage(item.id, start, "queued");

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Recipe Intelligence Bridge
  * Description: Connect Recipe Intelligence, choose your default recipe card, and receive articles as drafts or published posts.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Requires at least: 6.2
  * Requires PHP: 8.0
  * License: GPL-2.0-or-later
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Recipe_Intelligence_Bridge {
-    const VERSION = '1.1.0';
+    const VERSION = '1.2.0';
     const NS = 'recipe-intelligence/v1';
     const OPTION = 'ri_bridge_recipe_card';
     const TOKEN_OPTION = 'ri_bridge_site_token';
@@ -38,7 +38,7 @@ final class Recipe_Intelligence_Bridge {
         return ['version' => self::VERSION, 'protocol' => 1, 'siteUrl' => home_url('/'), 'siteName' => get_bloginfo('name'),
             'recipeCard' => $selected, 'recipeCardLabel' => $adapters[$selected]['label'] ?? 'Choose in WordPress settings',
             'ready' => $ready, 'revision' => hash('sha256', wp_json_encode([$selected, $adapters, self::VERSION])),
-            'adapters' => $adapters, 'canPublish' => current_user_can('publish_posts'),
+            'adapters' => $adapters, 'canPublish' => current_user_can('publish_posts'), 'scheduling' => true, 'timezone' => wp_timezone_string(),
             'settingsUrl' => admin_url('options-general.php?page=recipe-intelligence'), 'tokenAuth' => true,
             'user' => ['id' => get_current_user_id(), 'username' => wp_get_current_user()->user_login, 'slug' => wp_get_current_user()->user_nicename, 'displayName' => wp_get_current_user()->display_name]];
     }
@@ -209,7 +209,7 @@ final class Recipe_Intelligence_Bridge {
     private static function result($record) {
         $post = get_post($record['postId']);
         if (!$post || $post->post_status === 'trash') { return new WP_Error('ri_missing_post', 'The exported post was removed. Restore it in WordPress; the app will not create a duplicate.', ['status' => 409]); }
-        return ['postId' => $post->ID, 'status' => $post->post_status, 'editUrl' => admin_url('post.php?post=' . $post->ID . '&action=edit'), 'postUrl' => get_permalink($post->ID), 'recipeCard' => $record['recipeCard'], 'recipeId' => $record['recipeId'] ?? null];
+        return ['postId' => $post->ID, 'status' => $post->post_status, 'editUrl' => admin_url('post.php?post=' . $post->ID . '&action=edit'), 'postUrl' => get_permalink($post->ID), 'recipeCard' => $record['recipeCard'], 'recipeId' => $record['recipeId'] ?? null, 'scheduledAt' => $post->post_status === 'future' ? str_replace(' ', 'T', $post->post_date_gmt) . '.000Z' : null];
     }
     private static function strings($values, $limit) {
         if (!is_array($values) || count($values) > $limit) { throw new InvalidArgumentException('Invalid recipe list.'); }
@@ -259,8 +259,24 @@ final class Recipe_Intelligence_Bridge {
         $input = $request->get_json_params();
         if (!is_array($input)) { return new WP_Error('ri_input', 'Expected JSON.', ['status' => 400]); }
         $id = $input['exportId'] ?? ''; $status = $input['status'] ?? 'draft';
-        if (!is_string($id) || !preg_match('/^[a-f0-9]{64}$/D', $id) || !in_array($status, ['draft', 'publish'], true)) { return new WP_Error('ri_input', 'Invalid export ID or status.', ['status' => 400]); }
+        if (!is_string($id) || !preg_match('/^[a-f0-9]{64}$/D', $id) || !in_array($status, ['draft', 'publish', 'future'], true)) { return new WP_Error('ri_input', 'Invalid export ID or status.', ['status' => 400]); }
         if ($status === 'publish' && (!current_user_can('publish_posts') || ($input['confirmPublish'] ?? false) !== true)) { return new WP_Error('ri_publish', 'Explicit publish confirmation and publish_posts permission are required.', ['status' => 403]); }
+        // wp_update_post otherwise clears explicit dates when promoting an undated draft.
+        $publication = ['post_status' => $status, 'edit_date' => true];
+        if ($status === 'future') {
+            if (!current_user_can('publish_posts') || ($input['confirmSchedule'] ?? false) !== true) { return new WP_Error('ri_schedule', 'Explicit schedule confirmation and publish_posts permission are required.', ['status' => 403]); }
+            $when = $input['scheduledAt'] ?? '';
+            if (!is_string($when) || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/D', $when)) { return new WP_Error('ri_schedule', 'Provide a valid UTC publication time.', ['status' => 400]); }
+            try { $date = new DateTimeImmutable($when, new DateTimeZone('UTC')); }
+            catch (Throwable $e) { return new WP_Error('ri_schedule', 'Invalid publication time.', ['status' => 400]); }
+            if ($date->format('Y-m-d\TH:i:s.v\Z') !== $when || $date->getTimestamp() < time() + 60) { return new WP_Error('ri_schedule', 'Choose a publication time at least one minute in the future.', ['status' => 400]); }
+            $publication['post_date_gmt'] = $date->format('Y-m-d H:i:s');
+            $publication['post_date'] = get_date_from_gmt($publication['post_date_gmt']);
+        } elseif ($status === 'publish') {
+            // Publish-now must not retain the date of a previously scheduled post.
+            $publication['post_date_gmt'] = current_time('mysql', true);
+            $publication['post_date'] = current_time('mysql');
+        }
         $profile = self::profile();
         if (!$profile['ready'] || ($input['profileRevision'] ?? '') !== $profile['revision'] || ($input['recipeCard'] ?? '') !== $profile['recipeCard']) { return new WP_Error('ri_profile_changed', 'Recipe-card settings changed. Refresh the website settings in the app and review again.', ['status' => 409]); }
         try { $recipe = self::clean_recipe($input['recipe'] ?? []); } catch (Throwable $e) { return new WP_Error('ri_recipe', $e->getMessage(), ['status' => 400]); }
@@ -275,7 +291,7 @@ final class Recipe_Intelligence_Bridge {
         }
         preg_match_all('/<img\b[^>]*\bsrc\s*=\s*["\']([^"\']*)["\']/i', $content, $images);
         foreach ($images[1] as $url) { if (!in_array(html_entity_decode($url, ENT_QUOTES), $urls, true)) { return new WP_Error('ri_media', 'Only this export’s uploaded WordPress images may be embedded.', ['status' => 400]); } }
-        $hash_input = $input; unset($hash_input['status'], $hash_input['confirmPublish']);
+        $hash_input = $input; unset($hash_input['status'], $hash_input['confirmPublish'], $hash_input['confirmSchedule'], $hash_input['scheduledAt']);
         $hash = hash('sha256', wp_json_encode($hash_input));
         $key = 'ri_export_' . $id; $lock = 'ri_export_lock_' . $id;
         // add_option is an atomic unique insert. Never expire an uncertain lock automatically.
@@ -287,8 +303,10 @@ final class Recipe_Intelligence_Bridge {
                 if ($record['state'] !== 'ready' || !current_user_can('edit_post', $record['postId'])) { return new WP_Error('ri_uncertain', 'Inspect the existing WordPress draft. This export will not create a duplicate.', ['status' => 409]); }
                 $existing = get_post($record['postId']);
                 if (!$existing || $existing->post_status === 'trash') { return self::result($record); }
-                if ($status === 'publish' && $existing->post_status === 'draft') {
-                    $updated = wp_update_post(['ID' => $record['postId'], 'post_status' => 'publish'], true);
+                if (in_array($status, ['publish', 'future'], true) && in_array($existing->post_status, ['draft', 'future'], true)) {
+                    if ($status === 'future' && $existing->post_status === 'future' && $existing->post_date_gmt === $publication['post_date_gmt']) { return self::result($record); }
+                    if ($status === 'future' && $date->getTimestamp() < time() + 60) { return new WP_Error('ri_schedule_elapsed', 'Choose a later publication time. The existing post was not changed.', ['status' => 409]); }
+                    $updated = wp_update_post(array_merge(['ID' => $record['postId']], $publication), true);
                     if (is_wp_error($updated)) { return $updated; }
                     if (!empty($record['recipeId'])) { WPRM_Recipe_Saver::update_recipes_in_post($record['postId'], [$record['recipeId']], get_current_user_id()); }
                 }
@@ -321,8 +339,9 @@ final class Recipe_Intelligence_Bridge {
             $saved = wp_update_post(['ID' => $post_id, 'post_content' => wp_slash($safe), 'post_status' => 'draft'], true);
             if (is_wp_error($saved)) { return $saved; }
             if (!empty($record['recipeId'])) { WPRM_Recipe_Saver::update_recipes_in_post($post_id, [$record['recipeId']], get_current_user_id()); }
-            if ($status === 'publish') {
-                $published = wp_update_post(['ID' => $post_id, 'post_status' => 'publish'], true);
+            if (in_array($status, ['publish', 'future'], true)) {
+                if ($status === 'future' && $date->getTimestamp() < time() + 60) { return new WP_Error('ri_schedule_elapsed', 'The selected time elapsed during preparation. Inspect the saved draft and choose a later time.', ['status' => 409]); }
+                $published = wp_update_post(array_merge(['ID' => $post_id], $publication), true);
                 if (is_wp_error($published)) { return $published; }
                 if (!empty($record['recipeId'])) { WPRM_Recipe_Saver::update_recipes_in_post($post_id, [$record['recipeId']], get_current_user_id()); }
             }

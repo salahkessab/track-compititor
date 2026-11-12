@@ -16,7 +16,7 @@ async function fixture(t, tokenMode = false) {
   const artifacts = new ArtifactStore(f.store);
   artifacts.article(item, article(), JSON.parse(f.store.db.prepare('SELECT recipe_json FROM recipe_records WHERE id=?').get(recipe.id).recipe_json));
   const calls = [], remote = new Map(), behavior = {};
-  const profile = { protocol: 1, version: '1.1.0', recipeCard: 'wprm', recipeCardLabel: 'WP Recipe Maker', revision: 'a'.repeat(64), ready: true, canPublish: true, tokenAuth: true, user: { id: 1, username: 'owner', slug: 'site-owner' } };
+  const profile = { protocol: 1, version: '1.2.0', scheduling: true, timezone: 'Africa/Casablanca', recipeCard: 'wprm', recipeCardLabel: 'WP Recipe Maker', revision: 'a'.repeat(64), ready: true, canPublish: true, tokenAuth: true, user: { id: 1, username: 'owner', slug: 'site-owner' } };
   const transport = async (url, init) => {
     calls.push({ url, ...init });
     if (tokenMode) { assert.equal(init.bridgeToken, 'ri_' + 'a'.repeat(64)); assert.equal(init.userSlug, 'site-owner'); assert.equal(init.authorization, undefined); assert.ok(url.includes('/recipe-intelligence/v1/')); }
@@ -24,7 +24,7 @@ async function fixture(t, tokenMode = false) {
     if (url.endsWith('/profile')) return behavior.noPlugin ? json({}, 404) : json(profile);
     if (init.method === 'GET') return remote.has(url.split('/').pop()) ? json(remote.get(url.split('/').pop())) : json({}, 404);
     const body = JSON.parse(init.body.toString());
-    const saved = { postId: 77, status: body.status, editUrl: 'https://kitchen.example/wp-admin/post.php?post=77&action=edit', postUrl: 'https://kitchen.example/soup/', recipeCard: body.recipeCard, recipeId: 80 };
+    const saved = { postId: 77, status: body.status, scheduledAt: body.status === 'future' ? body.scheduledAt : null, editUrl: 'https://kitchen.example/wp-admin/post.php?post=77&action=edit', postUrl: 'https://kitchen.example/soup/', recipeCard: body.recipeCard, recipeId: 80 };
     if (!behavior.drop) remote.set(body.exportId, saved);
     if (behavior.timeout) throw new Error('Timed out');
     return json(saved);
@@ -100,7 +100,7 @@ test('v5 migration backs up existing media receipts before adding publication re
   assert.deepEqual(upgraded.db.pragma('foreign_key_check'), []);
 });
 test('installable plugin package includes only the distributable PHP file', async () => {
-  const archive = await buildWordPressPackage(); assert.equal(archive.version, '1.1.0');
+  const archive = await buildWordPressPackage(); assert.equal(archive.version, '1.2.0');
   assert.match(archive.bytes.toString(), /Plugin Name: Recipe Intelligence Bridge/);
   assert.doesNotMatch(archive.bytes.toString(), /OPENAI_API_KEY|protectedPassword|\.env\.local/);
 });
@@ -121,4 +121,41 @@ test('native card replaces the previous card without losing galleries or numbere
   f.artifacts.put(f.item, 'article.html', doc, 'text/html');
   const p = await f.prepare(); assert.match(p.payload.content, /<ol start="2">/); assert.doesNotMatch(p.payload.content, /Repeated recipe facts|Complete Recipe Card/);
   assert.match(p.payload.content, /Keep this gallery/); assert.equal(p.payload.content.split('<!--ri-recipe-card-->').length, 2);
+});
+
+test('scheduling, rescheduling and publish-now keep the same post and retain the confirmed time', async t => {
+  const f = await fixture(t), p = await f.prepare(); await f.send(p);
+  const when = new Date(Date.now() + 86400000).toISOString();
+  const schedule = date => f.publisher.send(f.item.id, { connectionId: f.c.id, reviewHash: p.reviewHash, status: 'future', confirmSchedule: true, scheduledAt: date });
+  const saved = await schedule(when); assert.equal(saved.postId, 77); assert.equal(saved.status, 'future'); assert.equal(saved.scheduledAt, when);
+  await schedule(when); assert.equal(f.calls.filter(c => c.method === 'POST').length, 2);
+  const later = new Date(Date.now() + 172800000).toISOString(); await schedule(later);
+  assert.equal(JSON.parse(f.store.db.prepare('SELECT result_json FROM wordpress_exports').get().result_json).scheduledAt, later);
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 3);
+  const live = await f.send(p, 'publish'); assert.equal(live.status, 'publish'); assert.equal(live.scheduledAt, null);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM wordpress_exports').get().n, 1);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM api_calls').get().n, 0);
+});
+
+test('schedule requires valid time, explicit choice, capable account and updated plugin before any POST', async t => {
+  const f = await fixture(t), p = await f.prepare();
+  const input = { connectionId: f.c.id, reviewHash: p.reviewHash, status: 'future', scheduledAt: new Date(Date.now() + 86400000).toISOString() };
+  await assert.rejects(f.publisher.send(f.item.id, input), /Confirm/);
+  await assert.rejects(f.publisher.send(f.item.id, { ...input, confirmSchedule: true, scheduledAt: new Date(Date.now() - 1).toISOString() }), /future/);
+  f.profile.scheduling = false;
+  await assert.rejects(f.publisher.send(f.item.id, { ...input, confirmSchedule: true }), /Update Recipe Intelligence Bridge/);
+  f.profile.scheduling = true; f.profile.canPublish = false;
+  await assert.rejects(f.publisher.send(f.item.id, { ...input, confirmSchedule: true }), /cannot publish/);
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 0);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM wordpress_exports').get().n, 0);
+});
+
+test('lost rescheduling response checks the latest remote result instead of reusing the old draft receipt', async t => {
+  const f = await fixture(t), p = await f.prepare(); await f.send(p);
+  const scheduledAt = new Date(Date.now() + 86400000).toISOString(); f.behavior.timeout = true;
+  await assert.rejects(f.publisher.send(f.item.id, { connectionId: f.c.id, reviewHash: p.reviewHash, status: 'future', confirmSchedule: true, scheduledAt }), /Timed out/);
+  assert.equal(f.store.db.prepare('SELECT receipt_path FROM wordpress_exports').get().receipt_path, null);
+  const saved = await f.publisher.check(f.item.id, f.c.id);
+  assert.equal(saved.status, 'future'); assert.equal(saved.scheduledAt, scheduledAt);
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 2);
 });
