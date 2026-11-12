@@ -30,7 +30,7 @@ interface. No database port is exposed. Managed hosting can supply HTTPS instead
 
 Create an ignored `.env.server` with `node scripts/migrate-recipe-intelligence-server.cjs key`.
 This creates the encryption key without printing it. Back up that file privately.
-Add APP_PASSWORD, OPENAI_API_KEY, optional FAL_KEY, the existing private R2 variables,
+Add APP_PASSWORD, optional OPENAI_API_KEY and FAL_KEY, the existing private R2 variables,
 SERVER_DOMAIN, and the server variables documented in `.env.example`.
 On managed hosting put these in its secret environment settings. Never commit,
 publish, include in a Docker build context, or send that file to the browser.
@@ -39,7 +39,7 @@ publish, include in a Docker build context, or send that file to the browser.
 - RECIPE_INTELLIGENCE_ROOT must name the persistent mount, not an ephemeral folder.
 - RECIPE_INTELLIGENCE_ORIGIN must exactly match the public HTTPS origin.
 - RECIPE_INTELLIGENCE_SECRET_KEY is a permanent 32-byte base64 AES-GCM key.
-  Rotating or losing it without re-encrypting credentials breaks saved WordPress connections.
+  Rotating or losing it without re-encrypting credentials breaks saved WordPress connections and OpenAI keys.
 - APP_PASSWORD protects the web interface and API. Any nonempty username works.
 - Only one host should own this workspace. Use one replica, one persistent disk.
   The worker's SQLite lease prevents two workers on that same database.
@@ -48,6 +48,29 @@ The API checks the password independently of middleware, rejects mismatched Host
 and Origin headers, and requires the existing CSRF header on mutations. Local
 launcher tokens cannot authenticate the cloud workspace. Paid generation retains
 its separate per-batch approval and reservation rules.
+
+### Entering an OpenAI key in Settings
+
+In Recipe Intelligence → Settings → **OpenAI API key**, paste a project key and
+choose **Save and test key**. The server verifies it with a metadata-only GET to
+`https://api.openai.com/v1/models`; the project key needs Models read permission.
+This does not generate content. The existing model-access check separately checks
+the selected writing and image models before paid budget approval.
+
+The app saves only an encrypted, purpose-tagged credential in SQLite settings.
+The browser clears its input after submission; snapshots, exports, errors and
+status responses never return the saved key. Web and worker processes resolve
+the current saved key for each request, so saving or replacing it needs no restart.
+A rejected replacement preserves the working key. Key changes clear cached model
+access checks. The saved workspace key takes priority over OPENAI_API_KEY for
+Recipe Intelligence; removing it restores the environment fallback. Other image
+and design tools continue using their existing environment configuration.
+
+The local launcher uses Windows DPAPI. Migration re-encrypts a saved provider key
+alongside WordPress credentials in the disposable backup; the original is unchanged.
+Server backups include the encrypted credential, so retain the server encryption key.
+
+Reference: [OpenAI API authentication](https://developers.openai.com/api/reference/overview#authentication).
 
 ## Safe cutover
 
@@ -58,7 +81,7 @@ its separate per-batch approval and reservation rules.
 3. Run `npm run build:recipe-intelligence`, then
    `node scripts/migrate-recipe-intelligence-server.cjs prepare "D:\article track" "<private-backup-folder>\server.ribak"`.
    Replace the paths for the installation. The script refuses a running worker,
-   uses SQLite's backup API, re-encrypts WordPress passwords on the backup, encrypts
+   uses SQLite's backup API, re-encrypts WordPress and saved OpenAI credentials on the backup, encrypts
    the whole snapshot, uploads it to private R2 and records its SHA256 receipt.
    The source database and Windows credentials remain unchanged.
 4. Set MIGRATION_KEY and MIGRATION_SHA256 from that receipt on the server. Keep the

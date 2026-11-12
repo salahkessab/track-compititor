@@ -17,6 +17,7 @@ import { objectStorage } from "./r2";
 import { intelligenceEnabled, serverAuthenticated, serverMode, serverOrigin } from "./runtime";
 import { serverBackupStatus } from "./serverBackup";
 import { deploymentPause } from "./deployment";
+import { ProviderCredentials } from "./providerCredentials";
 
 const state = globalThis as typeof globalThis & { recipeIntelligenceStores?: Map<string, Promise<IntelligenceStore>> };
 const enabled = intelligenceEnabled;
@@ -52,7 +53,9 @@ async function body(request: Request, maximum = 16384): Promise<Record<string, a
       size += value.length; if (size > maximum) throw new Error("Request is too large."); chunks.push(value);
     }
   } finally { await reader.cancel().catch(() => {}); }
-  const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  let parsed;
+  try { parsed = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
+  catch { throw new Error("Invalid JSON request data."); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Expected an object.");
   return parsed;
 }
@@ -91,7 +94,12 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     const wordpress = new WordPressStore(database);
     const publisher = new WordPressPublisher(wordpress);
     const storage = objectStorage(database);
-    if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), runtime: serverMode() ? "server" : "local", serverBackup: serverBackupStatus(database), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: !!process.env.OPENAI_API_KEY, wordpress: wordpress.status(), objectStorage: storage.status() });
+    const credentials = new ProviderCredentials(database);
+    if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), runtime: serverMode() ? "server" : "local", serverBackup: serverBackupStatus(database), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: credentials.status().configured, providerConnection: credentials.status(), wordpress: wordpress.status(), objectStorage: storage.status() });
+    if (area === "provider-key" && !id && request.method === "GET") return json(credentials.status());
+    if (area === "provider-key" && !id && request.method === "POST") return json(await credentials.save((await body(request)).apiKey));
+    if (area === "provider-key" && id === "test" && request.method === "POST") { await body(request); return json(await credentials.test()); }
+    if (area === "provider-key" && !id && request.method === "DELETE") { await body(request); return json(credentials.remove()); }
     if (area === "storage" && request.method === "GET") return json(storage.status());
     if (area === "storage" && request.method === "POST") { await body(request); return json(storage.requestSync(), 202); }
     if (area === "items" && id && ["zip", "wordpress", "wordpress-publish", "wordpress-check"].includes(child)) await storage.ensureItem(id);
@@ -147,7 +155,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     }
     if (area === "content-settings" && request.method === "PATCH") return json({ settings: saveContentSettings(database, await body(request)) });
     if (area === "model-check" && request.method === "POST") return json(await checkModels(database, validateContentSettings({ ...contentSettings(database), ...await body(request) })));
-    if (area === "model-check" && request.method === "GET") return json({ configured: !!process.env.OPENAI_API_KEY, checks: (database.db.prepare("SELECT * FROM model_checks").all() as any[]).map(r => ({ ...JSON.parse(r.metadata_json), productionConfirmedAt: r.production_confirmed_at })) });
+    if (area === "model-check" && request.method === "GET") return json({ configured: credentials.status().configured, checks: (database.db.prepare("SELECT * FROM model_checks").all() as any[]).map(r => ({ ...JSON.parse(r.metadata_json), productionConfirmedAt: r.production_confirmed_at })) });
     if (area === "batches" && !id && request.method === "POST") { const data = await body(request); return json(batches.create(data.selections, data.settings || {}), 201); }
     if (area === "batches" && id && !child && request.method === "GET") return json(batches.detail(id));
     if (area === "items" && id && child === "delete-preview" && request.method === "GET") return json(previewGenerationDeletion(database, id));

@@ -34,7 +34,7 @@ async function main() {
     const fetcher = new PublicDiscoveryFetcher();
     const engine = new DiscoveryEngine(store, fetcher, owner);
     const reports = new ReportStore(store); const reportEngine = new ReportEngine(reports, fetcher, owner);
-    const batches = new BatchStore(store); const batchEngine = new BatchEngine(batches, fetcher, new OpenAIContentProvider(), owner);
+    const batches = new BatchStore(store); const batchEngine = new BatchEngine(batches, fetcher, new OpenAIContentProvider(store), owner);
     const imports = new ImportStore(store); imports.recover(); reports.recover(); batches.recover();
     const storage = objectStorage(store);
     const backup = new ServerBackup(store);

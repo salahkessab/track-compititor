@@ -8,6 +8,7 @@ import { digest } from "./artifacts";
 import { r2Config, R2Transport, type ObjectTransport } from "./r2";
 import { serverSecrets, windowsSecrets, type SecretProtection } from "./local-secrets";
 import { CURRENT_SCHEMA } from "./migrations";
+import { OPENAI_CREDENTIAL_SETTING } from "./providerCredentials";
 
 const MAGIC = Buffer.from("RI-MIGRATION-1\n");
 const MAXIMUM = 128 * 1024 * 1024;
@@ -60,6 +61,12 @@ export async function prepareServerMigration(sourceRoot: string, destination: st
       connection.protectedPassword = await serverSecrets.protect(await secrets.unprotect(connection.protectedPassword));
       backup.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(connection), row.key);
     }
+    const provider = backup.prepare("SELECT value FROM settings WHERE key=?").get(OPENAI_CREDENTIAL_SETTING) as { value: string } | undefined;
+    if (provider) {
+      const credential = JSON.parse(provider.value);
+      credential.protectedKey = await serverSecrets.protect(await secrets.unprotect(credential.protectedKey));
+      backup.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(credential), OPENAI_CREDENTIAL_SETTING);
+    }
     backup.prepare("DELETE FROM worker_lease").run();
     backup.close(); backup = undefined;
     const encrypted = sealDatabase(fs.readFileSync(temp));
@@ -93,6 +100,8 @@ export async function restoreServerMigration(transport?: ObjectTransport) {
     db = new Database(temp, { readonly: true }); validateDatabase(db);
     const connections = db.prepare("SELECT value FROM settings WHERE key LIKE 'wordpress_connection:%'").all() as { value: string }[];
     for (const row of connections) await serverSecrets.unprotect(JSON.parse(row.value).protectedPassword);
+    const provider = db.prepare("SELECT value FROM settings WHERE key=?").get(OPENAI_CREDENTIAL_SETTING) as { value: string } | undefined;
+    if (provider) await serverSecrets.unprotect(JSON.parse(provider.value).protectedKey);
     db.close(); db = undefined;
     // Record the exact imported snapshot before installing it. An interrupted
     // install can be retried; an installed database is never replaced.

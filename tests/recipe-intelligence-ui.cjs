@@ -18,7 +18,7 @@ function component() {
       }).outputText;
       const child = { exports: {} };
       new Function('require', 'module', 'exports', childSource)(id => {
-        if (id === './RecipeImports' || id === './RecipeWordPress') {
+        if (id === './RecipeImports' || id === './RecipeWordPress' || id === './RecipeApiKey') {
           const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components', id + '.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
           const imported = { exports: {} }; new Function('require','module','exports',code)(require,imported,imported.exports); return imported.exports;
         }
@@ -49,6 +49,26 @@ async function ui(t, fetcher, url) {
     assert.ok(target, `Expected control: ${text}`); await React.act(async () => target.click());
   } };
 }
+
+test('Settings exposes a masked OpenAI key field, clears it on rejection and success, and tests without starting generation', async t => {
+  const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+  const calls=[], key='sk-proj-'+ 'a'.repeat(80);let saved=false,reject=true;
+  const {root,Component,click}=await ui(t,async(url,init={})=>{
+    calls.push({url,init});
+    if(url.endsWith('/capabilities'))return Response.json({enabled:true});
+    if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,providerConfigured:saved,providerConnection:{configured:saved,source:saved?'saved':'none'},wordpress:{connections:[]}});
+    if(url.endsWith('/provider-key')){assert.equal(JSON.parse(init.body).apiKey,key);if(reject)return Response.json({error:'OpenAI rejected this key.'},{status:400});saved=true;return Response.json({message:'OpenAI key saved and connection verified.'});}
+    if(url.endsWith('/provider-key/test'))return Response.json({message:'OpenAI connection verified.'});
+    throw new Error('Unexpected request '+url);
+  },'http://127.0.0.1:34567/?tab=recipe-intelligence&view=settings');
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  const field=()=>document.getElementById('openai-api-key');assert.equal(field().type,'password');
+  const enter=async()=>React.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(field(),key);field().dispatchEvent(new window.Event('input',{bubbles:true}));field().dispatchEvent(new window.Event('change',{bubbles:true}));});
+  await enter();await click('Save and test key');assert.equal(field().value,'');assert.match(document.body.textContent,/OpenAI rejected/);
+  reject=false;await enter();await click('Save and test key');assert.equal(field().value,'');assert.match(document.body.textContent,/connection verified/);
+  await click('Test saved connection (no charge)');assert.equal(window.localStorage.length,0);assert.equal(window.sessionStorage.length,0);assert.ok(!document.body.textContent.includes(key));
+  assert.ok(!calls.some(c=>/batches.*approve|generate/.test(c.url)));
+});
 
 test('finished recipe deletion previews disk space, requires confirmation, and removes the library entry', async t => {
   const settings = require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;

@@ -46,10 +46,12 @@ test('encrypted migration preserves history, rewraps WordPress credentials, rest
  source.db.prepare("INSERT INTO r2_objects(destination,relative_path,sha256,object_key,size_bytes,media_type,mtime_ms,state,updated_at) VALUES('destination',?,?,?,?,'image/jpeg',0,'synced','2026-11-01')").run(normalized,digest(photo),'test/old/photo',photo.length);
  const wp={id:'e'.repeat(32),protectedPassword:'old-windows-encryption',siteUrl:'https://wp.example/'};
  source.db.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('wordpress_connection:'+wp.id,JSON.stringify(wp));
+ const providerKey='sk-proj-'+ 'm'.repeat(80),providerValue=JSON.stringify({purpose:'recipe-intelligence-openai',key:providerKey});
+ source.db.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('provider_credential:openai',JSON.stringify({protectedKey:'old-provider-encryption',revision:'saved-key',savedAt:'2026-11-12'}));
  source.acquireLease('local-worker');
  const backup=path.join(folder,'migration.ribak');
  await assert.rejects(prepareServerMigration(sourceRoot,backup),/Stop the local application/);source.releaseLease('local-worker');
- const prepared=await prepareServerMigration(sourceRoot,backup,{protect:async()=>{throw Error('unused');},unprotect:async v=>{assert.equal(v,'old-windows-encryption');return 'wp-secret';}});
+ const prepared=await prepareServerMigration(sourceRoot,backup,{protect:async()=>{throw Error('unused');},unprotect:async v=>{if(v==='old-provider-encryption')return providerValue;assert.equal(v,'old-windows-encryption');return 'wp-secret';}});
  const bytes=fs.readFileSync(backup);assert.equal(prepared.sha256,digest(bytes));assert.ok(!bytes.includes(Buffer.from('wp-secret')));
  assert.equal(JSON.parse(source.db.prepare('SELECT value FROM settings WHERE key=?').get('wordpress_connection:'+wp.id).value).protectedPassword,'old-windows-encryption');
  process.env.RECIPE_INTELLIGENCE_MIGRATION_KEY='test/migrations/first.ribak';process.env.RECIPE_INTELLIGENCE_MIGRATION_SHA256=digest(bytes);
@@ -60,6 +62,9 @@ test('encrypted migration preserves history, rewraps WordPress credentials, rest
  assert.equal(source.db.prepare("SELECT relative_path FROM reference_photos WHERE id='photo'").get().relative_path,oldPath);
  const saved=JSON.parse(migrated.db.prepare('SELECT value FROM settings WHERE key=?').get('wordpress_connection:'+wp.id).value);
  assert.equal(await serverSecrets.unprotect(saved.protectedPassword),'wp-secret');assert.equal(migrated.db.prepare('SELECT count(*) n FROM api_calls').get().n,0);
+ const migratedProvider=JSON.parse(migrated.db.prepare("SELECT value FROM settings WHERE key='provider_credential:openai'").get().value);
+ assert.equal(await serverSecrets.unprotect(migratedProvider.protectedKey),providerValue);assert.ok(!bytes.includes(Buffer.from(providerKey)));
+ assert.equal(JSON.parse(source.db.prepare("SELECT value FROM settings WHERE key='provider_credential:openai'").get().value).protectedKey,'old-provider-encryption');
  migrated.addSite('Server-only work','https://new.example');migrated.close();
  await restoreServerMigration(transport);assert.equal(downloads,1);
  const again=await IntelligenceStore.open(serverRoot);assert.equal(again.snapshot().sites.length,2);again.close();

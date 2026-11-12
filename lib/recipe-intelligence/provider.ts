@@ -4,6 +4,7 @@ import { estimateOpenAIImageOutput, openAIImageCostFromUsage } from "../imagePri
 import type { ContentSettings } from "./settings";
 import { writingModelProfile } from "./textModels";
 import { IntelligenceStore } from "./database";
+import { ProviderCredentials } from "./providerCredentials";
 
 export const PRICING_VERSION = "openai-direct-2026-11-10";
 export const DOCS = {
@@ -32,9 +33,12 @@ function connectionFailure(error: unknown): ProviderFailure {
   return new ProviderFailure(`Connection to OpenAI failed${network ? ` (${network})` : ""}. The billing outcome is unknown; the request will not repeat automatically.`);
 }
 export class OpenAIContentProvider implements ContentProvider {
+  constructor(private store?: IntelligenceStore) {}
   async request(operation: "text" | "image", payload: Record<string, any>, signal?: AbortSignal, acknowledged?: (requestId: string) => void, clientRequestId: string = randomUUID()): Promise<ProviderResult> {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) throw new ProviderFailure("Configure OPENAI_API_KEY on the local server and restart the launcher.", true);
+    let key: string | undefined;
+    try { key = this.store ? await new ProviderCredentials(this.store).key() : process.env.OPENAI_API_KEY; }
+    catch { throw new ProviderFailure("Could not unlock the OpenAI key. Replace it in Settings.", true); }
+    if (!key) throw new ProviderFailure("Add your OpenAI API key in Settings before generating.", true);
     const { references, ...parameters } = payload;
     if (references !== undefined && (operation !== "image" || !Array.isArray(references) || references.length < 1 || references.length > 5)) {
       throw new ProviderFailure("Image edits require one to five reference images.", true);
@@ -126,7 +130,9 @@ export function stageEstimate(kind: string, settings: ContentSettings, character
 }
 
 export async function checkModels(store: IntelligenceStore, settings: ContentSettings, fetchImpl: typeof fetch = fetch) {
-  if (!process.env.OPENAI_API_KEY) return { configured: false, checks: [], message: "Set OPENAI_API_KEY in .env.local, then restart the local launcher. Discovery and reports work without it." };
+  const credentials = new ProviderCredentials(store), revision = credentials.revision();
+  const key = await credentials.key();
+  if (!key) return { configured: false, checks: [], message: "Add your OpenAI API key in Settings. Discovery and reports work without it." };
   const models = [...new Set([settings.textModel, ...(settings.images ? [settings.imageModel, ...(settings.imageWorkflow === "reference" ? ["gpt-5.5"] : [])] : [])])];
   const checks = [];
   for (const model of models) {
@@ -135,7 +141,7 @@ export async function checkModels(store: IntelligenceStore, settings: ContentSet
     try {
       const [doc, account] = await Promise.all([
         fetchImpl(modelUrl, { signal: AbortSignal.timeout(15000) }),
-        fetchImpl(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, signal: AbortSignal.timeout(15000) }),
+        fetchImpl(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`, { headers: { Authorization: `Bearer ${key}` }, redirect: "error", signal: AbortSignal.timeout(15000) }),
       ]);
       const html = (await doc.text()).slice(0, 2_000_000); const text = load(html)("main").text() || load(html).text();
       metadata.documented = doc.ok && text.includes(model.replace(/-2026-\d{2}-\d{2}$/, ""));
@@ -164,6 +170,7 @@ export async function checkModels(store: IntelligenceStore, settings: ContentSet
       }
       if (!metadata.pricingMatches) metadata.note = "Live pricing or calculator compatibility could not be verified against the saved estimate profile. No paid request will run with an unverified price profile.";
     } catch { metadata.note = "Could not finish the free compatibility check. Retry before approving paid processing."; }
+    if (credentials.revision() !== revision) throw new Error("The OpenAI key changed during this check. Check model access again.");
     store.db.prepare("INSERT INTO model_checks(model,checked_at,metadata_json) VALUES(?,?,?) ON CONFLICT(model) DO UPDATE SET checked_at=excluded.checked_at,metadata_json=excluded.metadata_json")
       .run(model, metadata.checkedAt, JSON.stringify(metadata));
     checks.push(metadata);
