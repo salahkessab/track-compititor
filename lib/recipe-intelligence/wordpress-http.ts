@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { resolvePublic } from "./fetch";
 import { publicUrl } from "./urls";
 
-export type WordPressRequest = { method: "GET" | "POST"; authorization?: string; contentType?: string; body?: Buffer };
+export type WordPressRequest = { method: "GET" | "POST"; authorization?: string; bridgeToken?: string; userSlug?: string; contentType?: string; body?: Buffer };
 export type WordPressResponse = { status: number; body: Buffer };
 export type WordPressTransport = (url: string, options: WordPressRequest) => Promise<WordPressResponse>;
 
@@ -21,10 +21,16 @@ export function wordpressSite(input: unknown): string {
 export const wordpressRequest: WordPressTransport = async (input, options) => {
   const url = publicUrl(input);
   if (url.protocol !== "https:") throw new Error("WordPress connections require HTTPS.");
+  if (options.bridgeToken && !/\/wp-json\/recipe-intelligence\/v1\/(?:profile|media|exports(?:\/[a-f0-9]{64})?)$/.test(url.pathname)) throw new Error("Site Tokens can only be sent to Recipe Intelligence Bridge endpoints.");
   const addresses = await resolvePublic(url.hostname);
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = { Accept: "application/json", "Accept-Encoding": "identity", "User-Agent": "RecipeIntelligence/1.0" };
     if (options.authorization) headers.Authorization = options.authorization;
+    if (options.bridgeToken) {
+      if (options.authorization || !/^ri_[a-f0-9]{64}$/.test(options.bridgeToken) || !/^[a-zA-Z0-9_%.-]{1,100}$/.test(options.userSlug || "")) throw new Error("Invalid WordPress bridge credentials.");
+      headers["X-Recipe-Intelligence-Key"] = options.bridgeToken;
+      headers["X-Recipe-Intelligence-User"] = options.userSlug!;
+    }
     if (options.contentType) headers["Content-Type"] = options.contentType;
     if (options.body) headers["Content-Length"] = String(options.body.length);
     const requestOptions: RequestOptions & Pick<TcpSocketConnectOpts, "autoSelectFamily" | "autoSelectFamilyAttemptTimeout"> = {

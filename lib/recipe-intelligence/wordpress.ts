@@ -11,7 +11,7 @@ import { mediaMultipart, wordpressRequest, wordpressSite, type WordPressTranspor
 import { GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
 
 export type WordPressProfile = { version: string; protocol: 1; recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string };
-type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string; bridge?: WordPressProfile };
+type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string; bridge?: WordPressProfile; authMethod?: "application_password" | "bridge_token"; userSlug?: string };
 type Media = { id: number; sourceUrl: string };
 type Image = { sha256: string; name: string; alt: string; bytes: Buffer; source: string; mediaType: "image/jpeg" | "image/png" | "image/webp" };
 const CONNECTION_PREFIX = "wordpress_connection:";
@@ -21,7 +21,22 @@ const now = () => new Date().toISOString();
 
 function readJson(response: WordPressResponse): any {
   if (response.status >= 300 && response.status < 400) throw new Error("WordPress redirected the request. Reconnect with the final HTTPS website address; credentials were not forwarded.");
-  if (response.status === 401 || response.status === 403) throw new Error("WordPress denied access. Check the username, Application Password and permission to upload media.");
+  if (response.status === 401 || response.status === 403) {
+    // Never echo the remote message/body: a proxy can reflect credentials into it.
+    let code: unknown; try { code = JSON.parse(response.body.toString("utf8"))?.code; } catch { /* HTML denial from a host or firewall. */ }
+    const reasons: Record<string, string> = {
+      ri_invalid_token: "The Site Token was rejected. Copy the current token from WordPress → Recipe Intelligence. Tokens from other plugins do not work here.",
+      ri_user_forbidden: "The User Slug is not authorized for this token. Copy a slug from the plugin's Authorized Users list. The user must still be an Administrator or Editor.",
+      ri_https_required: "The bridge requires HTTPS. Check that WordPress and your host recognize this website as HTTPS.",
+      ri_forbidden: "This WordPress user needs permission to edit posts and upload media.",
+      invalid_username: "WordPress did not recognize that username. Use the login username shown in Users → Profile.",
+      incorrect_password: "WordPress rejected the Application Password. Copy the complete generated password for this same user.",
+      application_passwords_disabled: "WordPress has disabled Application Passwords. Use the bridge Site Token method or review the site's authentication settings.",
+      application_passwords_disabled_for_user: "Application Passwords are disabled for this user. Use the bridge Site Token method with an authorized user.",
+      rest_not_logged_in: "WordPress did not authenticate the request. The host may be stripping the Authorization header, or Application Password authentication may be disabled. Try the bridge Site Token method.",
+    };
+    throw new Error(typeof code === "string" && Object.hasOwn(reasons, code) ? reasons[code] : `WordPress denied access (HTTP ${response.status}). Check the connection credentials and the site's REST API or security settings.`);
+  }
   if (response.status < 200 || response.status >= 300) throw new Error(`WordPress returned HTTP ${response.status}. Check your website and try again.`);
   try { return JSON.parse(response.body.toString("utf8")); } catch { throw new Error("WordPress did not return a valid API response. Check the site's REST API access."); }
 }
@@ -44,7 +59,7 @@ export class WordPressStore {
     const rows = this.store.db.prepare("SELECT value FROM settings WHERE key LIKE ? ORDER BY key").all(CONNECTION_PREFIX + "%") as { value: string }[];
     return { connections: rows.map(row => {
       const c: Connection = JSON.parse(row.value);
-      return { id: c.id, siteUrl: c.siteUrl, username: c.username, displayName: c.displayName, checkedAt: c.checkedAt, bridge: c.bridge, mediaLibraryUrl: new URL("wp-admin/upload.php", c.siteUrl).href };
+      return { id: c.id, siteUrl: c.siteUrl, username: c.username, userSlug: c.userSlug, authMethod: c.authMethod || "application_password", displayName: c.displayName, checkedAt: c.checkedAt, bridge: c.bridge, mediaLibraryUrl: new URL("wp-admin/upload.php", c.siteUrl).href };
     }), suggestedSiteUrl: (this.store.db.prepare("SELECT value FROM settings WHERE key='wordpress_suggested_site'").get() as any)?.value || "" };
   }
   suggest(input: unknown) {
@@ -54,6 +69,20 @@ export class WordPressStore {
   }
   async connect(input: Record<string, unknown>) {
     const siteUrl = wordpressSite(input.siteUrl);
+    if (input.authMethod === "bridge_token") {
+      const token = typeof input.siteToken === "string" ? input.siteToken.trim() : "";
+      const userSlug = typeof input.userSlug === "string" ? input.userSlug.trim() : "";
+      if (!/^ri_[a-f0-9]{64}$/.test(token)) throw new Error("Copy the complete Site Token from Recipe Intelligence Bridge 1.1 or newer. A key from another plugin will not work.");
+      if (!/^[a-zA-Z0-9_%.-]{1,100}$/.test(userSlug)) throw new Error("Copy a User Slug from the plugin's Authorized Users list.");
+      const response = await this.transport(new URL("wp-json/recipe-intelligence/v1/profile", siteUrl).href, { method: "GET", bridgeToken: token, userSlug });
+      if (response.status === 404) throw new Error("Install or update Recipe Intelligence Bridge 1.1 or newer on this website, then create its Site Token.");
+      const data = readJson(response), bridge = this.profile(data, siteUrl), user = data.user;
+      if (!Number.isSafeInteger(user?.id) || user.id <= 0 || typeof user.username !== "string" || user.slug !== userSlug || data.tokenAuth !== true) throw new Error("Update Recipe Intelligence Bridge to support Site Token connections.");
+      const c: Connection = { id: digest(siteUrl).slice(0, 32), siteUrl, username: user.username.slice(0, 100), userId: user.id, displayName: String(user.displayName || user.username).slice(0, 160), protectedPassword: await this.secrets.protect(token), checkedAt: now(), authMethod: "bridge_token", userSlug, bridge };
+      this.store.db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(CONNECTION_PREFIX + c.id, JSON.stringify(c));
+      return this.status();
+    }
+    if (input.authMethod !== undefined && input.authMethod !== "application_password") throw new Error("Choose Site Token or Application Password authentication.");
     const username = typeof input.username === "string" ? input.username.trim() : "";
     const password = typeof input.applicationPassword === "string" ? input.applicationPassword.replace(/\s/g, "") : "";
     if (!username || username.length > 100 || /[:\x00-\x1f\x7f]/.test(username)) throw new Error("Enter your WordPress login username.");
@@ -73,14 +102,15 @@ export class WordPressStore {
     this.store.db.prepare("DELETE FROM settings WHERE key=?").run(CONNECTION_PREFIX + id);
     return this.status();
   }
-  private async authorization(c: Connection) {
-    return `Basic ${Buffer.from(`${c.username}:${await this.secrets.unprotect(c.protectedPassword)}`).toString("base64")}`;
+  private async authentication(c: Connection) {
+    const secret = await this.secrets.unprotect(c.protectedPassword);
+    return c.authMethod === "bridge_token" ? { bridgeToken: secret, userSlug: c.userSlug } : { authorization: `Basic ${Buffer.from(`${c.username}:${secret}`).toString("base64")}` };
   }
   async bridgeRequest(id: string, route: "profile" | "exports" | `exports/${string}`, payload?: unknown) {
     if (!/^(?:profile|exports(?:\/[a-f0-9]{64})?)$/.test(route)) throw new Error("Invalid WordPress bridge operation.");
     const c = this.connection(id);
     return this.transport(new URL(`wp-json/recipe-intelligence/v1/${route}`, c.siteUrl).href, {
-      method: payload === undefined ? "GET" : "POST", authorization: await this.authorization(c),
+      method: payload === undefined ? "GET" : "POST", ...await this.authentication(c),
       ...(payload === undefined ? {} : { contentType: "application/json", body: Buffer.from(JSON.stringify(payload)) }),
     });
   }
@@ -91,13 +121,16 @@ export class WordPressStore {
     this.store.db.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(c), CONNECTION_PREFIX + id);
     const response = await this.bridgeRequest(id, "profile");
     if (response.status === 404) throw new Error("Install and activate Recipe Intelligence Bridge on this website, then select its default recipe card in WordPress Settings.");
-    const data = readJson(response);
+    const bridge = this.profile(readJson(response), c.siteUrl);
+    c.bridge = bridge; c.checkedAt = now();
+    this.store.db.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(c), CONNECTION_PREFIX + id);
+    return bridge;
+  }
+  private profile(data: any, siteUrl: string): WordPressProfile {
     if (data.protocol !== 1 || typeof data.version !== "string" || !/^[a-f0-9]{64}$/.test(data.revision) || typeof data.recipeCard !== "string" || typeof data.recipeCardLabel !== "string") throw new Error("Update the WordPress bridge to a compatible version.");
     const bridge: WordPressProfile = { protocol: 1, version: data.version.slice(0, 30), recipeCard: data.recipeCard.slice(0, 50), recipeCardLabel: data.recipeCardLabel.slice(0, 100), revision: data.revision,
       ready: data.ready === true && ["builtin", "wprm"].includes(data.recipeCard), canPublish: data.canPublish === true,
-      settingsUrl: new URL("wp-admin/options-general.php?page=recipe-intelligence", c.siteUrl).href };
-    c.bridge = bridge; c.checkedAt = now();
-    this.store.db.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(c), CONNECTION_PREFIX + id);
+      settingsUrl: new URL("wp-admin/options-general.php?page=recipe-intelligence", siteUrl).href };
     return bridge;
   }
   private document(itemId: string) {
@@ -193,11 +226,11 @@ export class WordPressStore {
       } catch { /* Reconcile by the stable slug below, never repeat an uncertain POST. */ }
     }
     if (previous?.state === "uploading" && Date.now() - Date.parse(previous.updated_at) < 150_000) throw new Error("This image is still uploading. Wait a moment, then try copying again.");
-    const authorization = await this.authorization(c);
+    const authentication = await this.authentication(c);
     const slug = `ri-${image.sha256}`;
-    const endpoint = new URL("wp-json/wp/v2/media", c.siteUrl);
+    const endpoint = new URL(c.authMethod === "bridge_token" ? "wp-json/recipe-intelligence/v1/media" : "wp-json/wp/v2/media", c.siteUrl);
     const lookup = new URL(endpoint); lookup.search = new URLSearchParams({ slug, context: "edit", per_page: "2" }).toString();
-    const found = readJson(await this.transport(lookup.href, { method: "GET", authorization }));
+    const found = readJson(await this.transport(lookup.href, { method: "GET", ...authentication }));
     if (!Array.isArray(found)) throw new Error("WordPress could not check existing image uploads.");
     const match = found.find(value => value.slug === slug);
     if (match) {
@@ -221,7 +254,7 @@ export class WordPressStore {
     if (!claimed) throw new Error("Another request is handling this image. Try copying again after it finishes.");
     let response: WordPressResponse | undefined;
     try {
-      response = await this.transport(endpoint.href, { method: "POST", authorization, ...mediaMultipart(webp.data, `${slug}.webp`, { slug, title: image.alt, alt_text: image.alt }, "image/webp") });
+      response = await this.transport(endpoint.href, { method: "POST", ...authentication, ...mediaMultipart(webp.data, `${slug}.webp`, { slug, title: image.alt, alt_text: image.alt }, "image/webp") });
       const receipt = `exports/wordpress-receipts/${c.id}/${image.sha256}-${randomUUID()}.json`;
       atomicWrite(this.store.root, receipt, JSON.stringify({ status: response.status, body: response.body.toString("utf8"), upload: { sourceSha256: image.sha256, sha256: digest(webp.data), mediaType: "image/webp", sizeBytes: webp.data.length, storage: webp.storage } }));
       this.store.db.prepare("UPDATE wordpress_media SET receipt_path=? WHERE site_url=? AND sha256=?").run(receipt, c.siteUrl, image.sha256);

@@ -66,6 +66,7 @@ test('connection form accepts any site and clears its private password after sub
   const ui = await setup(t); const calls = [];
   const request = async (route, method, data) => { calls.push({ route, method, data }); return {}; };
   await React.act(async () => ui.root.render(React.createElement(ui.WordPressConnections, { status: { connections: sites }, request, refresh: async () => {} })));
+  await ui.choose('application_password');
   assert.equal(document.querySelector('input[type=password]').type, 'password'); assert.equal(calls.length, 0);
   const set = async (label, value) => {
     const node = [...document.querySelectorAll('input')].find(n => n.closest('label').textContent.startsWith(label));
@@ -75,6 +76,24 @@ test('connection form accepts any site and clears its private password after sub
   await React.act(async () => document.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
   assert.equal(calls[0].data.siteUrl, 'https://third.example'); assert.equal(calls[0].data.applicationPassword, 'abcdefghijklmnopqrstuvwx');
   assert.equal(document.querySelector('input[type=password]').value, ''); assert.equal(window.localStorage.length, 0); assert.doesNotMatch(document.body.textContent, /abcdefghijklmnopqrstuvwx/);
+});
+
+test('Site Token is the default and sends the slug without a login password or storing the token in browser storage', async t => {
+  const ui = await setup(t), calls = [], token = 'ri_' + 'a'.repeat(64);
+  await React.act(async () => ui.root.render(React.createElement(ui.WordPressConnections, { status: { connections: [] }, request: async (route, method, body) => { calls.push({route, method, body}); throw new Error('The Site Token was rejected.'); }, refresh: async () => {} })));
+  assert.equal(document.querySelector('select').value, 'bridge_token');
+  assert.doesNotMatch(document.querySelector('form').textContent, /WordPress username/);
+  for (const [label, value] of [['WordPress website URL', 'https://kitchen.example'], ['User Slug', 'site-editor'], ['Site Token', token]]) {
+    const node = [...document.querySelectorAll('input')].find(n => n.closest('label').textContent.startsWith(label));
+    await React.act(async () => { Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(node,value); node.dispatchEvent(new window.Event('input',{bubbles:true})); node.dispatchEvent(new window.Event('change',{bubbles:true})); });
+  }
+  await ui.click('Connect website');
+  assert.deepEqual(calls[0].body, {authMethod:'bridge_token',siteUrl:'https://kitchen.example',userSlug:'site-editor',siteToken:token});
+  assert.equal(document.querySelector('input[type=password]').value, '');
+  assert.equal(window.localStorage.length, 0); assert.equal(window.sessionStorage.length, 0);
+  assert.match(document.querySelector('[role=alert]').textContent, /Site Token was rejected/);
+  assert.ok(!document.body.textContent.includes(token));
+  await ui.choose('application_password'); assert.equal(document.querySelector('[role=alert]'), null);
 });
 
 test('publishing requires a reviewed destination and explicit live choice, while draft is the default', async t => {

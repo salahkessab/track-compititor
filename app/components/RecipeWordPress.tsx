@@ -5,19 +5,21 @@ const button = "rounded-xl border border-[#424a60] bg-[#202537] px-3 py-2 text-s
 const input = "w-full rounded-xl border border-[#424a60] bg-[#101421] px-3 py-2 text-sm text-[#e9e4df]";
 type RequestFn = <T = any>(route: string, method?: string, data?: unknown) => Promise<T>;
 type BridgeProfile = { recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string };
-type Connection = { id: string; siteUrl: string; username: string; displayName: string; mediaLibraryUrl: string; bridge?: BridgeProfile };
+type Connection = { id: string; siteUrl: string; username: string; displayName: string; mediaLibraryUrl: string; bridge?: BridgeProfile; authMethod?: "bridge_token" | "application_password" };
 type Status = { connections: Connection[]; suggestedSiteUrl?: string };
 
 export function WordPressConnections({ status, request, refresh }: { status?: Status; request: RequestFn; refresh: () => Promise<unknown> }) {
   const [siteUrl, setSiteUrl] = useState(status?.suggestedSiteUrl || "");
   const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
+  const [authMethod, setAuthMethod] = useState<"bridge_token" | "application_password">("bridge_token");
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   const initialized = useRef(!!status?.suggestedSiteUrl);
   useEffect(() => { if (!initialized.current && status?.suggestedSiteUrl) { setSiteUrl(status.suggestedSiteUrl); initialized.current = true; } }, [status?.suggestedSiteUrl]);
   async function connect(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
-    const applicationPassword = password; setPassword("");
-    try { await request("wordpress/connect", "POST", { siteUrl, username, applicationPassword }); await refresh(); setMessage("Website connected. Choose it beside your article to send a draft, publish, or copy."); setSiteUrl(""); setUsername(""); }
+    const secret = password; setPassword("");
+    const credentials = authMethod === "bridge_token" ? { authMethod, siteUrl, userSlug: username, siteToken: secret } : { authMethod, siteUrl, username, applicationPassword: secret };
+    try { await request("wordpress/connect", "POST", credentials); await refresh(); setMessage("Website connected. Choose it beside your article to send a draft, publish, or copy."); setSiteUrl(""); setUsername(""); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not connect to WordPress."); } finally { setBusy(false); }
   }
   async function disconnect(id: string) {
@@ -35,13 +37,15 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
     <h2 className="text-lg">WordPress websites</h2>
     <p className="text-sm text-[#a6acbd]">Connect your WordPress websites and choose a destination per article. Install the bridge plugin to send drafts or publish live with the site's default recipe card.</p>
     <a className={`${button} inline-block`} href="/api/recipe-wordpress-plugin" download>Download WordPress plugin</a>
-    <p className="text-sm text-[#a6acbd]">WordPress → Plugins → Add New → Upload Plugin. Activate Recipe Intelligence Bridge, then choose your default recipe card in Settings → Recipe Intelligence. Supports WP Recipe Maker and the built-in Recipe Intelligence card.</p>
+    <p className="text-sm text-[#a6acbd]">Install or update Recipe Intelligence Bridge 1.1 using WordPress → Plugins → Add New → Upload Plugin. Open Recipe Intelligence in the WordPress sidebar, create a Site Token, copy a User Slug, and choose your default recipe card.</p>
     {!!status?.connections.length && <ul className="space-y-3">{status.connections.map(c => <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#424a60] p-3"><div className="min-w-0 text-sm"><p className="break-all">{c.siteUrl}</p><p className="text-[#a6acbd]">Connected as {c.username}</p><p>Recipe card: {c.bridge?.recipeCardLabel || "Bridge not synced"}{c.bridge && !c.bridge.ready ? " — setup required" : ""}</p><div className="flex gap-3"><a className="text-[#deb589] underline" href={c.mediaLibraryUrl} target="_blank" rel="noreferrer">Open Media Library</a>{c.bridge && <a className="text-[#deb589] underline" href={c.bridge.settingsUrl} target="_blank" rel="noreferrer">Recipe-card settings</a>}</div></div><div className="flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => void sync(c.id)}>Sync website settings</button><button type="button" className={button} disabled={busy} onClick={() => void disconnect(c.id)}>Disconnect</button></div></li>)}</ul>}
     <details open={!status?.connections.length}><summary className="cursor-pointer text-sm">{status?.connections.length ? "Connect another website or update credentials" : "Connect your WordPress website"}</summary>
       <form className="mt-4 space-y-4" onSubmit={connect} autoComplete="off">
-        <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">WordPress website URL<input className={`${input} mt-1`} type="text" inputMode="url" required maxLength={2048} placeholder="https://your-website.com" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} disabled={busy} /></label><label className="text-sm">WordPress username<input className={`${input} mt-1`} required maxLength={100} value={username} onChange={e => setUsername(e.target.value)} disabled={busy} autoComplete="off" /></label></div>
-        <label className="block text-sm">Application Password<input className={`${input} mt-1`} type="password" required maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy} autoComplete="new-password" /></label>
-        <p className="text-sm text-[#a6acbd]">In WordPress, go to Users → Profile → Application Passwords. Create one named Recipe Intelligence and enter it here. It is stored encrypted in your workspace and is never included in articles or exports.</p>
+        <label className="block text-sm">Connection method<select className={`${input} mt-1`} value={authMethod} disabled={busy} onChange={e => { setAuthMethod(e.target.value as typeof authMethod); setPassword(""); setUsername(""); setError(""); }}><option value="bridge_token">Site Token (recommended)</option><option value="application_password">Application Password (existing method)</option></select></label>
+        <label className="block text-sm">WordPress website URL<input className={`${input} mt-1`} type="text" inputMode="url" required maxLength={2048} placeholder="https://your-website.com" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} disabled={busy} /></label>
+        <label className="block text-sm">{authMethod === "bridge_token" ? "Site Token" : "Application Password"}<input className={`${input} mt-1`} type="password" required maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy} autoComplete="new-password" spellCheck={false} /></label>
+        <label className="block text-sm">{authMethod === "bridge_token" ? "User Slug" : "WordPress username"}<input className={`${input} mt-1`} required maxLength={100} value={username} onChange={e => setUsername(e.target.value)} disabled={busy} autoComplete="off" autoCapitalize="none" spellCheck={false} /></label>
+        <p className="text-sm text-[#a6acbd]">{authMethod === "bridge_token" ? "Copy both fields from WordPress → Recipe Intelligence: Copy Site Token and Copy User Slug. Use a token from Recipe Intelligence Bridge; tokens from other plugins are not compatible." : "In WordPress, go to Users → Profile → Application Passwords. Enter the generated password and that user's login username, not the password's label."} Credentials are stored encrypted and never included in articles or exports.</p>
         <button className={button} disabled={busy || !password || !username || !siteUrl}>{busy ? "Checking connection…" : "Connect website"}</button>
       </form>
     </details>

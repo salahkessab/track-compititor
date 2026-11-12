@@ -1,12 +1,12 @@
 # WordPress publishing and recipe cards
 
-Recipe Intelligence can connect to multiple WordPress websites. Each connection is independent of tracked discovery websites, and there is no hard-coded destination. It uses the site's standard WordPress REST API and an Application Password. The optional Recipe Intelligence Bridge adds direct draft/live posting and a per-site default recipe card.
+Recipe Intelligence can connect to multiple WordPress websites. Each connection is independent of tracked discovery websites, and there is no hard-coded destination. The recommended method uses Recipe Intelligence Bridge 1.1, a Site Token and an authorized User Slug. Existing WordPress Application Password connections remain supported. The bridge adds direct draft/live posting and a per-site default recipe card.
 
 ## Install the bridge and choose a recipe card
 
 1. In the app, open **Settings → WordPress websites → Download WordPress plugin**.
 2. In WordPress, use **Plugins → Add New → Upload Plugin**, upload the ZIP and activate it.
-3. Open **Settings → Recipe Intelligence** in WordPress. Choose **WP Recipe Maker** (must be active) or the **Recipe Intelligence card**, then save.
+3. Open **Recipe Intelligence** in the WordPress sidebar (also available under Settings). Choose **WP Recipe Maker** (must be active) or the **Recipe Intelligence card**, then save.
 4. Connect the site below, or click **Sync website settings** on an existing connection. The app displays the selected card.
 
 Tasty Recipes and Create by Mediavine are recognized but disabled in the selector until their adapters are supported. The connector never silently switches card plugins. Requires WordPress 6.2+ and PHP 8.0+; WP Recipe Maker has its own minimum requirements. Native integration was exercised with WP Recipe Maker 10.9.2.
@@ -25,12 +25,27 @@ Draft/live state is selected in the app for each send; there is no scheduled pub
 
 ## Connect a website
 
-1. Open **Settings → WordPress websites** in the local application.
-2. In that website's WordPress dashboard, open **Users → Profile → Application Passwords**, name a new password **Recipe Intelligence**, and generate it.
-3. Enter the website's HTTPS address, WordPress username and Application Password in the local form. Click **Connect website**.
-4. Use **Connect another website or update credentials** to add another destination or replace a revoked password.
+1. Install or update the plugin from **Download WordPress plugin** in the app. WordPress may ask to replace the already-installed version; recipe-card settings and saved posts are preserved.
+2. In WordPress, open **Recipe Intelligence → 1. Copy Site Token**. Click **Create Site Token**, then **Copy token**. The token is masked, with a Show/Hide control, and can be copied again later.
+3. Under **2. Copy User Slug**, copy the slug for the Administrator or Editor who will own the posts.
+4. In the app, open **Settings → WordPress websites**, leave **Site Token** selected, and paste the website's HTTPS address, token and user slug. Click **Connect website**.
+5. Choose a default card in the plugin's third panel. Use **Sync website settings** in the app after changing it.
 
-The password is encrypted using Windows DPAPI for the current Windows account. It is never returned by the local API or stored in browser storage. Moving the database to another Windows account requires reconnecting. Disconnect removes the local credential; revoke the Application Password in WordPress if it should no longer be usable.
+Only tokens created by **Recipe Intelligence Bridge** work here. Article Generator Bridge, Contai, and other plugins use separate credentials. No login password or WordPress Application Password is needed for the Site Token method.
+
+Site Tokens are random 256-bit credentials. WordPress keeps a SHA-256 digest for authentication and an AES-GCM copy encrypted with the site's authentication salt for administrator-only redisplay. The app stores its copy encrypted in the workspace. Tokens never appear in status responses, generated articles, or exports. API requests send the token and user slug in dedicated headers over HTTPS, without HTTP Basic Authentication, and do not follow redirects.
+
+Each token snapshots the eligible Administrator/Editor IDs when generated. Users must still hold the required role and edit/upload permissions on every request. Newly added users require token regeneration. **Regenerate Site Token** invalidates the old token; **Revoke token** immediately removes access. Neither removes saved posts or media. The plugin shows the last successful connection time, not a persistent live connection.
+
+Token authorization applies only inside the bridge's profile, media and export callbacks. It cannot authenticate wp-admin, core user-management endpoints or arbitrary REST routes. Media requests use WordPress's native media controller for uploads and reconciliation of the app's image slugs; draft/live exports retain the original capability checks and explicit live approval. The first article image remains featured, and native WP Recipe Maker cards still use the selected site's default.
+
+### Alternative: Application Password
+
+1. In WordPress, open **Users → Profile → Application Passwords**, name a new password **Recipe Intelligence**, and generate it.
+2. In the app, select **Application Password**, then enter the HTTPS address, the actual login username and the complete generated password. The descriptive password label is not the username.
+3. Click **Connect website**. If the host strips the Authorization header, use the Site Token method.
+
+Both credential types use the existing secret protection: Windows DPAPI in local mode and server-key encryption in server mode. They are never returned by the app API or stored in browser storage. Disconnect removes the workspace credential; revoke the corresponding credential in WordPress to remove its access everywhere.
 
 ## Copy an article with hosted images
 
@@ -65,7 +80,7 @@ All 294 application tests pass. Dedicated checks cover site-default sync, factua
 
 The PHP integration test runs against a disposable local WordPress 7.1.4 installation with WP Recipe Maker 10.9.2. It verifies actual native recipe creation, ingredient quantities, cooking time, parent association, the Gutenberg recipe block, draft and live status, idempotent sends and denial of anonymous/private access. No customer website is modified and no paid provider is called. Run `scripts/test-wordpress-bridge.php` with a disposable WordPress directory under `.test-build/wp-integration`; that directory needs the official SQLite Database Integration and WP Recipe Maker plugins. The executable integration test is separate from the Node test suite.
 
-The bridge uses WordPress Application Password authentication and capability checks, rather than a separate unrestricted site secret. The reference project's Article Bridge informed the draft/media flow; native WP Recipe Maker mapping follows its [official REST API documentation](https://help.bootstrapped.ventures/wp-recipe-maker/for-developers/wordpress-rest-api/) and plugin source. Other recipe-card adapters need their own verified implementation before they can be enabled.
+The original bridge used WordPress Application Password authentication and capability checks. Version 1.1 adds scoped Site Token access as described above. The reference project's Article Bridge informed the draft/media flow; native WP Recipe Maker mapping follows its [official REST API documentation](https://help.bootstrapped.ventures/wp-recipe-maker/for-developers/wordpress-rest-api/) and plugin source. Other recipe-card adapters need their own verified implementation before they can be enabled.
 
 ## Original media-export verification on 11 November 2026
 

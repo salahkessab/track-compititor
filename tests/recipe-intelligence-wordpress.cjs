@@ -257,6 +257,44 @@ test('unsafe destinations and credentials fail before requests; authentication e
   await assert.rejects(redirected.connect({ siteUrl: 'https://first.example', username: 'owner', applicationPassword: secret }), /redirected/);
 });
 
+test('Site Token connections encrypt credentials, survive restart and upload WebP only through scoped bridge routes', async t => {
+  const f = await fixture(t, 1), token = 'ri_' + 'b'.repeat(64), calls = [];
+  const transport = async (url, options) => {
+    calls.push({url,...options}); assert.equal(options.authorization, undefined);
+    assert.equal(options.bridgeToken, token); assert.equal(options.userSlug, 'site-editor');
+    assert.ok(new URL(url).pathname.startsWith('/wp-json/recipe-intelligence/v1/'));
+    if (url.endsWith('/profile')) return json({ protocol:1,version:'1.1.0',revision:'a'.repeat(64),recipeCard:'builtin',recipeCardLabel:'Recipe Intelligence card',ready:true,canPublish:true,tokenAuth:true,user:{id:7,username:'editor-login',slug:'site-editor',displayName:'Site Editor'} });
+    return f.transport(url, options);
+  };
+  const wp = new WordPressStore(f.store, transport, secrets);
+  const input = {siteUrl:'https://first.example',authMethod:'bridge_token',siteToken:token,userSlug:'site-editor'};
+  const c = (await wp.connect(input)).connections[0];
+  assert.equal(c.username,'editor-login'); assert.equal(c.authMethod,'bridge_token');
+  const stored = f.store.db.prepare("SELECT value FROM settings WHERE key LIKE 'wordpress_connection:%'").get().value;
+  assert.ok(!stored.includes(token)); assert.ok(!JSON.stringify(wp.status()).includes(token));
+  const plan = wp.plan(f.item.id,c.id); await wp.upload(f.item.id,{connectionId:c.id,documentHash:plan.documentHash,sha256:plan.images[0].sha256});
+  const post = calls.find(c=>c.method==='POST'); assert.ok(post.url.endsWith('/recipe-intelligence/v1/media')); uploadedWebP(post);
+  const restarted = new WordPressStore(f.store,transport,secrets); await restarted.sync(c.id);
+  assert.equal(restarted.plan(f.item.id,c.id).ready,true); await restarted.connect(input);
+  assert.equal(restarted.status().connections.length,1); assert.equal(calls.filter(c=>c.method==='POST').length,1);
+  assert.equal(f.providerCalls.length,0);
+});
+
+test('invalid tokens, unauthorized users and remote error bodies never leak credentials or replace a working connection', async t => {
+  const f = await fixture(t,0), before = await f.connect(), token='ri_'+'c'.repeat(64);
+  const input={siteUrl:'https://first.example',authMethod:'bridge_token',siteToken:token,userSlug:'owner'};
+  let count=0;
+  const wp = new WordPressStore(f.store,async()=>{count++;return json({code:'ri_invalid_token',message:token},401)},secrets);
+  await assert.rejects(wp.connect({...input,siteToken:'another-plugin-key'}),/complete Site Token/);
+  await assert.rejects(wp.connect({...input,userSlug:'owner\r\ninjection'}),/User Slug/); assert.equal(count,0);
+  await assert.rejects(wp.connect(input),e=>/Site Token was rejected/.test(e.message)&&!e.message.includes(token));
+  assert.equal(wp.status().connections[0].id,before.id); assert.equal(wp.status().connections[0].authMethod,'application_password');
+  for (const [code,expected] of [['ri_user_forbidden',/User Slug is not authorized/],['rest_not_logged_in',/Authorization header/],['incorrect_password',/rejected the Application Password/],['application_passwords_disabled',/disabled Application Passwords/],[token,/denied access/]]) {
+    const rejected = new WordPressStore(f.store,async()=>json({code,message:token,data:{private:secret}},403),secrets);
+    await assert.rejects(rejected.connect(input),e=>expected.test(e.message)&&!e.message.includes(token)&&!e.message.includes(secret));
+  }
+});
+
 test('version 4 migration backs up existing articles and adds an independent WordPress ledger', async t => {
   const f = await fixture(t, 1); const hashes = f.store.db.prepare('SELECT name,sha256 FROM artifacts ORDER BY name').all();
   f.store.db.exec('DROP TABLE r2_deleted_paths; DROP TABLE r2_objects; DROP TABLE wordpress_exports; DROP TABLE wordpress_media; PRAGMA user_version=4'); f.store.close();
@@ -289,6 +327,13 @@ test('WordPress transport pins public DNS results, retains TLS verification and 
   const response = await wordpressRequest('https://first.example/wp-json/wp/v2/media', { method: 'POST', authorization: 'Basic fixture', body: Buffer.from('fixture') });
   assert.equal(response.status, 302); assert.equal(calls.length, 1); assert.equal(calls[0].url.hostname, 'first.example');
   assert.notEqual(calls[0].options.rejectUnauthorized, false); assert.equal(calls[0].options.agent, false);
+  const token = 'ri_'+'d'.repeat(64);
+  await wordpressRequest('https://first.example/wp-json/recipe-intelligence/v1/profile', {method:'GET',bridgeToken:token,userSlug:'owner'});
+  assert.equal(calls[1].options.headers['X-Recipe-Intelligence-Key'],token);
+  assert.equal(calls[1].options.headers['X-Recipe-Intelligence-User'],'owner');
+  assert.equal(calls[1].options.headers.Authorization,undefined);
+  await assert.rejects(wordpressRequest('https://first.example/wp-json/wp/v2/users/me',{method:'GET',bridgeToken:token,userSlug:'owner'}),/only be sent to Recipe Intelligence Bridge/);
+  await assert.rejects(wordpressRequest('https://first.example/wp-json/recipe-intelligence/v1/profile',{method:'GET',bridgeToken:token,userSlug:'owner\r\ninjected'}),/Invalid WordPress bridge credentials/);
   calls[0].options.lookup('first.example', { all: true }, (error, selected) => { assert.equal(error, null); assert.equal(selected, addresses); });
   await assert.rejects(wordpressRequest('http://first.example', { method: 'GET' }), /HTTPS/);
   await assert.rejects(wordpressRequest('https://127.0.0.1', { method: 'GET' }), /public HTTP/);
