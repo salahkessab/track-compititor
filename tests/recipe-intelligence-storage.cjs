@@ -132,8 +132,17 @@ test('concurrent Phase 1 database opens back up and apply additive migrations on
   assert.equal(upgraded.db.prepare('SELECT title FROM recipe_records WHERE id=1').get().title, 'Saved soup');
   assert.equal(upgraded.db.prepare('SELECT count(*) n FROM content_batches').get().n, 0);
   const backups = fs.readdirSync(path.join(root, 'backups')).filter(n => n.startsWith('before-migration-2')); assert.ok(backups.length >= 1);
-  const backup = new Database(path.join(root, 'backups', backups[0]), { readonly: true });
-  try { assert.equal(backup.pragma('user_version', { simple: true }), 1); assert.equal(backup.prepare('SELECT title FROM recipe_records').get().title, 'Saved soup'); } finally { backup.close(); }
+  // Both openers may begin a backup before either migrates. The second backup
+  // can finish after migration 2, and directory/UUID ordering is not chronological.
+  // At least one original-schema backup must exist before migration proceeds.
+  const backupVersions = backups.map(name => {
+    const backup = new Database(path.join(root, 'backups', name), { readonly: true });
+    try {
+      assert.equal(backup.prepare('SELECT title FROM recipe_records').get().title, 'Saved soup');
+      return backup.pragma('user_version', { simple: true });
+    } finally { backup.close(); }
+  });
+  assert.ok(backupVersions.includes(1), 'The original schema must have a recoverable backup');
 });
 
 test('storage accepts selected folders with spaces but rejects traversal, network paths and escaping junctions', t => {
