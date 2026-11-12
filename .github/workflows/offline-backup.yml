@@ -1,0 +1,28 @@
+name: Offline PC backup
+on:
+  push:
+    branches: [codex/instabox-backup]
+permissions:
+  contents: read
+concurrency:
+  group: recipe-intelligence-instabox
+  cancel-in-progress: false
+jobs:
+  backup:
+    if: github.repository == 'salahkessab/track-compititor' && github.event.repository.private == true
+    runs-on: [self-hosted, Linux, X64, recipe-intelligence-instabox]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Encrypt workspace and current Docker images for this PC
+        run: flock -n /data/recipe-intelligence-trial/deployment.lock node maintenance/offline-backup.cjs
+      - name: Transfer encrypted backup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: instabox-pc-backup-20261112
+          path: /data/recipe-intelligence-trial/offline-backups/pc-backup-20261112/*
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
