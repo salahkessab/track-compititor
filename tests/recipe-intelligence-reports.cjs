@@ -166,10 +166,13 @@ test('paginated WordPress pages can contain known URLs, while actual pagination 
   f.store.recordCandidates({ site_id: site.id, run_id: run, url: site.url + 'feed/' }, urls.map(url => ({ url })));
   f.store.ensureSource(site.id, site.url + 'wp-json/', 'wordpress_api');
   const id = f.reports.create({ siteIds: [site.id], from: '2020-01-01', to: '2020-01-03', timezone: 'UTC' });
+  // Bulk fixture writes can exceed the lease on a busy HDD; mirror the worker heartbeat before claiming work.
+  assert.equal(f.store.heartbeat(f.owner), true);
   const engine = new ReportEngine(f.reports, f.fetcher, f.owner); const first = f.reports.claim(f.owner);
   const posts = urls.slice(0, 100).map(link => ({ link })); f.responses.set(first.url, JSON.stringify(posts)); await engine.process(first);
   const second = f.store.db.prepare("SELECT * FROM report_jobs WHERE report_id=? AND kind='wordpress' AND id!=?").get(id, first.id); assert.ok(second);
   f.store.db.prepare('UPDATE report_jobs SET priority=-1 WHERE id=?').run(second.id); f.responses.set(second.url, JSON.stringify(posts));
+  assert.equal(f.store.heartbeat(f.owner), true);
   await engine.process(f.reports.claim(f.owner)); assert.match(f.reports.detail(id).errors[0].error, /repeated a previous page/);
 });
 
