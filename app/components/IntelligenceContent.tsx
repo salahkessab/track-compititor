@@ -78,7 +78,7 @@ export function IntelligenceContent({ view, snapshot, request, refresh, navigate
   const [reportId, setReportId] = useState(""); const [report, setReport] = useState<any>(null);
   const [reportPage, setReportPage] = useState(0);
   const [selected, setSelected] = useState<Record<number, Choice>>({}); const [evidence, setEvidence] = useState<any>(null);
-  const [batchId, setBatchId] = useState(""); const [batch, setBatch] = useState<any>(null); const [limit, setLimit] = useState("");
+  const [batchId, setBatchId] = useState(""); const [batch, setBatch] = useState<any>(null); const [limit, setLimit] = useState<string | null>(null);
   const [checks, setChecks] = useState<any>(null); const [preview, setPreview] = useState<any>(null);
   const previewClose = useRef<HTMLButtonElement>(null);
   const [deletion, setDeletion] = useState<any>(null);
@@ -88,7 +88,7 @@ export function IntelligenceContent({ view, snapshot, request, refresh, navigate
     const linked = new URLSearchParams(window.location.search).get("batchId");
     if (linked && /^[a-f0-9-]{36}$/i.test(linked)) {
       let valid = true;
-      void request(`batches/${linked}`).then(data => { if (valid) { setBatchId(linked); setBatch(data); setLimit(String(data.limit_usd || data.quote.recommendedLimit)); } }).catch(e => { if (valid) setError(e.message); });
+      void request(`batches/${linked}`).then(data => { if (valid) { setBatchId(linked); setBatch(data); setLimit(null); } }).catch(e => { if (valid) setError(e.message); });
       return () => { valid = false; };
     }
   }, [request]);
@@ -112,7 +112,7 @@ export function IntelligenceContent({ view, snapshot, request, refresh, navigate
     }
   }, [snapshot.contentSettings]);
   const loadReport = async (id = reportId) => { if (id) setReport(await request(`reports/${id}?page=${id === reportId ? reportPage : 0}`)); };
-  const loadBatch = async (id = batchId, resetLimit = false) => { if (id) { const data: any = await request(`batches/${id}`); setBatch(data); if (resetLimit) setLimit(String(data.limit_usd || data.quote.recommendedLimit)); } };
+  const loadBatch = async (id = batchId, resetLimit = false) => { if (id) { const data: any = await request(`batches/${id}`); setBatch(data); if (resetLimit) setLimit(null); } };
   useEffect(() => {
     if (!active) return;
     let valid = true;
@@ -146,21 +146,28 @@ export function IntelligenceContent({ view, snapshot, request, refresh, navigate
   };
   const changeChoice = (id: number, value: Partial<Choice>) => setSelected(old => ({ ...old, [id]: { ...old[id], ...value } }));
   const quoteReady = batch && batch.quote.lines.length > 0 && !batch.quote.pending;
+  // Null means the owner has not edited the field: follow the current quote as
+  // preparation finishes. Explicit blank/zero values never fall back to a budget.
+  const spendingLimit = limit ?? String(batch?.limit_usd || batch?.quote.recommendedLimit || "");
+  const limitValue = Number(spendingLimit);
+  const validLimit = spendingLimit.trim() !== "" && Number.isFinite(limitValue) && limitValue >= .01 && limitValue <= 1000;
   const generateLabel = batch?.settings.output === "images_only" ? "Generate images" : !batch?.settings.images || batch?.settings.output === "article_only" ? "Generate article" : "Generate article + images";
   const approval = quoteReady && <div className="space-y-3" aria-label="Budget approval">
-    <p className="text-sm text-[#a6acbd]">Estimated {usd(batch.quote.estimated)} · Spending limit {usd(Number(limit || batch.quote.recommendedLimit))}. Actual usage may vary.</p>
-    <button className={primary} disabled={busy || !Number(limit || batch.quote.recommendedLimit)} onClick={() => void act(async () => {
+    <p className="text-sm text-[#a6acbd]">Estimated {usd(batch.quote.estimated)}. Actual usage may vary.</p>
+    <label className="block text-sm">Spending limit (USD)<input className={`${input} mt-1 block max-w-64`} type="number" min="0.01" max="1000" step="0.01" value={spendingLimit} onChange={e => setLimit(e.target.value)} aria-invalid={!validLimit} aria-describedby="spending-limit-help" /></label>
+    <p id="spending-limit-help" className="text-xs text-[#a6acbd]">This is the maximum you authorize when you click Generate, not the expected charge. A lower limit may pause work before all outputs finish.</p>
+    {!validLimit && <p role="status" className="text-sm text-amber-200">Enter a spending limit between $0.01 and $1,000 to enable generation.</p>}
+    <button className={primary} disabled={busy || !validLimit} onClick={() => void act(async () => {
       await request("model-check", "POST", batch.settings);
-      await request(`batches/${batch.id}/approve`, "POST", { limit: Number(limit || batch.quote.recommendedLimit), quoteVersion: batch.quote.createdAt });
+      await request(`batches/${batch.id}/approve`, "POST", { limit: limitValue, quoteVersion: batch.quote.createdAt });
       await loadBatch();
     }, "Generation started. Your article and images will appear here.")}>{busy ? "Starting…" : batch.approved_at ? "Continue with this spending limit" : generateLabel}</button>
-    <details><summary className="cursor-pointer text-sm text-[#a6acbd]">Adjust spending limit</summary><label className="mt-3 block text-sm">Approved spending limit (USD)<input className={`${input} mt-1 max-w-64`} type="number" min="0.01" max="1000" step="0.01" value={limit} onChange={e => setLimit(e.target.value)} /></label></details>
   </div>;
   if (!["start", "reports", "batches", "settings"].includes(view)) return null;
   return <div className="space-y-5" aria-label="Recipe reports and content">
     {error && <p role="alert" className="rounded-xl border border-red-400/40 bg-red-950/20 p-4 text-sm text-red-100">{error}</p>}
     {notice && <p role="status" className="text-sm text-emerald-200">{notice}</p>}
-    {view === "start" && settings && <StartRecipe snapshot={snapshot} settings={settings} change={setSettings} controls={<ContentControls value={settings} change={setSettings} />} request={request} created={b => { setBatchId(b.id); setBatch(b); setLimit(String(b.quote.recommendedLimit)); navigate("batches"); void refresh(); }} />}
+    {view === "start" && settings && <StartRecipe snapshot={snapshot} settings={settings} change={setSettings} controls={<ContentControls value={settings} change={setSettings} />} request={request} created={b => { setBatchId(b.id); setBatch(b); setLimit(null); navigate("batches"); void refresh(); }} />}
     {view === "reports" && <>
       <form className={panel} onSubmit={e => { e.preventDefault(); void act(async () => { const result: any = await request("reports", "POST", { siteIds: sites, from, to, timezone: snapshot.settings.timezone }); setReportId(result.jobId); setSelected({}); await loadReport(result.jobId); }, "Historical search queued. Verified matches appear as each article is checked."); }}>
         <h2 className="text-lg">Find recipes by publication date</h2><p className="text-sm text-[#a6acbd]">Choose websites and dates. Verified recipes appear as the search runs. This step is free.</p>
@@ -176,7 +183,7 @@ export function IntelligenceContent({ view, snapshot, request, refresh, navigate
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th className="p-2">Select</th><th className="p-2">Verified recipe</th><th className="p-2">Publication</th><th className="p-2">Recipe basis</th></tr></thead><tbody>{report.rows.map((row: any) => <tr key={row.id} className="border-t border-[#424a60] align-top"><td className="p-2"><input type="checkbox" aria-label={`Select ${row.title}`} checked={!!selected[row.id]} onChange={e => choose(row, e.target.checked)} /></td><td className="max-w-sm space-y-2 p-2"><a className="text-[#deb589] underline" href={row.canonical_url} rel="noreferrer" target="_blank">{row.title}</a><p className="text-xs text-[#a6acbd]">{row.site_name} · {row.verification_reason}</p><button className={button} onClick={() => void act(async () => setEvidence(await request(`evidence/${row.id}`)))}>View date evidence</button></td><td className="p-2 text-xs">{row.publication.raw}<p className="mt-1 text-[#a6acbd]">Precision: {row.publication.precision}</p></td><td className="min-w-64 space-y-2 p-2">{selected[row.id] && <><select aria-label={`Basis for ${row.title}`} className={input} value={selected[row.id].basis} onChange={e => changeChoice(row.id, { basis: e.target.value as Choice["basis"] })}><option value="original">Keep original recipe</option><option value="best_complete">Choose best complete recipe</option></select>{selected[row.id].basis === "original" && <label className="flex gap-2 text-xs"><input type="checkbox" checked={selected[row.id].independentResearch} onChange={e => changeChoice(row.id, { independentResearch: e.target.checked })} />Enable independent research</label>}{(selected[row.id].basis === "best_complete" || selected[row.id].independentResearch) && <label className="block text-xs">Optional alternative URLs (one per line, up to 5)<textarea className={`${input} mt-1`} value={selected[row.id].alternativeUrls.join("\n")} onChange={e => changeChoice(row.id, { alternativeUrls: e.target.value.split("\n").filter(Boolean) })} /></label>}</>}</td></tr>)}</tbody></table></div>
         {report.matches > 100 && <div className="flex items-center gap-3"><button className={button} disabled={reportPage === 0} onClick={() => setReportPage(p => p - 1)}>Previous results</button><span className="text-sm">Page {reportPage + 1}</span><button className={button} disabled={(reportPage + 1) * 100 >= report.matches} onClick={() => setReportPage(p => p + 1)}>Next results</button></div>}
         {report.errors.length > 0 && <details className="text-sm"><summary>Source errors</summary><ul className="mt-2 space-y-2">{report.errors.map((e: any) => <li key={e.url} className="break-all">{e.url}: {e.error}</li>)}</ul></details>}
-        {Object.keys(selected).length > 0 && settings && <div className="space-y-4 border-t border-[#424a60] pt-5"><ContentControls value={settings} change={setSettings} /><p className="text-sm text-[#a6acbd]">{Object.keys(selected).length} / 20 selected. Per-recipe choices above override the default. Settings are saved with this batch.</p><button className={button} disabled={busy} onClick={() => void act(async () => { const result: any = await request("batches", "POST", { selections: Object.values(selected), settings }); setBatchId(result.id); setBatch(result); setLimit(String(result.quote.recommendedLimit)); navigate("batches"); })}>Prepare batch estimate</button></div>}
+        {Object.keys(selected).length > 0 && settings && <div className="space-y-4 border-t border-[#424a60] pt-5"><ContentControls value={settings} change={setSettings} /><p className="text-sm text-[#a6acbd]">{Object.keys(selected).length} / 20 selected. Per-recipe choices above override the default. Settings are saved with this batch.</p><button className={button} disabled={busy} onClick={() => void act(async () => { const result: any = await request("batches", "POST", { selections: Object.values(selected), settings }); setBatchId(result.id); setBatch(result); setLimit(null); navigate("batches"); })}>Prepare batch estimate</button></div>}
       </section>}
       {evidence && <section className={panel}><div className="flex justify-between"><h3>Date evidence</h3><button className={button} onClick={() => setEvidence(null)}>Close evidence</button></div>{evidence.rows.map((e: any) => <div key={e.id}><p className="text-sm">{e.classification}: {e.reason}</p><pre className="mt-2 overflow-auto whitespace-pre-wrap break-all text-xs text-[#a6acbd]">{JSON.stringify(JSON.parse(e.evidence_json), null, 2)}</pre></div>)}</section>}
     </>}
@@ -198,7 +205,7 @@ export function IntelligenceContent({ view, snapshot, request, refresh, navigate
             }}>Use another URL or paste recipe text</button>
           </div>}
           {quoteReady && !batch.approved_at && batch.settings.images && <p className="text-sm text-[#a6acbd]">{batch.settings.imageWorkflow === "reference" ? `${batch.items.reduce((sum: number, i: any) => sum + (i.photos?.length || 0), 0)} selected images included.` : "Includes three new recipe images per article."}</p>}
-          {batch.items.some((i: any) => i.import_id) && !['completed', 'cancelled'].includes(batch.status) && <details><summary className="cursor-pointer text-sm text-[#a6acbd]">Change photos or refresh estimate</summary><button className={`${button} mt-3`} disabled={busy} onClick={() => void act(async () => { const b: any = await request(`batches/${batch.id}/estimate`, "POST"); setBatch(b); setLimit(String(Math.max(b.limit_usd || 0, b.quote.recommendedLimit))); })}>Refresh estimate after photo selection</button></details>}
+          {batch.items.some((i: any) => i.import_id) && !['completed', 'cancelled'].includes(batch.status) && <details><summary className="cursor-pointer text-sm text-[#a6acbd]">Change photos or refresh estimate</summary><button className={`${button} mt-3`} disabled={busy} onClick={() => void act(async () => { const b: any = await request(`batches/${batch.id}/estimate`, "POST"); setBatch(b); })}>Refresh estimate after photo selection</button></details>}
           {batch.status !== "cancelled" && (!batch.approved_at || batch.status === "budget_wait" || batch.items.some((i: any) => i.state === "awaiting_item_approval")) ? approval : batch.approved_at && batch.status !== "cancelled" ? <details className="text-sm"><summary className="cursor-pointer text-[#a6acbd]">Change spending limit</summary><div className="mt-3">{approval}</div></details> : null}
           <div className="flex flex-wrap gap-2">{batch.status === "running" && <button className={button} disabled={busy} onClick={() => void act(() => request(`batches/${batch.id}/action`, "POST", { action: "pause" }))}>Pause new work</button>}{batch.status === "paused" && <button className={button} disabled={busy} onClick={() => void act(() => request(`batches/${batch.id}/action`, "POST", { action: "resume" }))}>Resume batch</button>}{!["completed", "cancelled"].includes(batch.status) && <button className={button} disabled={busy} onClick={() => void act(() => request(`batches/${batch.id}/action`, "POST", { action: "cancel" }))}>Cancel pending work</button>}</div>
         </section>

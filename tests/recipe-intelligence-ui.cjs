@@ -210,6 +210,89 @@ test('report selection preserves per-recipe basis and presents a concrete batch 
   const costApproval = JSON.parse(calls.find(c => c.url.endsWith('/approve')).init.body); assert.equal(costApproval.limit, 1); assert.equal(costApproval.quoteVersion, 'quote-v1');
 });
 
+test('a pending estimate becomes actionable after polling without approving spend or replacing an entered limit', async t => {
+  const settings = require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+  const id = 'bd2288e7-6666-4444-8888-123456789abc', calls = [];
+  const item = { id: 'item-budget', import_id: 'import-budget', title: 'Corn orzo', state: 'queued', files: [], photos: [], warnings: [], stages: [] };
+  const batch = { id, settings, status: 'awaiting_cost_approval', created_at: '2026-11-12T11:00:00Z', limit_usd: 0, approved_at: null,
+    quote: { createdAt: 'pending-quote', estimated: 0, recommendedLimit: 0, pending: 1, lines: [] },
+    budget: { actual: 0, held: 0, uncertain: 0 }, items: [item], calls: [] };
+  const fetcher = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (url.endsWith('/capabilities')) return Response.json({ enabled: true });
+    if (url.endsWith('/snapshot')) return Response.json({ sites: [], runs: [], worker: { online: true }, settings: { timezone: 'Africa/Casablanca' }, contentSettings: settings, batches: [{ id, title: item.title, status: batch.status, created_at: batch.created_at, count: 1 }] });
+    if (url.endsWith('/imports/import-budget')) return Response.json({ id: 'import-budget', title: item.title, status: 'ready', revision: 1, photos: [] });
+    if (url.endsWith('/batches/' + id) || url.endsWith('/estimate')) return Response.json(batch);
+    if (url.endsWith('/model-check')) return Response.json({ configured: true, checks: [] });
+    if (url.endsWith('/approve')) return Response.json({ approved: true });
+    throw new Error('Unexpected budget request: ' + url);
+  };
+  const { root, Component, click } = await ui(t, fetcher, `http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches&batchId=${id}`);
+  await React.act(async () => root.render(React.createElement(Component, { active: true })));
+  assert.equal(document.querySelector('[aria-label="Budget approval"]'), null);
+  batch.quote = { createdAt: 'ready-quote', estimated: 1.8126, recommendedLimit: 4.44, pending: 0, lines: [{ kind: 'article', estimated: 1.8126, reservation: 4.44 }] };
+  // Let the real workspace polling deliver the completed quote to the mounted form.
+  await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 3100)); });
+  const limit = () => document.querySelector('[aria-label="Budget approval"] input[type=number]');
+  const generate = () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Generate article + images');
+  assert.equal(limit().value, '4.44');
+  assert.equal(limit().closest('details'), null, 'The spending limit must be visible before approval');
+  assert.equal(generate().disabled, false);
+  assert.equal(calls.filter(c => c.init.method === 'POST').length, 0);
+  const enterLimit = async value => React.act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(limit(), value);
+    limit().dispatchEvent(new window.Event('input', { bubbles: true }));
+    limit().dispatchEvent(new window.Event('change', { bubbles: true }));
+  });
+  await enterLimit('2.13');
+  batch.quote = { ...batch.quote, createdAt: 'refreshed-quote', recommendedLimit: 5.55 };
+  await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 3100)); });
+  assert.equal(limit().value, '2.13', 'Background refresh must preserve the entered budget');
+  await click('Change photos or refresh estimate');
+  for (const value of ['0', '', '-1', '1001']) {
+    await enterLimit(value);
+    await click('Refresh estimate after photo selection');
+    assert.equal(limit().value, value);
+    assert.equal(generate().disabled, true);
+    assert.equal(limit().getAttribute('aria-invalid'), 'true');
+  }
+  assert.ok(calls.every(c => !c.url.endsWith('/approve') && !c.url.endsWith('/model-check')));
+  await enterLimit('2.13');
+  await click('Refresh estimate after photo selection');
+  assert.equal(limit().value, '2.13');
+  await click('Generate article + images');
+  const approvals = calls.filter(c => c.url.endsWith('/approve'));
+  assert.equal(approvals.length, 1);
+  assert.deepEqual(JSON.parse(approvals[0].init.body), { limit: 2.13, quoteVersion: 'refreshed-quote' });
+});
+
+test('switching batches resets the unsaved limit and preserves an existing approved budget', async t => {
+  const settings = require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+  const calls = [], created = '2026-11-12T11:00:00Z';
+  const batches = ['first', 'second'].map((id, i) => ({ id, settings, status: i ? 'budget_wait' : 'awaiting_cost_approval', created_at: created,
+    limit_usd: i ? 2.13 : 0, approved_at: i ? created : null, quote: { createdAt: id, estimated: 1.8, recommendedLimit: 4.44, lines: [{ kind: 'article', estimated: 1.8, reservation: 4.44 }] }, budget: { actual: 0, held: 0, uncertain: 0 }, items: [], calls: [] }));
+  const { root, Component, select } = await ui(t, async (url, init = {}) => {
+    calls.push({ url, init });
+    if (url.endsWith('/capabilities')) return Response.json({ enabled: true });
+    if (url.endsWith('/snapshot')) return Response.json({ sites: [], runs: [], worker: { online: true }, settings: { timezone: 'Africa/Casablanca' }, contentSettings: settings, batches: batches.map(b => ({ id: b.id, title: b.id, status: b.status, created_at: created, count: 1 })) });
+    const batch = batches.find(b => url.endsWith('/batches/' + b.id));
+    if (batch) return Response.json(batch);
+    throw new Error('Unexpected request: ' + url);
+  }, 'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
+  await React.act(async () => root.render(React.createElement(Component, { active: true })));
+  await select('Saved work', 'first');
+  const limit = () => document.querySelector('[aria-label="Budget approval"] input[type=number]');
+  await React.act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(limit(), '1');
+    limit().dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  await select('Saved work', 'second');
+  assert.equal(limit().value, '2.13', 'Never automatically raise an already approved budget to the new recommendation');
+  await select('Saved work', 'first');
+  assert.equal(limit().value, '4.44');
+  assert.ok(calls.every(c => !c.init.method || c.init.method === 'GET'));
+});
+
 test('WordPress copy retains heading and list formatting without copying schema scripts or starting paid work', async t => {
   const settings = require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
   const calls = []; const copied = [];
