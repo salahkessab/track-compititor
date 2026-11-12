@@ -1,7 +1,6 @@
 name: Verified offline backup cleanup
 on:
-  push:
-    branches: [codex/instabox-backup]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
