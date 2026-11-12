@@ -1,0 +1,21 @@
+{
+  "verifiedAt": "2026-11-12T19:17:02.743Z",
+  "revision": "c0fd4d47849132a583458defdea83a3cb23addca",
+  "receiptSha256": "976ed981437e1765e4c95fa49c110621b01de29bd540ea825a452ab5ce82f986",
+  "files": [
+    {
+      "file": "workspace.tar.gz.enc",
+      "sha256": "24aa74aeb2320bf7253f66ac507b28140795eca3d6556b82070b060348803091",
+      "entries": 266,
+      "authenticated": true
+    },
+    {
+      "file": "docker-images.tar.gz.enc",
+      "sha256": "4dec0c49fd2d651bd30003a4f423484bf5881f5bd35c0e040832615ab540f60e",
+      "entries": 31,
+      "authenticated": true
+    }
+  ],
+  "databaseIntegrity": "ok",
+  "imageManifestsVerified": true
+}
