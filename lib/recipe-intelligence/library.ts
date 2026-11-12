@@ -1,0 +1,57 @@
+import { randomUUID } from "node:crypto";
+import type { BatchStore } from "./batches";
+
+function itemLines(batch: any, item: any) {
+  return batch.quote.lines.filter((line: any) => line.itemId ? line.itemId === item.id : line.recipeId === item.recipe_id);
+}
+export function articleLibrary(b: BatchStore, page = 0, search = "") {
+  page = Number.isInteger(page) && page >= 0 ? Math.min(page, 100000) : 0;
+  const query = `%${search.slice(0, 150)}%`;
+  const from = `FROM content_items i JOIN content_batches b ON b.id=i.batch_id
+    LEFT JOIN recipe_records r ON r.id=i.recipe_id LEFT JOIN recipe_imports m ON m.id=i.import_id
+    WHERE i.state<>'deleted' AND b.status<>'deleted' AND COALESCE(json_extract(i.source_json,'$.title'),r.title,m.title,'Recipe') LIKE ?`;
+  const total = (b.store.db.prepare(`SELECT count(*) n ${from}`).get(query) as any).n;
+  const records = b.store.db.prepare(`SELECT i.id,i.batch_id ${from} ORDER BY b.created_at DESC,i.rowid DESC LIMIT 20 OFFSET ?`).all(query, page * 20) as any[];
+  const batches = new Map<string, any>();
+  const rows = records.map(record => {
+    if (!batches.has(record.batch_id)) batches.set(record.batch_id, b.detail(record.batch_id));
+    const batch = batches.get(record.batch_id), item = batch.items.find((i: any) => i.id === record.id);
+    const calls = batch.calls.filter((c: any) => item.stages.some((s: any) => s.id === c.stage_id));
+    const lines = itemLines(batch, item);
+    const estimated = lines.reduce((n: number, l: any) => n + l.estimated, 0);
+    const suggestedLimit = Math.ceil(lines.reduce((n: number, l: any) => n + l.reservation, 0) * 100) / 100;
+    return { id: item.id, batchId: batch.id, title: item.source?.title || item.title || "Recipe", state: item.state,
+      createdAt: batch.created_at, error: item.error, approved: !!batch.approved_at, sharedBudget: !!batch.approved_at && batch.items.length > 1,
+      estimated, suggestedLimit, limit: batch.limit_usd, quoteVersion: batch.quote.createdAt,
+      canApprove: !batch.approved_at && lines.length > 0 && item.state === 'queued',
+      actual: calls.reduce((n: number, c: any) => n + (c.actual_usd || 0), 0),
+      held: calls.reduce((n: number, c: any) => n + (c.actual_usd === null && ['reserved','dispatched','uncertain','usage_pending'].includes(c.state) ? c.reserved_usd : 0), 0),
+      files: item.files.filter((f: any) => f.media_type.startsWith('image/') || f.name === 'article.html'),
+      photos: item.photos.map((p: any) => ({ referenceId: p.reference_id, position: p.position, state: p.state })),
+      currentStage: item.stages.find((s: any) => s.state === 'running')?.kind || null,
+      reviewKind: item.review_kind };
+  });
+  return { rows, total, page, pageSize: 20 };
+}
+
+// Isolate a not-yet-approved recipe before spending, so one row's approval can
+// never start its neighbours. Existing approved batches retain their ledger.
+export function approveLibraryItem(b: BatchStore, itemId: string, limit: number, quoteVersion: string) {
+  return b.store.db.transaction(() => {
+    const item = b.item(itemId), batch = b.detail(item.batch_id);
+    if (batch.approved_at) throw new Error("This recipe already has an approved budget. Open its details to continue.");
+    if (quoteVersion !== batch.quote.createdAt || item.state !== 'queued') throw new Error("The estimate changed or is not ready. Refresh this recipe before approving.");
+    if (b.store.db.prepare("SELECT 1 FROM api_calls WHERE batch_id=?").get(batch.id)) throw new Error("This batch already has usage. Review its saved budget.");
+    if (batch.items.length === 1) { b.approve(batch.id, limit, quoteVersion); return { batchId: batch.id }; }
+    const lines = itemLines(batch, item);
+    if (!lines.length) throw new Error("Prepare this recipe's estimate first.");
+    const quoteFor = (lines: any[]) => ({ ...batch.quote, lines, pending: 0, estimated: lines.reduce((n, l) => n + l.estimated, 0), recommendedLimit: Math.ceil(lines.reduce((n, l) => n + l.reservation, 0) * 100) / 100 });
+    const id = randomUUID();
+    b.store.db.prepare("INSERT INTO content_batches(id,created_at,status,settings_json,quote_json) VALUES(?,?,'awaiting_cost_approval',?,?)").run(id, new Date().toISOString(), JSON.stringify(batch.settings), JSON.stringify(quoteFor(lines)));
+    b.store.db.prepare("UPDATE content_items SET batch_id=? WHERE id=?").run(id, itemId);
+    const remaining = batch.quote.lines.filter((line: any) => !lines.includes(line));
+    b.store.db.prepare("UPDATE content_batches SET quote_json=? WHERE id=?").run(JSON.stringify({ ...quoteFor(remaining), pending: batch.quote.pending || 0 }), batch.id);
+    b.approve(id, limit, quoteVersion);
+    return { batchId: id };
+  }).immediate();
+}

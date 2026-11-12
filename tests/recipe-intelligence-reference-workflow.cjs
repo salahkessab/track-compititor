@@ -10,6 +10,7 @@ const { DEFAULT_CONTENT_SETTINGS, saveContentSettings, validateContentSettings }
 const { ProviderFailure } = require('../.intelligence-build/lib/recipe-intelligence/provider.js');
 const { IntelligenceStore } = require('../.intelligence-build/lib/recipe-intelligence/database.js');
 const { BatchStore } = require('../.intelligence-build/lib/recipe-intelligence/batches.js');
+const { articleLibrary, approveLibraryItem } = require('../.intelligence-build/lib/recipe-intelligence/library.js');
 const directory = path.join(__dirname, 'fixtures/approved-recipe-photos');
 const names = ['01-ingredients','02-sauteed-onions','03-onions-and-spices','04-broth-and-beans','05-chicken-in-broth','06-creamy-chili','07-served-chili','08-skillet'];
 const contexts = [
@@ -214,4 +215,26 @@ test('skipping a ready photo rebuilds saved article and exports without deleting
  const saved=f.batches.artifacts.read(after.files.find(x=>x.name==='article.html').id).data.toString();assert.ok(!saved.includes(file.name));assert.ok(saved.includes(`photo-${row.photos[1].id}.webp`));
  const doc=new (require('../.intelligence-build/lib/recipe-intelligence/wordpress.js').WordPressStore)(f.store).document(item.id);assert.equal(doc.images.length,1);assert.ok(doc.images.every(i=>i.name!==file.name));
  const zip=f.batches.artifacts.zip(f.batches.item(item.id));assert.ok(!zip.includes(Buffer.from(file.name)));assert.equal(f.providerCalls.length,count);assert.deepEqual(f.batches.budget(b.id),budget);
+});
+
+test('library approvals isolate one recipe and never start or charge the other rows',async t=>{
+ const f=await referenceFixture(t);const first=await f.upload(1),second=await f.upload(1,1);
+ const b=f.batches.create([{importId:first.id},{importId:second.id}],f.settings);
+ for(const model of [b.settings.textModel,b.settings.imageModel])f.store.db.prepare('INSERT OR REPLACE INTO model_checks(model,checked_at,metadata_json) VALUES(?,?,?)').run(model,new Date().toISOString(),JSON.stringify({documented:true,pricingMatches:true,account:'listed'}));
+ const rows=articleLibrary(f.batches).rows;assert.equal(rows.length,2);assert.ok(rows.every(r=>r.canApprove&&r.actual===0));
+ assert.throws(()=>approveLibraryItem(f.batches,b.items[0].id,0,b.quote.createdAt),/spending limit/);
+ assert.equal(f.batches.item(b.items[0].id).batch_id,b.id,'Rejected approval rolls back the split');
+ const result=approveLibraryItem(f.batches,b.items[0].id,10,b.quote.createdAt);assert.notEqual(result.batchId,b.id);
+ assert.equal(f.batches.get(b.id).approved_at,null);assert.equal(f.batches.get(result.batchId).limit_usd,10);
+ await f.drainBatch();assert.equal(f.batches.item(b.items[0].id).state,'completed');assert.equal(f.batches.item(b.items[1].id).state,'queued');
+ const after=articleLibrary(f.batches).rows;assert.equal(after.find(r=>r.id===b.items[1].id).actual,0);assert.equal(after.find(r=>r.id===b.items[0].id).actual,f.batches.budget(result.batchId).actual);
+ assert.throws(()=>approveLibraryItem(f.batches,b.items[0].id,10,b.quote.createdAt),/already/);
+ assert.equal(articleLibrary(f.batches,0,'no-such-title').total,0);
+});
+
+test('library approval rejects changed photos without moving a recipe out of its batch',async t=>{
+ const f=await referenceFixture(t);const first=await f.upload(2),second=await f.upload(1,3);const b=f.batches.create([{importId:first.id},{importId:second.id}],f.settings);
+ f.imports.select(first.id,[first.photos[0].id]);
+ assert.throws(()=>approveLibraryItem(f.batches,b.items[0].id,10,b.quote.createdAt),/selection changed/);
+ assert.equal(f.batches.item(b.items[0].id).batch_id,b.id);assert.equal(f.providerCalls.length,0);
 });

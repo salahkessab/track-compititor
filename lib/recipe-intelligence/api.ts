@@ -1,3 +1,4 @@
+import { articleLibrary, approveLibraryItem } from "./library";
 import { timingSafeEqual } from "node:crypto";
 import { IntelligenceStore } from "./database";
 import { localRoot } from "./paths";
@@ -157,6 +158,8 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "content-settings" && request.method === "PATCH") return json({ settings: saveContentSettings(database, await body(request)) });
     if (area === "model-check" && request.method === "POST") return json(await checkModels(database, validateContentSettings({ ...contentSettings(database), ...await body(request) })));
     if (area === "model-check" && request.method === "GET") return json({ configured: credentials.status().configured, checks: (database.db.prepare("SELECT * FROM model_checks").all() as any[]).map(r => ({ ...JSON.parse(r.metadata_json), productionConfirmedAt: r.production_confirmed_at })) });
+    if (area === "library" && request.method === "GET") return json(articleLibrary(batches, Number(url.searchParams.get("page") || 0), url.searchParams.get("search") || ""));
+    if (area === "items" && id && child === "approve-generation" && request.method === "POST") { const data = await body(request); const item = batches.item(id); await checkModels(database, JSON.parse(batches.get(item.batch_id).settings_json)); return json(approveLibraryItem(batches, id, data.limit, data.quoteVersion)); }
     if (area === "batches" && !id && request.method === "POST") { const data = await body(request); return json(batches.create(data.selections, data.settings || {}), 201); }
     if (area === "batches" && id && !child && request.method === "GET") return json(batches.detail(id));
     if (area === "items" && id && child === "delete-preview" && request.method === "GET") return json(previewGenerationDeletion(database, id));

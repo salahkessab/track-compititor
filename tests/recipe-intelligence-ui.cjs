@@ -6,6 +6,34 @@ const ts = require('typescript');
 const { JSDOM } = require('jsdom');
 const React = require('react');
 
+test('article library shows reference/output previews and approves only the chosen row with its displayed cap', async t => {
+  const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+  const calls=[];
+  const row=(id,title)=>({id,batchId:'shared',title,state:'queued',createdAt:'2026-11-12T10:00:00Z',canApprove:true,approved:false,estimated:.9,suggestedLimit:2.2,quoteVersion:'quote-v1',actual:0,held:0,photos:[{referenceId:id+'-ref',position:0,state:'queued'}],files:[]});
+  const rows=[row('one','Corn orzo'),row('two','Chicken soup')];
+  rows[1].files=[{id:'edited',name:'photo-two-ref.webp',media_type:'image/webp'}];
+  const fetcher=async(url,init={})=>{
+    calls.push({url,init});
+    if(url.endsWith('/capabilities'))return Response.json({enabled:true});
+    if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,batches:[]});
+    if(url.includes('/library?'))return Response.json({rows,total:rows.length,page:0,pageSize:20});
+    if(url.endsWith('/items/one/approve-generation')){assert.deepEqual(JSON.parse(init.body),{limit:2.2,quoteVersion:'quote-v1'});rows[0].approved=true;rows[0].canApprove=false;rows[0].state='running';return Response.json({batchId:'isolated'});}
+    throw Error('Unexpected '+url);
+  };fetcher.library=true;
+  const {root,Component}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
+  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+  const first=document.querySelector('article[aria-label="Article: Corn orzo"]');
+  assert.ok(first);assert.match(first.textContent,/\$0\.90/);assert.match(first.textContent,/Maximum \$2\.20/);
+  assert.ok(first.querySelector('img[src$="one-ref"]'));
+  assert.ok(document.querySelector('img[src*="artifacts/edited"]'));
+  assert.equal(first.querySelector('details').open,false);
+  assert.equal(calls.filter(c=>c.init.method==='POST').length,0);
+  await React.act(async()=>[...first.querySelectorAll('button')].find(b=>b.textContent==='Approve & Generate').click());
+  assert.equal(calls.filter(c=>c.init.method==='POST').length,1);
+  assert.equal(rows[1].approved,false);
+  assert.match(document.querySelector('article[aria-label="Article: Chicken soup"]').textContent,/Approve & Generate/);
+});
+
 function component() {
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components/RecipeIntelligence.tsx'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -18,7 +46,7 @@ function component() {
       }).outputText;
       const child = { exports: {} };
       new Function('require', 'module', 'exports', childSource)(id => {
-        if (id === './RecipeImports' || id === './RecipeWordPress' || id === './RecipeApiKey') {
+        if (id === './RecipeImports' || id === './RecipeWordPress' || id === './RecipeApiKey' || id === './RecipeLibrary') {
           const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components', id + '.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
           const imported = { exports: {} }; new Function('require','module','exports',code)(require,imported,imported.exports); return imported.exports;
         }
@@ -33,7 +61,7 @@ function component() {
 }
 async function ui(t, fetcher, url) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: url || 'http://127.0.0.1:34567/?tab=recipe-intelligence' });
-  const values = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true, fetch: fetcher };
+  const values = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true, fetch: (url, init) => url.includes('/library?') && !fetcher.library ? Promise.resolve(Response.json({ rows: [], total: 0, page: 0, pageSize: 20 })) : fetcher(url, init) };
   const originals = Object.fromEntries(Object.keys(values).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries(values)) Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
   const { createRoot } = require('react-dom/client'); const root = createRoot(document.getElementById('root'));
@@ -236,7 +264,7 @@ test('a pending estimate becomes actionable after polling without approving spen
   const limit = () => document.querySelector('[aria-label="Budget approval"] input[type=number]');
   const generate = () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Generate article + images');
   assert.equal(limit().value, '4.44');
-  assert.equal(limit().closest('details'), null, 'The spending limit must be visible before approval');
+  assert.ok(limit().closest('label').textContent.includes('Spending limit (USD)'));
   assert.equal(generate().disabled, false);
   assert.equal(calls.filter(c => c.init.method === 'POST').length, 0);
   const enterLimit = async value => React.act(async () => {
@@ -384,7 +412,7 @@ for (const lossless of [false,true]) test(`results prioritize article actions, e
   const repair = [...document.querySelectorAll('summary')].find(e => e.textContent === 'Processing details and repair').parentElement;
   assert.equal(repair.open, false);
   const retry = [...document.querySelectorAll('button')].find(e => e.textContent === 'Retry Edit photo 2');
-  assert.ok(retry); assert.equal(retry.closest('details'), null);
+  assert.ok(retry); assert.equal(retry.closest('details').querySelector('summary').textContent, 'Article details and advanced actions');
   assert.ok(![...document.querySelectorAll('button')].some(e => e.textContent === 'Retry Edit photo 3'));
   assert.match(document.body.textContent, /This request will not repeat automatically/);
   await click('Retry Edit photo 2');
