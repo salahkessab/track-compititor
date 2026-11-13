@@ -264,10 +264,12 @@ export function RecipeDesigns() {
           await checkpoint(`image edit ${i+1} dispatched`);setStage(`OpenAI is designing image ${i+1} of ${settings.count}…`);sent=true;
           const art=await post("/api/recipe-designs/generate",{approved:true,settings,title,ingredients:ingredientText,notes,promptCopy,photo:sourceImage,references:refImages},controller.signal);
           job.costs.push(art);sent=false;await checkpoint(`artwork ${i+1} complete`);
-          const artwork=await (await fetch(art.image)).blob();
+          const artworkResponse=await fetch(art.image);
+          if(!artworkResponse.ok) throw new Error("The generated image is saved, but could not be downloaded for export. Please retry preparation.");
+          const artwork=await artworkResponse.blob();
           const dimensions = recipeDesignDimensions(settings.image.size);
           setStage(`Preparing ${dimensions.width} × ${dimensions.height} image ${i+1} of ${settings.count}…`);
-          const image=await recipeDesignPng(art.image, settings.image.size);
+          const image=await recipeDesignPng(artwork, settings.image.size);
           const plan:DesignPlan={...templatePlan,family:previewStyle.family,styleId:previewStyleId,stylePromptVersion:promptCopy?.version || previewStyle.version};
           const originalSha256=source.sha256;
           const outputSha256=await crypto.subtle.digest("SHA-256",await image.arrayBuffer()).then(bytes=>Array.from(new Uint8Array(bytes)).map(v=>v.toString(16).padStart(2,"0")).join(""));
@@ -318,6 +320,11 @@ export function RecipeDesigns() {
       <div className="mb-6"><h1 className="studio-title text-3xl">Recipe Designs</h1></div>
       {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-700">{error}</div>}
       {notice && <p role="status" className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-950/20 p-3 text-sm text-green-700">{notice}</p>}
+      {jobs.some(job=>job.status==="failed" && job.costs.some(cost=>/^\/api\/image-assets\/[a-f0-9]{64}$/.test((cost as Cost & {image?:string}).image || ""))) && <details className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm">
+        <summary className="cursor-pointer">Recover saved images from failed exports (no new generation)</summary>
+        <p className="my-2">These images were generated successfully and saved before export failed. Open an image to save it without another paid request.</p>
+        {jobs.filter(job=>job.status==="failed").map(job=>job.costs.map((cost,index)=>{const image=(cost as Cost & {image?:string}).image;return image && /^\/api\/image-assets\/[a-f0-9]{64}$/.test(image) ? <a key={`${job.id}-${index}`} href={image} target="_blank" rel="noreferrer" className="mr-4 inline-block underline">Saved image · {new Date(job.createdAt).toLocaleString()} · {index+1}</a> : null;}))}
+      </details>}
       {paidLock && !isBusy && <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-950/20 p-4 text-sm text-amber-700"><p>An earlier design request may still be running or its charge may be unknown. You can start another design; check OpenAI billing before repeating the earlier request.</p><button type="button" className={buttonClass+" mt-3"} onClick={()=>void clearPaidLock()}>Dismiss old reservation notice</button></div>}
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.75fr)]">
         <div className="space-y-5">

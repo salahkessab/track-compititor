@@ -2,9 +2,12 @@
 export function recipeDesignDimensions(size?: string) {
   return size === "1536x864" ? { width: 1536, height: 864 } : { width: 1200, height: 1500 };
 }
-export async function recipeDesignPng(dataUrl: string, size?: string): Promise<Blob> {
-  if (!/^data:image\/(?:png|jpeg|webp);base64,/.test(dataUrl)) throw new Error("OpenAI returned an unsupported image format.");
-  const image = await (await fetch(dataUrl)).blob();
+export async function recipeDesignPng(source: Blob | string, size?: string): Promise<Blob> {
+  // Generated images are now served through verified workspace assets. Callers
+  // can pass their already-downloaded bytes instead of requiring a data URL.
+  if (typeof source === "string" && !/^data:image\/(?:png|jpeg|webp);base64,/.test(source)) throw new Error("Unsupported design image source.");
+  const image = typeof source === "string" ? await (await fetch(source)).blob() : source;
+  if (!/^image\/(?:png|jpeg|webp)$/.test(image.type)) throw new Error("Unsupported design image format. Expected PNG, JPEG, or WebP.");
   const bitmap = await createImageBitmap(image);
   try {
     const canvas = document.createElement("canvas");
