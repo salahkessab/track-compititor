@@ -20,7 +20,10 @@ export function middleware(req: NextRequest) {
     headers.set("host", destination.host);
     headers.set("x-forwarded-host", destination.host);
     if (suppliedOrigin) headers.set("origin", destination.origin);
-    return NextResponse.rewrite(destination, { request: { headers } });
+    return NextResponse.rewrite(destination, {
+      request: { headers },
+      headers: { "Cache-Control": "private, no-store", "CDN-Cache-Control": "no-store", "Vercel-CDN-Cache-Control": "no-store", "x-vercel-enable-rewrite-caching": "0" },
+    });
   }
   const server = process.env.RECIPE_INTELLIGENCE_MODE === "server" && !process.env.VERCEL;
   if (server && req.nextUrl.pathname === "/api/server-health") return NextResponse.next();

@@ -6,6 +6,7 @@ test('production entry point proxies the requested view without a browser redire
  const run=middleware({VERCEL:'1',APP_PASSWORD:'old-entry-password'});
  const response=run(new NextRequest('https://track-compititor.vercel.app/?tab=home-decor'));
  assert.equal(response.status,200);assert.equal(response.headers.get('location'),null);assert.equal(response.headers.get('x-middleware-rewrite'),'https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech/?tab=home-decor');
+ assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal(response.headers.get('vercel-cdn-cache-control'),'no-store');
  const crafted=run(new NextRequest('https://track-compititor.vercel.app//untrusted.example/path'));
  assert.equal(new URL(crafted.headers.get('x-middleware-rewrite')).hostname,'3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech');
 });
