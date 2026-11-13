@@ -42,6 +42,7 @@ test('small originals and existing WebP are retained instead of increasing stora
 test('new reference jobs save one lossless master; PNG downloads, HTML and ZIP reuse it without paid calls', async t => {
   const f = await contentFixture(t), imports = new ImportStore(f.store), imported = imports.create();
   await imports.add(imported.id, fs.readFileSync(sample), 'photo.jpg');
+  imports.select(imported.id, imports.detail(imported.id).photos.filter(p => p.state === 'ready').map(p => p.id));
   const b = f.batches.create([{ importId: imported.id }], { ...DEFAULT_CONTENT_SETTINGS, output: 'images_only' });
   const item = f.batches.item(b.items[0].id), photo = b.items[0].photos[0];
   assert.equal(JSON.parse(item.config_json).imageStorage, IMAGE_STORAGE_VERSION);
@@ -55,7 +56,7 @@ test('new reference jobs save one lossless master; PNG downloads, HTML and ZIP r
   assert.match(download.name, /\.png$/); assert.equal(download.media_type, 'image/png');
   await identical(png, download.data);
   assert.deepEqual(f.store.db.prepare('SELECT * FROM artifacts ORDER BY id').all(), before);
-  await assert.rejects(f.batches.artifacts.download(master.id, 'jpeg'), /PNG download/);
+  await assert.rejects(f.batches.artifacts.download(master.id, 'jpeg'), /has not passed metadata verification/);
   const seeded = f.seed(), recipe = JSON.parse(f.store.db.prepare('SELECT recipe_json FROM recipe_records WHERE id=?').get(seeded.id).recipe_json);
   f.store.db.prepare('UPDATE content_photos SET analysis_json=? WHERE item_id=?').run(JSON.stringify({ placement: 'hero', visibleFood: 'Soup' }), item.id);
   f.batches.artifacts.article(item, article(), recipe);
@@ -64,13 +65,13 @@ test('new reference jobs save one lossless master; PNG downloads, HTML and ZIP r
   assert.ok(html.includes(`src="${master.name}"`)); assert.ok(!html.includes('base64,'));
   const standalone = await f.batches.artifacts.download(row.id);
   assert.ok(standalone.data.includes(Buffer.from('data:image/webp;base64,' + master.data.toString('base64'))));
-  assert.ok(f.batches.artifacts.zip(item).includes(Buffer.from(master.name)));
+  assert.ok((await f.batches.artifacts.zip(item)).includes(Buffer.from(master.name)));
   assert.equal(f.providerCalls.length, 0);
   const result = JSON.parse(f.store.db.prepare("SELECT result_json FROM content_stages WHERE item_id=? AND kind LIKE 'photo:%'").get(item.id).result_json);
   assert.equal(result.storage.pixelsVerified, true);
 });
 
-test('replacement format cannot expose a stale WebP and previous artifact versions survive', async t => {
+test('unsupported replacement format is blocked and previous artifact versions survive', async t => {
   const f = await contentFixture(t), r = f.seed(), b = f.batches.create([{ recipeId: r.id }], f.defaults);
   let item = f.batches.item(b.items[0].id);
   // Simulate a native-format change on a reference photo after a versioned retry.
@@ -81,21 +82,22 @@ test('replacement format cannot expose a stale WebP and previous artifact versio
   const oldPath = f.batches.artifacts.read(old.id).relative_path;
   f.batches.artifacts.forkVersion(item); item = f.batches.item(item.id);
   const deep = await sharp(sample).toColourspace('rgb16').png().toBuffer();
-  await f.batches.artifacts.referenceImage(item, photo, deep.toString('base64'), 'second');
+  await assert.rejects(f.batches.artifacts.referenceImage(item, photo, deep.toString('base64'), 'second'), /cannot preserve every pixel and the source bit depth/);
   const files = f.batches.detail(b.id).items[0].files.filter(f => f.media_type.startsWith('image/'));
-  assert.equal(files.length, 1); assert.match(files[0].name, /\.png$/);
+  assert.equal(files.length, 1); assert.match(files[0].name, /\.webp$/);
   assert.ok(fs.existsSync(path.join(f.root, oldPath)), 'Previous version remains recoverable');
-  assert.ok(f.batches.artifacts.read(files[0].id).data.equals(deep));
+  await identical(f.batches.artifacts.read(files[0].id).data, png);
 });
 
-test('an older text-image batch still repairs its saved JPEG without changing output policy', async t => {
+test('an older text-image batch repairs into verified output without another provider call', async t => {
   const f = await contentFixture(t), r = f.seed(), b = f.batches.create([{ recipeId: r.id }], f.defaults);
   const settings = { ...b.settings }; delete settings.imageStorage;
   f.store.db.prepare('UPDATE content_batches SET settings_json=? WHERE id=?').run(JSON.stringify(settings), b.id);
   const item = f.batches.item(b.items[0].id);
   await f.batches.artifacts.image(item, 'featured', f.image.toString('base64'));
   const images = f.batches.detail(b.id).items[0].files.filter(f => f.media_type.startsWith('image/'));
-  assert.deepEqual(images.map(f => f.name), ['featured.jpg']);
-  assert.equal((await sharp(f.batches.artifacts.read(images[0].id).data).metadata()).format, 'jpeg');
+  assert.deepEqual(images.map(f => f.name), ['featured.webp']);
+  assert.equal((await sharp(f.batches.artifacts.read(images[0].id).data).metadata()).format, 'webp');
+  assert.equal(images[0].metadataVerified, true);
   assert.equal(f.providerCalls.length, 0);
 });

@@ -60,7 +60,7 @@ function fingerprint() {
     if (fs.statSync(absolute).isDirectory()) for (const item of fs.readdirSync(absolute).sort()) visit(path.join(relative, item));
     else hash.update(relative).update(fs.readFileSync(absolute));
   }
-  for (const target of ['app', 'lib', 'public', 'workers', 'wordpress', 'extensions/recipe-intelligence-capture', 'package.json', 'package-lock.json', 'next.config.mjs', 'tsconfig.json', 'tsconfig.local.json', 'tsconfig.intelligence.json', 'tailwind.config.ts', 'postcss.config.mjs', 'middleware.ts']) visit(target);
+  for (const target of ['app', 'lib', 'config', 'public', 'workers', 'wordpress', 'extensions/recipe-intelligence-capture', 'package.json', 'package-lock.json', 'next.config.mjs', 'tsconfig.json', 'tsconfig.local.json', 'tsconfig.intelligence.json', 'tailwind.config.ts', 'postcss.config.mjs', 'middleware.ts']) visit(target);
   return hash.digest('hex');
 }
 function runNode(args, env, log, owned) {
@@ -77,7 +77,7 @@ async function prepareBuild(log, owned, readOnly = false) {
   const lockHash = createHash('sha256').update(fs.readFileSync(path.join(repo, 'package-lock.json'))).digest('hex');
   let dependenciesReady = true;
   try {
-    for (const dependency of ['next', 'typescript', 'saxes', 'robots-parser', 'cheerio', 'sharp', '@aws-sdk/client-s3']) require.resolve(dependency);
+    for (const dependency of ['next', 'typescript', 'saxes', 'robots-parser', 'cheerio', 'sharp', '@aws-sdk/client-s3', 'exiftool-vendored']) require.resolve(dependency);
     // A native module stays locked in the loading process on Windows even after
     // closing SQLite. Probe in a short-lived child so npm ci can replace it.
     const probe = require('node:child_process').spawnSync(process.execPath,

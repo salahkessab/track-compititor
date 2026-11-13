@@ -10,6 +10,7 @@ import { storagePath } from "./paths";
 import { credentialProtection, type SecretProtection } from "./local-secrets";
 import { mediaMultipart, wordpressRequest, wordpressSite, type WordPressTransport, type WordPressResponse } from "./wordpress-http";
 import { GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
+import { verifiedVariant, readVerifiedImage, METADATA_POLICY } from '../verifiedImages';
 
 export type WordPressProfile = { version: string; protocol: 1; recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string; scheduling?: boolean; timezone?: string };
 type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string; bridge?: WordPressProfile; authMethod?: "application_password" | "bridge_token"; userSlug?: string };
@@ -182,11 +183,19 @@ export class WordPressStore {
   private row(siteUrl: string, hash: string): any {
     return this.store.db.prepare("SELECT * FROM wordpress_media WHERE site_url=? AND sha256=?").get(siteUrl, hash);
   }
+  private verifiedReceipt(row: any) {
+    if (!row?.receipt_path) return false;
+    try {
+      const upload = JSON.parse(fs.readFileSync(storagePath(this.store.root, row.receipt_path), 'utf8')).upload;
+      return upload?.metadata?.state === 'verified' && upload.metadata.policy === METADATA_POLICY && readVerifiedImage(upload.sha256, this.store.root).state === 'verified';
+    } catch { return false; }
+  }
   plan(itemId: string, connectionId: string) {
     const c = this.connection(connectionId), doc = this.document(itemId);
     const images = doc.images.map(image => {
       const row = this.row(c.siteUrl, image.sha256);
-      return { sha256: image.sha256, name: image.name, alt: image.alt, state: row?.state || "pending", sourceUrl: row?.state === "ready" ? row.source_url : null };
+      const verified = this.verifiedReceipt(row);
+      return { sha256: image.sha256, name: image.name, alt: image.alt, state: row?.state === 'ready' && !verified ? 'needs_verification' : row?.state || "pending", sourceUrl: row?.state === "ready" && verified ? row.source_url : null, metadataVerified: verified };
     });
     const ready = images.every(image => image.state === "ready");
     if (ready) {
@@ -217,7 +226,12 @@ export class WordPressStore {
     return media;
   }
   private async uploadImage(c: Connection, image: Image): Promise<Media> {
+    // All entry points (single/bulk/scheduled/copy) pass this gate. No network
+    // upload or receipt reuse may bypass verification of the exact final bytes.
+    const prepared = await new ArtifactStore(this.store).prepareSavedImage(image.bytes);
+    const webp = verifiedVariant(prepared.data, 'webp', this.store.root);
     const previous = this.row(c.siteUrl, image.sha256);
+    if (previous && previous.state !== 'failed' && !this.verifiedReceipt(previous)) throw new Error('This previously uploaded image has no metadata-verification receipt. Its existing WordPress attachment was not changed or marked cleaned. Review that attachment before sending this article.');
     if (previous?.state === "ready") return parseMedia({ id: previous.media_id, source_url: previous.source_url, mime_type: image.mediaType });
     // A saved successful receipt takes precedence over issuing any new upload.
     if (previous?.receipt_path) {
@@ -235,6 +249,7 @@ export class WordPressStore {
     if (!Array.isArray(found)) throw new Error("WordPress could not check existing image uploads.");
     const match = found.find(value => value.slug === slug);
     if (match) {
+      if (!this.verifiedReceipt(previous)) throw new Error('An existing WordPress attachment has no metadata-verification receipt. It was not replaced or marked cleaned. Review that attachment before publishing.');
       const media = parseMedia(match);
       this.store.db.prepare("INSERT OR IGNORE INTO wordpress_media(site_url,sha256,slug,state,updated_at) VALUES(?,?,?,'uncertain',?)").run(c.siteUrl, image.sha256, slug, now());
       return this.ready(c, image.sha256, media);
@@ -242,10 +257,9 @@ export class WordPressStore {
     if (previous && ["uploading", "uncertain"].includes(previous.state)) throw new Error("The earlier upload has an uncertain outcome. Check this website's Media Library; clicking again only checks for the saved image and will not upload a duplicate.");
     const metadata = await sharp(image.bytes, { limitInputPixels: 40_000_000 }).metadata();
     if (`image/${metadata.format}` !== image.mediaType || !metadata.width || !metadata.height || metadata.width * metadata.height > 40_000_000 || (metadata.pages || 1) !== 1) throw new Error("The edited image could not be decoded safely.");
-    // Convert locally for this upload, including older JPEG/PNG articles.
+    // Reuse the exact WebP bytes verified before entering the upload flow.
     // Keep the source checksum as the ledger key/slug so old receipts and
     // uncertain uploads still reconcile instead of creating duplicate media.
-    const webp = await losslessImage(image.bytes, { requireWebP: true });
     if (webp.data.length > 10 * 1024 * 1024) throw new Error("The lossless WebP exceeds the 10 MB upload limit. No image was uploaded; quality was not reduced.");
     const claimed = this.store.db.transaction(() => {
       const current = this.row(c.siteUrl, image.sha256);
@@ -253,11 +267,14 @@ export class WordPressStore {
       this.store.db.prepare("INSERT INTO wordpress_media(site_url,sha256,slug,state,updated_at) VALUES(?,?,?,'uploading',?) ON CONFLICT(site_url,sha256) DO UPDATE SET state='uploading',receipt_path=NULL,error=NULL,updated_at=excluded.updated_at").run(c.siteUrl, image.sha256, slug, now()); return true;
     }).immediate();
     if (!claimed) throw new Error("Another request is handling this image. Try copying again after it finishes.");
+    const receipt = `exports/wordpress-receipts/${c.id}/${image.sha256}-${randomUUID()}.json`;
+    const uploadProof = { sourceSha256: image.sha256, sha256: digest(webp.data), mediaType: 'image/webp', sizeBytes: webp.data.length, metadata: { ...webp, data: undefined }, storage: { pixelsVerified: true, policy: webp.policy } };
+    atomicWrite(this.store.root, receipt, JSON.stringify({ upload: uploadProof }));
+    this.store.db.prepare('UPDATE wordpress_media SET receipt_path=? WHERE site_url=? AND sha256=?').run(receipt, c.siteUrl, image.sha256);
     let response: WordPressResponse | undefined;
     try {
       response = await this.transport(endpoint.href, { method: "POST", ...authentication, ...mediaMultipart(webp.data, `${slug}.webp`, { slug, title: image.alt, alt_text: image.alt }, "image/webp") });
-      const receipt = `exports/wordpress-receipts/${c.id}/${image.sha256}-${randomUUID()}.json`;
-      atomicWrite(this.store.root, receipt, JSON.stringify({ status: response.status, body: response.body.toString("utf8"), upload: { sourceSha256: image.sha256, sha256: digest(webp.data), mediaType: "image/webp", sizeBytes: webp.data.length, storage: webp.storage } }));
+      atomicWrite(this.store.root, receipt, JSON.stringify({ status: response.status, body: response.body.toString("utf8"), upload: uploadProof }));
       this.store.db.prepare("UPDATE wordpress_media SET receipt_path=? WHERE site_url=? AND sha256=?").run(receipt, c.siteUrl, image.sha256);
       const media = parseMedia(readJson(response));
       return this.ready(c, image.sha256, media);

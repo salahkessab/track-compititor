@@ -1,4 +1,6 @@
 "use client";
+import { prepareClientImage, type PreparedImage } from '@/lib/preparedImageClient';
+import { MetadataBadge } from './VerifiedImage';
 
 import { useEffect, useRef, useState } from "react";
 import { encodeRecipeWebp } from "@/lib/recipeWebp";
@@ -43,6 +45,8 @@ async function encodeFiltered(image: HTMLImageElement, adjustments: ImageAdjustm
   if (format === "jpeg") {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Could not prepare the JPEG.");
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 3; i < pixels.length; i += 4) if (pixels[i] !== 255) throw new Error('JPEG cannot preserve transparency. Choose PNG or WebP.');
     ctx.globalCompositeOperation = "destination-over";
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -76,6 +80,8 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [prepared, setPrepared] = useState<PreparedImage | null>(null), [preparing, setPreparing] = useState(false), [attempt, setAttempt] = useState(0);
+  const originalBlob = useRef<Blob | undefined>(undefined);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => {
@@ -85,10 +91,12 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimi
       try {
         const url = typeof source === "string" && !source.startsWith("data:") && !source.startsWith("blob:")
           ? `/api/download?url=${encodeURIComponent(source)}` : source;
-        const blob = typeof url === "string" ? await fetch(url, { signal: controller.signal }).then(response => {
+        const input = typeof url === "string" ? await fetch(url, { signal: controller.signal }).then(response => {
           if (!response.ok) throw new Error("Could not load this image for filtering.");
           return response.blob();
         }) : url;
+        const blob = (await prepareClientImage(input)).blob;
+        originalBlob.current = blob;
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
         const loaded = new Image();
@@ -102,13 +110,15 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimi
     return () => { active = false; controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [source]);
   useEffect(() => {
-    if (!image || !canvas.current) return;
-    const timer = window.setTimeout(() => {
-      try { if (canvas.current) drawFiltered(canvas.current, image, adjustments); }
-      catch (reason) { setError(reason instanceof Error ? reason.message : "Could not preview this filter."); }
-    }, 50);
-    return () => window.clearTimeout(timer);
-  }, [image, adjustments]);
+    if (!image) return;
+    let active = true; setPrepared(null); setPreparing(true); setError('');
+    const timer = window.setTimeout(() => { void (async () => {
+      try { const composed = await encodeFiltered(image, adjustments, format); const result = await prepareClientImage(composed, [], originalBlob.current); if (active) setPrepared(result); }
+      catch (e) { if (active) setError(e instanceof Error ? e.message : 'Image preparation failed.'); }
+      finally { if (active) setPreparing(false); }
+    })(); }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [image, adjustments, format, attempt]);
 
   function choosePreset(id: ImageFilterPreset) {
     const next = IMAGE_FILTER_PRESETS.find(item => item.id === id)!;
@@ -116,10 +126,10 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimi
   }
 
   async function exportImage(download: boolean) {
-    if (!image || busy) return;
+    if (!prepared || busy || preparing) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const blob = await encodeFiltered(image, adjustments, format);
+      const blob = prepared.blob;
       const signature = JSON.stringify({ preset, adjustments, format });
       let saved = false;
       if (onSave && signature !== lastSaved.current) {
@@ -145,7 +155,7 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimi
         <div className="flex min-h-[200px] items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white p-2">
           {!image && !error && <p role="status" className="text-sm text-gray-600">Loading image…</p>}
           {originalUrl && compare && <img src={originalUrl} alt="Original generated image" className="max-h-[64vh] max-w-full object-contain" />}
-          <canvas ref={canvas} role="img" aria-label="Filtered image preview" hidden={!image || compare} className="max-h-[64vh] max-w-full object-contain" />
+          {!compare && (prepared ? <div className="flex flex-col"><MetadataBadge c2pa={prepared.metadata.c2pa.present}/><img src={prepared.imageUrl} alt="Filtered image preview" className="max-h-[64vh] max-w-full object-contain" /></div> : <p role="status">Preparing image…</p>)}
         </div>
         <button type="button" aria-pressed={compare} className={buttonClass + " mt-3"} disabled={!image} onClick={() => setCompare(value => !value)}>{compare ? "Show filtered image" : "Compare with original"}</button>
       </div>
@@ -158,11 +168,11 @@ export function ImageFilterStudio({ source, fileName, onClose, onSave, webOptimi
         <div className="mt-3 space-y-3">{ranges.map(range => <label key={range.key} className="block text-xs text-gray-600"><span className="flex justify-between"><span>{range.label}</span><span>{adjustments[range.key]}</span></span>
           <input type="range" min={range.min} max={range.max} value={adjustments[range.key]} onChange={event => { setAdjustments(current => ({ ...current, [range.key]: Number(event.target.value) })); setNotice(""); }} className="mt-2 w-full accent-[#c97a3d]" /></label>)}</div>
         <label className="mt-5 block text-xs text-gray-600">Download format<select aria-label="Download format" value={format} onChange={event => setFormat(event.target.value as "png" | "jpeg" | "webp")} className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900">{webOptimized && <option value="webp">WebP · high quality, compressed</option>}<option value="png">PNG</option><option value="jpeg">JPEG · high quality</option></select></label>
-        {format === "jpeg" && <p className="mt-2 text-xs text-gray-600">JPEG uses a white background for transparent areas.</p>}
+        {format === "jpeg" && <p className="mt-2 text-xs text-gray-600">For transparent images, choose PNG or WebP.</p>}
         {onSave && <p className="mt-3 text-xs leading-relaxed text-gray-600">Downloading also saves a separate copy in Design History.</p>}
-        {error && <p role="alert" className="mt-3 text-xs text-red-700">{error}</p>}{notice && <p role="status" className="mt-3 text-xs text-green-700">{notice}</p>}
-        <button type="button" disabled={!image || busy} onClick={() => void exportImage(true)} className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-600 px-4 py-3 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40">{busy ? "Preparing image…" : `Download filtered ${format.toUpperCase()}`}</button>
-        {onSave && <button type="button" disabled={!image || busy} onClick={() => void exportImage(false)} className={buttonClass + " mt-2 w-full"}>Save to Design History</button>}
+        {error && <p role="alert" className="mt-3 text-xs text-red-700">{error}<button type="button" className="ml-2 underline" onClick={() => setAttempt(n=>n+1)}>Retry</button></p>}{notice && <p role="status" className="mt-3 text-xs text-green-700">{notice}</p>}
+        <button type="button" disabled={!prepared || busy || preparing} onClick={() => void exportImage(true)} className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-600 px-4 py-3 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40">{preparing ? "Preparing image…" : `Download filtered ${format.toUpperCase()}`}</button>
+        {onSave && <button type="button" disabled={!prepared || busy || preparing} onClick={() => void exportImage(false)} className={buttonClass + " mt-2 w-full"}>Save to Design History</button>}
         <p className="mt-3 text-xs leading-relaxed text-gray-600">Filters change appearance but cannot guarantee AI detection results.</p>
       </div>
     </div>

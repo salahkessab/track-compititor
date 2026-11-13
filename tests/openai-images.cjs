@@ -8,6 +8,10 @@ const { pairDirection, visualDirection, buildOpenAIImagePrompt } = require('../.
 const { HORSE_SCENE_GUIDANCE, horseSceneGuidance, randomFramingsForHorseScene } = require('../.test-build/horseSceneGuidance.js');
 const { sceneSeed } = require('../.test-build/sceneSeed.js');
 const { SYSTEM, userPrompt } = require('../.test-build/prompts.js');
+const fsForImages = require('node:fs'), pathForImages = require('node:path');
+const imageTestRoot = fsForImages.mkdtempSync(pathForImages.join(require('node:os').tmpdir(), 'ri-generation-test-'));
+const savedImageRoot = process.env.IMAGE_ASSET_ROOT; process.env.IMAGE_ASSET_ROOT = imageTestRoot;
+require('node:test').after(() => { if(savedImageRoot===undefined)delete process.env.IMAGE_ASSET_ROOT;else process.env.IMAGE_ASSET_ROOT=savedImageRoot;fsForImages.rmSync(imageTestRoot,{recursive:true,force:true}); });
 const originalFetch = global.fetch;
 const originalKey = process.env.OPENAI_API_KEY;
 afterEach(() => { global.fetch = originalFetch; if (originalKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalKey; });
@@ -19,10 +23,10 @@ test('social sizes reach Sunburst 2.6 generation and edit requests unchanged', a
   const requests = [];
   global.fetch = async (url, init) => {
     requests.push({ url, body: init.body instanceof FormData ? Object.fromEntries(init.body) : JSON.parse(init.body) });
-    return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] });
+    return Response.json({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==' }] });
   };
   for (const size of ['1152x1440', '1024x1536', '1536x864']) {
-    for (const references of [[], ['data:image/png;base64,aW1hZ2U=']]) {
+    for (const references of [[], ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==']]) {
       await generateOpenAIImage({ model: 'gpt-image-2.6-sunburst', prompt: 'Food photo',
         settings: { ...DEFAULT_IMAGE_SETTINGS, size }, references });
       assert.equal(requests.at(-1).body.size, size);
@@ -49,7 +53,7 @@ test('high quality defaults for every OpenAI model and explicit choices remain a
   const requests = [];
   global.fetch = async (_, init) => {
     requests.push(JSON.parse(init.body));
-    return Response.json({data:[{b64_json:'aW1hZ2U='}]});
+    return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]});
   };
   for (const model of OPENAI_IMAGE_MODEL_IDS) {
     assert.equal(validateImageSettings(model, undefined).quality, 'high');
@@ -64,7 +68,7 @@ test('2.6 complexity is optional and sent only when explicitly selected', async 
   const sent = [];
   global.fetch = async (_, init) => {
     sent.push(init.body instanceof FormData ? Object.fromEntries(init.body) : JSON.parse(init.body));
-    return Response.json({data:[{b64_json:'aW1hZ2U='}]});
+    return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]});
   };
   for (const complexity of [undefined, 'default', 'low', 'medium', 'high']) {
     const settings = {...DEFAULT_IMAGE_SETTINGS, ...(complexity ? {complexity} : {})};
@@ -88,7 +92,7 @@ test('recipe image-to-image sends the reference and fixed prompt directly to edi
       assert.equal(form.getAll('image[]').length, 1);
       assert.equal(await form.get('image[]').text(), 'original-food');
       requests.push(form);
-      return Response.json({data:[{b64_json:'aW1hZ2U='}], usage:{input_tokens:100,output_tokens:1372,input_tokens_details:{text_tokens:60,image_tokens:40}}});
+      return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}], usage:{input_tokens:100,output_tokens:1372,input_tokens_details:{text_tokens:60,image_tokens:40}}});
     };
     for (const extraInstructions of [undefined, '  Use a blue ceramic bowl and a silver spoon.  ']) {
       const response = await route.POST(new Request('http://localhost/api/generate', {
@@ -100,7 +104,7 @@ test('recipe image-to-image sends the reference and fixed prompt directly to edi
       assert.equal(response.status, 200, result.error);
       assert.equal(result.usedReference, true);
       assert.equal(result.imageModel, 'gpt-image-2.6-sunburst');
-      assert.equal(result.imageUrl, 'data:image/png;base64,aW1hZ2U=');
+      assert.match(result.imageUrl, /^\/api\/image-assets\/[a-f0-9]{64}$/);
       assert.equal(result.textCost, 0);
       assert.equal(result.searchCost, 0);
       assert.equal(result.imageCost, .04178);
@@ -128,7 +132,7 @@ test('2 in one image sends both food photos to one image edit with the chosen se
     let imageCalls = 0, form;
     global.fetch = async (url, init) => {
       imageCalls++; assert.equal(url, 'https://api.openai.com/v1/images/edits'); form = init.body;
-      return Response.json({data:[{b64_json:'aW1hZ2U='}],usage:{input_tokens:100,output_tokens:1372,input_tokens_details:{text_tokens:60,image_tokens:40}}});
+      return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}],usage:{input_tokens:100,output_tokens:1372,input_tokens_details:{text_tokens:60,image_tokens:40}}});
     };
     const refs=['data:image/png;base64,Zmlyc3QtZm9vZA==','data:image/jpeg;base64,c2Vjb25kLWZvb2Q='];
     const response = await route.POST(new Request('http://localhost/api/generate', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
@@ -136,7 +140,7 @@ test('2 in one image sends both food photos to one image edit with the chosen se
       imageModel:'gpt-image-2.6-sunburst',imageSettings:{size:'1536x1024',quality:'medium',output_format:'png',background:'opaque',moderation:'auto',partial_images:0,complexity:'default'},
     })}));
     const result=await response.json();assert.equal(response.status,200,result.error);
-    assert.equal(result.recipeWorkflow,'twoInOne');assert.equal(result.imageUrl,'data:image/png;base64,aW1hZ2U=');
+    assert.equal(result.recipeWorkflow,'twoInOne');assert.match(result.imageUrl, /^\/api\/image-assets\/[a-f0-9]{64}$/);
     assert.equal(imageCalls,1);assert.equal(calls(),0);
     assert.equal(form.get('n'),'1');assert.equal(form.get('size'),'1536x1024');assert.equal(form.get('quality'),'medium');
     const images=form.getAll('image[]');assert.equal(images.length,2);
@@ -187,7 +191,7 @@ test('recipe image-to-image rejects missing, malformed and oversized input befor
   assert.equal(imageCalls, 0);
 });
 
-test('recipe image-to-image preserves manual settings, streams previews and surfaces failures without retries', async () => {
+test('recipe image-to-image preserves manual settings, streams preparation phases and surfaces failures without retries', async () => {
   process.env.OPENAI_API_KEY = 'unit-test-placeholder';
   const oldFal = process.env.FAL_KEY; delete process.env.FAL_KEY;
   const oldError = console.error;
@@ -202,12 +206,12 @@ test('recipe image-to-image preserves manual settings, streams previews and surf
       const form = init.body;
       for (const [key,value] of Object.entries(payload.imageSettings)) assert.equal(form.get(key), String(value));
       assert.equal(form.get('stream'), 'true');
-      return new Response(chunks('data: {"type":"image_edit.partial_image","b64_json":"cA=="}\n\ndata: {"type":"image_edit.completed","b64_json":"Zg==","output_format":"webp"}\n\n'));
+      return new Response(chunks('data: {"type":"image_edit.partial_image","b64_json":"cA=="}\n\ndata: {"type":"image_edit.completed","b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==","output_format":"webp"}\n\n'));
     };
     const previews = [];
     const result = await readGenerationResponse(await route.POST(request()), (url) => previews.push(url));
-    assert.deepEqual(previews, ['data:image/webp;base64,cA==']);
-    assert.equal(result.imageUrl, 'data:image/webp;base64,Zg==');
+    assert.deepEqual(previews, ['Generating image…', 'Preparing image…']);
+    assert.match(result.imageUrl, /^\/api\/image-assets\/[a-f0-9]{64}$/);
     assert.equal(result.imageSettings.complexity, 'low');
     assert.equal(imageCalls, 1);
     assert.equal(calls(), 0);
@@ -237,10 +241,10 @@ test('generation passes all settings, uses only OpenAI and preserves WebP bytes'
     const body = JSON.parse(init.body);
     assert.deepEqual(body, { model: DEFAULT_IMAGE_MODEL, prompt: 'A horse', n: 1,
       size: '1536x1024', quality: 'max', output_format: 'webp', background: 'transparent', moderation: 'low' });
-    return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }], output_format: 'webp' });
+    return Response.json({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==' }], output_format: 'webp' });
   };
   const result = await generateOpenAIImage(args({ size: '1536x1024', quality: 'max', output_format: 'webp', background: 'transparent', moderation: 'low' }));
-  assert.equal(result.dataUrl, 'data:image/webp;base64,aW1hZ2U=');
+  assert.equal(result.dataUrl, 'data:image/webp;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==');
   assert.equal(result.usage, undefined);
   assert.equal(calls, 1);
 });
@@ -284,11 +288,11 @@ test('provider failure is surfaced once without retrying or substituting models'
   await assert.rejects(generateOpenAIImage(args()), /Model access required/);
   assert.equal(calls, 1);
 });
-test('client consumes fragmented previews and final result; reports stream errors', async () => {
+test('client ignores unverified fragmented previews and returns the final result; reports stream errors', async () => {
   const previews = [];
   const response = (body) => new Response(chunks(body), { headers: { 'content-type': 'application/x-ndjson' } });
   const result = await readGenerationResponse(response('{"type":"partial","imageUrl":"preview"}\n{"type":"result","data":{"imageUrl":"final","description":"🐴"}}\n'), (url) => previews.push(url));
-  assert.deepEqual(previews, ['preview']);
+  assert.deepEqual(previews, []);
   assert.equal(result.imageUrl, 'final');
   assert.equal(result.description, '🐴');
   await assert.rejects(readGenerationResponse(response('{"type":"error","error":"No access"}\n'), () => {}), /No access/);
@@ -343,11 +347,11 @@ test('actual route renders all content types using selected OpenAI settings with
         assert.equal(sent.model, DEFAULT_IMAGE_MODEL);
         assert.equal(sent.quality, 'max');
         assert.equal(sent.output_format, 'webp');
-        return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] });
+        return Response.json({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==' }] });
       };
       const response = await route.POST(new Request('http://localhost/api/generate', { method: 'POST', headers: { accept: 'application/x-ndjson', 'content-type': 'application/json' }, body: JSON.stringify({ contentType, designPin: contentType === 'recipes', imageSettings: { quality: 'max', output_format: 'webp' } }) }));
       const result = await readGenerationResponse(response, () => {});
-      assert.equal(result.imageUrl, 'data:image/webp;base64,aW1hZ2U=');
+      assert.match(result.imageUrl, /^\/api\/image-assets\/[a-f0-9]{64}$/);
       assert.equal(result.falModel, DEFAULT_IMAGE_MODEL);
       assert.equal(result.imageCostIncluded, false);
       assert.equal(result.costIncomplete, true);
@@ -361,7 +365,7 @@ test('route includes actual image, planning, vision, and recipe search usage', a
   const oldFal = process.env.FAL_KEY; delete process.env.FAL_KEY;
   try {
     const { route } = loadRoute();
-    global.fetch = async () => Response.json({ data: [{ b64_json: 'aW1hZ2U=' }], usage: {
+    global.fetch = async () => Response.json({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==' }], usage: {
       input_tokens: 100, output_tokens: 5488, input_tokens_details: { text_tokens: 60, image_tokens: 40 },
     } });
     for (const contentType of ['horses', 'fashion', 'recipes']) {
@@ -419,7 +423,7 @@ test('all 36 scene instructions reach the planner and image request on every Ope
   try {
     const { route, requests } = loadRoute();
     let sent;
-    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     for (const [mode, guidance] of Object.entries(HORSE_SCENE_GUIDANCE)) for (const model of OPENAI_IMAGE_MODEL_IDS) {
       const start = requests.length;
       const res = await route.POST(new Request('http://localhost/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contentType:'horses',sceneMode:mode,imageModel:model,batchIndex:0,batchOffset:0})}));
@@ -439,7 +443,7 @@ test('an uploaded reference and a custom subject keep precedence over the scene 
   try {
     const {route} = loadRoute();
     const bodies = [];
-    global.fetch = async (_, init) => { bodies.push(init.body); return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { bodies.push(init.body); return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     for (const mode of ['snow', 'horse_human_bond', 'river_crossing', 'appaloosa_wildflowers', 'black_horse_rain', 'horse_wall_painting', 'beach_running']) {
       for (const override of [{references:['data:image/png;base64,YQ==']},{customSubject:'a horse on the beach'}]) {
         const res = await route.POST(new Request('http://localhost/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contentType:'horses',sceneMode:mode,batchIndex:0,batchOffset:0,...override})}));
@@ -494,7 +498,7 @@ test('wall painting respects camera framing, transparency, and an explicit subje
   try {
     const {route} = loadRoute();
     let sent;
-    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     async function generate(extra) {
       const res = await route.POST(new Request('http://localhost/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contentType:'horses',sceneMode:'horse_wall_painting',batchIndex:0,batchOffset:0,...extra})}));
       assert.equal(res.status,200);
@@ -542,7 +546,7 @@ test('successive pair requests send distinct composition directions for every Op
     const { route } = loadRoute();
     for (const model of OPENAI_IMAGE_MODEL_IDS) {
       const prompts = [];
-      global.fetch = async (_, init) => { prompts.push(JSON.parse(init.body).prompt); return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+      global.fetch = async (_, init) => { prompts.push(JSON.parse(init.body).prompt); return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
       for (const batchIndex of [0, 1]) {
         const response = await route.POST(new Request('http://localhost/api/generate', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({contentType:'horses',sceneMode:'couple',framing:'portrait',imageModel:model,batchIndex,batchOffset:0})}));
         const result = await response.json();
@@ -590,7 +594,7 @@ test('reference modes and explicit subjects reach both the planner and image edi
   try {
     const {route, requests} = loadRoute();
     let sent;
-    global.fetch = async (_, init) => { sent = init.body; return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { sent = init.body; return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     for (const contentType of ['horses','fashion']) for (const [imgStrength, expected] of [[.5,/Stay close to the reference/],[.7,/balanced changes/],[.9,/creative inspiration/]]) {
       const before = requests.length;
       const res = await route.POST(new Request('http://localhost/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contentType,imgStrength,references:['data:image/png;base64,YQ==','data:image/png;base64,Yg==']})}));
@@ -617,7 +621,7 @@ test('all recipe design styles use the selected canvas without a conflicting fix
   try {
     const {route, requests} = loadRoute();
     let sent;
-    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     const styles = ['vintage_notebook','bold_hero','clean_editorial','rustic_farmhouse','step_by_step_mini','ingredient_spotlight','scoop_serve','hero_recipe_card_combo','story_card_facebook_post'];
     for (const style of styles) for (const imageModel of OPENAI_IMAGE_MODEL_IDS) {
       const before = requests.length;
@@ -638,7 +642,7 @@ test('mural close crops and transparent pairs reach the planner without forcing 
   try {
     const {route, requests} = loadRoute();
     let sent;
-    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { sent = JSON.parse(init.body); return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     let res = await route.POST(new Request('http://localhost/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contentType:'horses',sceneMode:'mural',framing:'eye'})}));
     let result = await res.json();
     assert.equal(res.status,200);
@@ -660,7 +664,7 @@ test('artwork references keep their medium and an explicitly selected crop', asy
   try {
     const {route, requests} = loadRoute({visualMedium:'artwork', prompt:'Watercolor horse with flowers'});
     let sent;
-    global.fetch = async (_, init) => { sent = init.body; return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { sent = init.body; return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     const res = await route.POST(new Request('http://localhost/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
       contentType:'horses', framing:'wide', imgStrength:.5, references:['data:image/png;base64,YQ=='],
     })}));
@@ -679,7 +683,7 @@ test('balanced references vary across a batch while stay-close references keep t
   try {
     const {route} = loadRoute({visualMedium:'photograph'});
     const prompts = [];
-    global.fetch = async (_, init) => { prompts.push(init.body.get('prompt')); return Response.json({data:[{b64_json:'aW1hZ2U='}]}); };
+    global.fetch = async (_, init) => { prompts.push(init.body.get('prompt')); return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]}); };
     for (const strength of [.7, .5]) for (const batchIndex of [0,1]) {
       const res = await route.POST(new Request('http://localhost/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
         contentType:'horses', imgStrength:strength, batchIndex, batchOffset:0, framing:'random', references:['data:image/png;base64,YQ=='],

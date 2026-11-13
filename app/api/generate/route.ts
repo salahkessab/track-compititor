@@ -5,6 +5,8 @@ import { withCostLedger, recordTextUsage, recordOpenAIImage, markCostIncomplete,
 import { isOpenAIImageModel, validateImageSettings, type OpenAIImageSettings } from "@/lib/openaiImageSettings";
 import { imageModelsFor, OPENAI_MODELS } from "@/lib/config";
 import { NextResponse } from "next/server";
+import { finalizeGeneration, preparationFailure } from '@/lib/imageFinalization';
+import { checkImageProcessing } from '@/lib/imageMetadata';
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { fal } from "@fal-ai/client";
@@ -621,10 +623,8 @@ const RECIPE_PIN_RENDERERS: Record<RecipePinStyle, (plan: Plan) => string> = {
 };
 
 async function storeOpenAIImage(dataUrl: string): Promise<string> {
-  // Optional hosting preserves posting CSV compatibility; OpenAI alone returns bytes.
-  if (!process.env.FAL_KEY) return dataUrl;
-  try { return await uploadDataUri(dataUrl); }
-  catch { console.warn("Image hosting unavailable; returning image bytes"); return dataUrl; }
+  // Private until the final backend verification gate succeeds.
+  return dataUrl;
 }
 
 async function analyzeViralClaude(imageUrl: string, model: string): Promise<{ viralScore: string; viralReason: string }> {
@@ -1146,7 +1146,15 @@ async function ensureStoryCardCaption(
 }
 
 async function handleGenerate(req: Request, onPartial?: PartialImageHandler) {
-  return withCostLedger(() => handleGenerateWithLedger(req, onPartial));
+  return withCostLedger(async () => {
+    const captionOnly = (await req.clone().json().catch(() => ({}))).captionOnly === true;
+    try { if (!captionOnly) await checkImageProcessing(); } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : 'Image preparation is unavailable.' }, { status: 503 }); }
+    const response = await handleGenerateWithLedger(req);
+    if (!response.ok || captionOnly) return response;
+    onPartial?.('preparing');
+    try { return NextResponse.json(await finalizeGeneration(await response.json())); }
+    catch (e) { return NextResponse.json(preparationFailure(e) || { error: e instanceof Error ? e.message : 'Image preparation failed.' }, { status: 422 }); }
+  });
 }
 
 async function handleGenerateWithLedger(req: Request, onPartial?: PartialImageHandler) {
@@ -1556,9 +1564,10 @@ export async function POST(req: Request) {
     async start(controller) {
       const send = (value: unknown) => { if (!cancelled) controller.enqueue(encoder.encode(JSON.stringify(value) + "\n")); };
       try {
-        const response = await handleGenerate(req, (imageUrl) => send({ type: "partial", imageUrl }));
+        send({ type: 'status', phase: 'generating' });
+        const response = await handleGenerate(req, () => send({ type: 'status', phase: 'preparing' }));
         const data = await response.json();
-        send(response.ok ? { type: "result", data } : { type: "error", error: data.error });
+        send(response.ok ? { type: "result", data } : { type: "error", ...data });
       } catch (error) { send({ type: "error", error: error instanceof Error ? error.message : "Generation failed" }); }
       finally { if (!cancelled) controller.close(); }
     },

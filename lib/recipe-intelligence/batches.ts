@@ -1,4 +1,5 @@
 import { excludedPhotoFile } from "./photoExclusions";
+import { checkImageProcessing } from '../imageMetadata';
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -18,10 +19,12 @@ import { deletionAvailability } from "./deleteGeneration";
 import { IMAGE_STORAGE_VERSION } from "./imageStorage";
 import { editorialPayload, editorialWritingContext, validateEditorialBrief, EDITORIAL_VERSION } from "./editorial";
 import { boundedSourceReading } from "./recipe-context";
+import { refineArticle, REFINEMENT_VERSION, REFINEMENT_INPUT_LIMIT } from './refinement';
+import { articleDocument } from './article-document';
 
 const now = () => new Date().toISOString();
 const IMAGE_STAGES = ["featured", "alternate", "pinterest"];
-const STAGES = ["source", "research", "select", "article", "correction", "save_article", ...IMAGE_STAGES];
+const STAGES = ["source", "research", "select", "article", "correction", "refinement", "save_article", ...IMAGE_STAGES];
 export type Selection = { recipeId?: number; importId?: string; basis?: Basis; independentResearch?: boolean; alternativeUrls?: string[] };
 type ResearchSource = { url: string; recipe: RecipeSnapshot | null; error?: string; eligible?: boolean; reason?: string };
 class BudgetError extends Error {}
@@ -69,11 +72,11 @@ export class BatchStore {
     const lines = choices.flatMap(c => {
       const recipe: RecipeSnapshot = JSON.parse(c.record.recipe_json);
       const adaptive = settings.articleFormat === "master_recipe_v1";
-      return [...(adaptive ? ["editorial"] : []), "article", ...(settings.correction ? ["correction"] : []), ...(c.research && !c.alternativeUrls.length ? ["research"] : []), ...(settings.images ? IMAGE_STAGES : [])].map(kind => {
+      return [...(adaptive ? ["editorial"] : []), "article", ...(settings.correction ? ["correction"] : []), "refinement", ...(c.research && !c.alternativeUrls.length ? ["research"] : []), ...(settings.images ? IMAGE_STAGES : [])].map(kind => {
         const payload = IMAGE_STAGES.includes(kind) ? imagePayload(recipe, settings, kind) : kind === "editorial" ? editorialPayload(recipe, settings) : writingPayload(recipe, settings);
         // The correction draft does not exist yet. Allow 12 KB for its prose, references and warnings.
         const knownBytes = Buffer.byteLength(JSON.stringify(payload)) + (kind === "correction" ? 12000 : 0) + (adaptive ? kind === "editorial" ? 15000 : 8500 : 0);
-        const inputBytes = kind === "research" ? 32000 : c.research ? Math.max(32000, knownBytes) : knownBytes;
+        const inputBytes = kind === 'refinement' ? REFINEMENT_INPUT_LIMIT : kind === "research" ? 32000 : c.research ? Math.max(32000, knownBytes) : knownBytes;
         return { recipeId: c.recipeId, kind, inputBytes, ...stageEstimate(kind, settings, inputBytes) };
       });
     });
@@ -120,9 +123,10 @@ export class BatchStore {
       ...i, source: i.source_json ? JSON.parse(i.source_json) : null, research: JSON.parse(i.research_json), warnings: JSON.parse(i.warnings_json), article: i.article_json ? JSON.parse(i.article_json) : null,
       editorialBrief: (() => { const row = this.store.db.prepare("SELECT result_json FROM content_stages WHERE item_id=? AND kind='editorial' AND state='done'").get(i.id) as any; return row?.result_json ? JSON.parse(row.result_json) : null; })(),
       deletion: deletionAvailability(this.store, { ...i, batch_status: b.status }),
+      publications: (this.store.db.prepare("SELECT site_url,state,result_json,updated_at FROM wordpress_exports WHERE item_id=?").all(i.id) as any[]).map(p => ({ siteUrl: p.site_url, state: p.state, result: p.result_json ? JSON.parse(p.result_json) : null, checkedAt: p.updated_at })),
       stages: this.store.db.prepare("SELECT id,kind,state,error,attempt FROM content_stages WHERE item_id=? ORDER BY id").all(i.id),
-      files: (this.store.db.prepare("SELECT id,name,size_bytes,media_type FROM artifacts WHERE item_id=? ORDER BY name").all(i.id) as any[]).filter(f => !excludedPhotoFile(this.store, i.id, f.name)),
-      photos: (this.store.db.prepare("SELECT p.*,s.state FROM content_photos p LEFT JOIN content_stages s ON s.item_id=p.item_id AND s.kind='photo:'||p.reference_id WHERE p.item_id=? ORDER BY p.position").all(i.id) as any[]).map(p => ({ ...p, relative_path: undefined, analysis: p.analysis_json ? JSON.parse(p.analysis_json) : null })),
+      files: (this.store.db.prepare("SELECT id,name,size_bytes,media_type FROM artifacts WHERE item_id=? ORDER BY name").all(i.id) as any[]).filter(f => !excludedPhotoFile(this.store, i.id, f.name)).map(f => ({ ...f, ...(f.media_type.startsWith('image/') ? { metadataVerified: this.artifacts.metadataVerified(f.id) } : {}) })),
+      photos: (this.store.db.prepare("SELECT p.*,s.state,s.result_json FROM content_photos p LEFT JOIN content_stages s ON s.item_id=p.item_id AND s.kind='photo:'||p.reference_id WHERE p.item_id=? ORDER BY p.position").all(i.id) as any[]).map(p => ({ ...p, result_json: undefined, phase: p.result_json ? JSON.parse(p.result_json).phase : undefined, relative_path: undefined, analysis: p.analysis_json ? JSON.parse(p.analysis_json) : null })),
     }));
     return { ...b, settings: JSON.parse(b.settings_json), quote: JSON.parse(b.quote_json), budget: this.budget(id), items,
       calls: this.store.db.prepare("SELECT id,stage_id,model,operation,state,reserved_usd,actual_usd,provider_id,created_at,resolution FROM api_calls WHERE batch_id=? ORDER BY created_at").all(id) };
@@ -139,6 +143,7 @@ export class BatchStore {
       .run(state, result === null ? null : JSON.stringify(result), error, now(), itemId, kind);
   }
   next(itemId: string, kind: string) {
+    if (kind === 'save_article' && this.store.db.prepare("SELECT 1 FROM content_stages WHERE item_id=? AND kind='refinement' AND state='waiting'").get(itemId)) kind = 'refinement';
     if (kind === "article" && this.store.db.prepare("SELECT 1 FROM content_stages WHERE item_id=? AND kind='editorial' AND state='waiting'").get(itemId)) kind = "editorial";
     this.stage(itemId, kind, "queued"); this.store.db.prepare("UPDATE content_items SET state='queued',error=NULL WHERE id=?").run(itemId);
     this.store.db.prepare("UPDATE content_batches SET status='running' WHERE id=(SELECT batch_id FROM content_items WHERE id=?) AND status='needs_review'").run(itemId);
@@ -203,6 +208,7 @@ export class BatchStore {
       if (kind === "article") {
         this.store.db.prepare("UPDATE content_items SET correction_attempted=0 WHERE id=?").run(item.id);
         this.store.db.prepare("UPDATE content_stages SET attempt=attempt+1 WHERE item_id=? AND kind='correction'").run(item.id);
+        this.store.db.prepare("UPDATE content_stages SET attempt=attempt+1,state='waiting',result_json=NULL,error=NULL WHERE item_id=? AND kind='refinement'").run(item.id);
       }
     }
     this.stage(itemId, kind, "queued"); this.store.db.prepare("UPDATE content_items SET state='queued',error=NULL WHERE id=?").run(itemId);
@@ -267,12 +273,13 @@ export class BatchEngine {
     // never turn a local retry into a second paid generation.
     const previous = db.prepare("SELECT * FROM api_calls WHERE stage_id=? AND attempt=? ORDER BY rowid DESC LIMIT 1").get(stage.id, stage.attempt) as any;
     if (previous?.response_path) return JSON.parse(fs.readFileSync(storagePath(this.batches.store.root, previous.response_path), "utf8")).body;
+    if (operation === 'image') await checkImageProcessing();
     if (previous && ["dispatched", "uncertain"].includes(previous.state)) throw new ProviderFailure("This paid request has an uncertain outcome and will not be repeated automatically.");
     const requestPath = `research/requests/${item.id}-${digest(stage.kind).slice(0, 16)}-${digest(item.config_json || "legacy").slice(0, 16)}-${stage.attempt}.json`;
     if (fs.existsSync(storagePath(this.batches.store.root, requestPath))) payload = JSON.parse(fs.readFileSync(storagePath(this.batches.store.root, requestPath), "utf8"));
     else atomicWrite(this.batches.store.root, requestPath, JSON.stringify(payload));
     const config = item.config_json ? JSON.parse(item.config_json) : {};
-    db.prepare("UPDATE content_stages SET request_path=?,profile_version=? WHERE id=?").run(requestPath, stage.kind === "editorial" ? config.editorialProfile || EDITORIAL_VERSION : stage.kind.startsWith("photo:") ? config.photoProfile || PHOTO_PROFILE_VERSION : stage.kind.startsWith("analysis:") ? config.analysisProfile || ANALYSIS_PROFILE_VERSION : config.writingProfile || writingProfile(settings.articleFormat), stage.id);
+    db.prepare("UPDATE content_stages SET request_path=?,profile_version=? WHERE id=?").run(requestPath, stage.kind === 'refinement' ? REFINEMENT_VERSION : stage.kind === "editorial" ? config.editorialProfile || EDITORIAL_VERSION : stage.kind.startsWith("photo:") ? config.photoProfile || PHOTO_PROFILE_VERSION : stage.kind.startsWith("analysis:") ? config.analysisProfile || ANALYSIS_PROFILE_VERSION : config.writingProfile || writingProfile(settings.articleFormat), stage.id);
     const requestHash = digest(JSON.stringify({ payload, attempt: stage.attempt }));
     const check = db.prepare("SELECT checked_at FROM model_checks WHERE model=?").get(payload.model) as any;
     if (!check || Date.now() - Date.parse(check.checked_at) > 24 * 3600000) await checkModels(this.batches.store, settings);
@@ -416,9 +423,27 @@ export class BatchEngine {
         if (brief && rawArticle.blog) for (const key of brief.omitSections) rawArticle.blog[key] = [];
         const checked = validateArticle(rawArticle, source, settings.articleFormat || "compact_v1");
         if (brief) checked.article.sectionOrder = brief.sectionOrder;
+        b.artifacts.put(item, stage.kind === 'article' ? 'article-generated.json' : 'article-corrected.json', JSON.stringify(checked.article, null, 2), 'application/json');
+        // forkVersion copies the previous artifacts for image reuse. Replace
+        // its canonical reference with THIS writer result, never the older draft.
+        b.artifacts.put(item, 'article-canonical.json', JSON.stringify({ article: checked.article, recipe: source }, null, 2), 'application/json');
         db.prepare("UPDATE content_items SET article_json=?,warnings_json=? WHERE id=?").run(JSON.stringify(checked.article), JSON.stringify([...new Set([...(source.sourceNotes || []), ...checked.warnings, ...(checked.article.editorialNotes || []).map(note => `Editorial note: ${note}`)])]), item.id); done();
         if (stage.kind === "article" && checked.warnings.length && settings.correction && !item.correction_attempted) b.next(item.id, "correction");
         else b.next(item.id, "save_article");
+      } else if (stage.kind === 'refinement') {
+        const canonical = { article: JSON.parse(item.article_json), recipe: source };
+        // Save before dispatch. Retries compare with the primary writer. New
+        // explicitly requested generations have separate artifact versions.
+        const saved = db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name='article-canonical.json' AND relative_path LIKE ?").get(item.id, b.artifacts.directory(item) + '%') as any;
+        const reference = saved ? JSON.parse(b.artifacts.read(saved.id).data.toString('utf8')) : canonical;
+        if (!saved) b.artifacts.put(item, 'article-canonical.json', JSON.stringify(reference, null, 2), 'application/json');
+        const result = await refineArticle(reference, 'recipe', settings.textModel, payload => this.paid(stage, item, settings, 'text', payload, signal));
+        b.artifacts.put(item, 'editorial-refinement.json', JSON.stringify(result.report, null, 2), 'application/json');
+        result.article.wordCount = articleDocument(result.article, source).wordCount;
+        const warnings = JSON.parse(item.warnings_json);
+        if (result.report.status === 'rejected') warnings.push(result.report.reason);
+        db.prepare('UPDATE content_items SET article_json=?,warnings_json=? WHERE id=?').run(JSON.stringify(result.article), JSON.stringify([...new Set(warnings)]), item.id);
+        done(result.report); b.next(item.id, 'save_article');
       } else if (stage.kind === "save_article") {
         b.artifacts.article(item, JSON.parse(item.article_json), source); done();
         if (!settings.images) { IMAGE_STAGES.forEach(k => b.stage(item.id, k, "skipped")); db.prepare("UPDATE content_items SET state='completed' WHERE id=?").run(item.id); }

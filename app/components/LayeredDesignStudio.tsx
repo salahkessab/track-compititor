@@ -1,4 +1,6 @@
 "use client";
+import { VerifiedImage } from "./VerifiedImage";
+import { prepareClientImage } from "@/lib/preparedImageClient";
 
 import { useEffect, useRef, useState } from "react";
 import { LayeredDesignEditor, type LayeredOutput, type LayerProject } from "./LayeredDesignEditor";
@@ -22,10 +24,11 @@ function ImageBlob({ blob, alt, className }: { blob: Blob; alt: string; classNam
   const [url, setUrl] = useState("");
   useEffect(() => { const next = URL.createObjectURL(blob); setUrl(next); return () => URL.revokeObjectURL(next); }, [blob]);
   // eslint-disable-next-line @next/next/no-img-element
-  return url ? <img src={url} alt={alt} className={className} /> : null;
+  return <VerifiedImage source={blob} alt={alt} className={className} />;
 }
 
 async function download(blob: Blob) {
+  blob = (await prepareClientImage(blob)).blob;
   const ext = blob.type === "image/jpeg" ? "jpg" : "png";
   const file = new File([blob], `layered-design-1200x1500.${ext}`, { type: blob.type });
   if (window.matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; }
@@ -93,6 +96,7 @@ export function LayeredDesignStudio({ active }: { active: boolean }) {
   }
 
   async function saveDesign(output: LayeredOutput) {
+    output = {...output, blob: (await prepareClientImage(output.blob)).blob};
     if (!editor) throw new Error("The editor is no longer open.");
     const saved: LayeredRecord = { id: crypto.randomUUID(), title: output.title, ingredients: output.ingredients,
       createdAt: new Date().toISOString(), image: output.blob, family: editor.family, styleId: editor.styleId, project: output.project };
@@ -100,6 +104,7 @@ export function LayeredDesignStudio({ active }: { active: boolean }) {
   }
 
   async function saveFiltered(output: FilteredImage) {
+    output = {...output, blob: (await prepareClientImage(output.blob)).blob};
     if (!filterTarget) throw new Error("The original design is no longer available.");
     const saved: LayeredRecord = { ...filterTarget, id: crypto.randomUUID(), createdAt: new Date().toISOString(), image: output.blob, project: undefined, filtered: true };
     await saveLayeredDesign(saved); setHistory(items => [saved, ...items]);

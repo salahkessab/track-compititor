@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { imageAssetFetch, assetUrl } = require('./helpers/image-asset-fetch.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -32,7 +33,7 @@ test('separate Recipe Designs tabs can generate concurrently without a confirmat
   const originals = Object.fromEntries(globals.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;
   for (const [name, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement, File: dom.window.File, crypto: webcrypto, IS_REACT_ACT_ENVIRONMENT: true })) {
+    HTMLElement: dom.window.HTMLElement, File: require('node:buffer').File, crypto: webcrypto, IS_REACT_ACT_ENVIRONMENT: true })) {
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
   }
   URL.createObjectURL = () => 'blob:local-test'; URL.revokeObjectURL = () => {};
@@ -57,7 +58,7 @@ test('separate Recipe Designs tabs can generate concurrently without a confirmat
     releasePaidJob: async id => { if (stores.locks.get('active')?.id === id) stores.locks.delete('active'); },
   };
   const requests = [], pending = [];
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = imageAssetFetch(async (url, init) => {
     if (url === '/api/recipe-designs/generate') {
       const body = JSON.parse(init.body); requests.push(body);
       return await new Promise(resolve => pending.push({
@@ -67,7 +68,7 @@ test('separate Recipe Designs tabs can generate concurrently without a confirmat
     }
     if (String(url).startsWith('data:')) return new Response('art', { headers: { 'content-type': 'image/png' } });
     throw new Error(`Unexpected network request: ${url}`);
-  };
+  });
   const mocks = {
     './OpenAIImageControls': { OpenAIImageControls: () => null },
     './ImageFilterStudio': { ImageFilterStudio: () => null },
@@ -116,7 +117,7 @@ test('separate Recipe Designs tabs can generate concurrently without a confirmat
     assert.ok(tabs.every(tab => /2 reserved\/in progress/.test(tab.textContent)));
     await React.act(async () => { pending.splice(0).forEach(request => request.succeed()); await settle(); });
     assert.equal(stores.jobs.size, 2);
-    assert.ok([...stores.jobs.values()].every(job => job.status === 'complete' && job.costs.length === 1));
+    assert.ok([...stores.jobs.values()].every(job => job.status === 'complete' && job.costs.length === 1),JSON.stringify([...stores.jobs.values()]));
     assert.equal(stores.history.size, 2);
     assert.ok(tabs.every(tab => /Design History \(2\)/.test(tab.textContent)));
     assert.ok(tabs.every(tab => !generate(tab).disabled));

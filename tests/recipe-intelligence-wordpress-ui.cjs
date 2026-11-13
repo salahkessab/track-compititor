@@ -113,3 +113,23 @@ test('publishing requires a reviewed destination and explicit live choice, while
   assert.equal(calls.at(-1).body.status, 'publish'); assert.equal(calls.at(-1).body.confirmPublish, true); assert.equal(calls.at(-1).body.reviewHash, 'review');
   await ui.choose(sites[1].id); assert.equal(ui.control('Publish live'), undefined); assert.equal(ui.control('Save draft'), undefined);
 });
+
+test('detail controls follow publication from the library and isolate destinations', async t => {
+  const ui = await setup(t), calls = [];
+  const saved = { postId: 7, status: 'publish', editUrl: 'https://first.example/wp-admin/post.php?post=7', postUrl: 'https://first.example/soup' };
+  const request = async (route, method = 'GET') => {
+    calls.push({ route, method });
+    return { title: 'Soup', siteUrl: sites[0].siteUrl, documentHash: 'hash', reviewHash: 'review', ready: true, images: [], profile: { ready: true, recipeCardLabel: 'WP Recipe Maker', canPublish: true } };
+  };
+  const render = publications => ui.root.render(React.createElement(ui.WordPressCopy, { itemId: 'recipe', connections: sites, request, publications }));
+  await React.act(async () => render([]));
+  await ui.choose(sites[0].id); await ui.click('Prepare WordPress post');
+  assert.ok(ui.control('Save draft')); assert.ok(ui.control('Publish live'));
+  await React.act(async () => render([{ siteUrl: sites[0].siteUrl, state: 'ready', result: saved, checkedAt: '2026-11-13T00:00:00Z' }]));
+  assert.equal(ui.control('Save draft'), undefined); assert.equal(ui.control('Publish live'), undefined);
+  assert.match(document.body.textContent, /Published · Post 7/);
+  assert.doesNotMatch(document.body.textContent, /Ready to send/);
+  assert.equal(calls.filter(c => c.method === 'POST').length, 0);
+  await ui.choose(sites[1].id);
+  assert.doesNotMatch(document.body.textContent, /Published · Post 7/);
+});

@@ -73,7 +73,7 @@ test('known-source batch quotes reflect request size and can fit a twenty-cent m
   const f = await contentFixture(t); const row = f.seed();
   const settings = { ...f.defaults, articleFormat: 'blog_1000_1200_v1', images: true, imageSettings: { ...f.defaults.imageSettings, quality: 'medium' } };
   const b = f.batches.create([{ recipeId: row.id }], settings);
-  assert.ok(b.quote.estimated < 0.20); assert.equal(b.quote.lines.length, 5);
+  assert.ok(b.quote.estimated < 0.20); assert.equal(b.quote.lines.length, 6); assert.ok(b.quote.lines.some(l => l.kind === 'refinement'));
   const line = kind => b.quote.lines.find(x => x.kind === kind);
   assert.equal(line('correction').inputBytes - line('article').inputBytes, 12000);
   assert.ok(line('featured').inputBytes < line('article').inputBytes);
@@ -82,7 +82,7 @@ test('known-source batch quotes reflect request size and can fit a twenty-cent m
   const longer = f.batches.create([{ recipeId: row.id }], settings);
   assert.ok(longer.quote.estimated > b.quote.estimated);
   const researched = f.batches.create([{ recipeId: row.id, basis: 'best_complete' }], settings);
-  assert.ok(researched.quote.lines.every(x => x.inputBytes >= 32000));
+  assert.ok(researched.quote.lines.every(x => x.kind === 'refinement' ? x.inputBytes === 24000 : x.inputBytes >= 32000));
   assert.equal(f.providerCalls.length, 0);
   // Keep the actual scheduling guard; a new estimate is never authority to overspend.
   f.approve(b, 0.20); await f.drainBatch();

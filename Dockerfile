@@ -9,6 +9,7 @@ COPY . .
 RUN npm run build:recipe-intelligence && npm run build
 
 FROM node:24-bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends perl && rm -rf /var/lib/apt/lists/*
 ARG APP_REVISION=""
 LABEL org.opencontainers.image.revision=$APP_REVISION
 WORKDIR /app

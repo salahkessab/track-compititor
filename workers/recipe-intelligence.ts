@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DecorStore } from '../lib/recipe-intelligence/decor';
 import { IntelligenceStore } from "../lib/recipe-intelligence/database";
 import { DiscoveryEngine } from "../lib/recipe-intelligence/engine";
 import { PublicDiscoveryFetcher, pause } from "../lib/recipe-intelligence/fetch";
@@ -22,7 +23,8 @@ async function main() {
   let importTask: { controller: AbortController; promise: Promise<void> } | null = null;
   let storageTask: Promise<void> | null = null;
   let backupTask: Promise<void> | null = null;
-  const stop = () => { stopping = true; for (const task of active.values()) task.controller.abort(); reportTask?.controller.abort(); contentTask?.controller.abort(); importTask?.controller.abort(); };
+  let decorTask: { controller: AbortController; promise: Promise<void> } | null = null;
+  const stop = () => { stopping = true; for (const task of active.values()) task.controller.abort(); reportTask?.controller.abort(); contentTask?.controller.abort(); importTask?.controller.abort(); decorTask?.controller.abort(); };
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
   process.on("message", message => { if (message === "stop") stop(); });
   process.on("disconnect", stop);
@@ -36,6 +38,7 @@ async function main() {
     const reports = new ReportStore(store); const reportEngine = new ReportEngine(reports, fetcher, owner);
     const batches = new BatchStore(store); const batchEngine = new BatchEngine(batches, fetcher, new OpenAIContentProvider(store), owner);
     const imports = new ImportStore(store); imports.recover(); reports.recover(); batches.recover();
+    const decor = new DecorStore(store); decor.recover();
     const storage = objectStorage(store);
     const backup = new ServerBackup(store);
     let heartbeat = 0;
@@ -48,7 +51,7 @@ async function main() {
       if (process.env.RECIPE_INTELLIGENCE_WORKER_PAUSED === "1") { await pause(1000); continue; }
       const deployment = deploymentPause(store.root);
       if (deployment) {
-        if (!active.size && !reportTask && !contentTask && !importTask && !storageTask && !backupTask) acknowledgeDeployment(store.root, deployment.revision);
+        if (!active.size && !reportTask && !contentTask && !importTask && !storageTask && !backupTask && !decorTask) acknowledgeDeployment(store.root, deployment.revision);
         await pause(1000); continue;
       }
       for (const [siteId, task] of active) {
@@ -78,12 +81,13 @@ async function main() {
         })().finally(() => { contentTask = null; }); contentTask = { controller, promise }; }
       }
       if (!importTask) { const job = imports.claim(owner); if (job) { const controller = new AbortController(); const promise = imports.process(job.id, fetcher, controller.signal).finally(() => { importTask = null; }); importTask = { controller, promise }; } }
+      if (!decorTask) { const id = decor.claim(); if (id) { const controller = new AbortController(); const promise = decor.process(id, fetcher, new OpenAIContentProvider(store), controller.signal).finally(() => { decorTask = null; }); decorTask = { controller, promise }; } }
       if (!storageTask) storageTask = storage.tick().finally(() => { storageTask = null; });
       if (!backupTask) backupTask = backup.tick().finally(() => { backupTask = null; });
       await Promise.race([pause(active.size || reportTask || contentTask ? 250 : 1000), ...[...active.values()].map(task => task.promise)]);
     }
   } finally {
-    stop(); await Promise.allSettled([...active.values()].map(task => task.promise).concat(reportTask ? [reportTask.promise] : [], contentTask ? [contentTask.promise] : [], importTask ? [importTask.promise] : [], storageTask ? [storageTask] : [], backupTask ? [backupTask] : []));
+    stop(); await Promise.allSettled([...active.values()].map(task => task.promise).concat(reportTask ? [reportTask.promise] : [], contentTask ? [contentTask.promise] : [], importTask ? [importTask.promise] : [], storageTask ? [storageTask] : [], backupTask ? [backupTask] : [], decorTask ? [decorTask.promise] : []));
     store.releaseLease(owner); store.close();
   }
 }

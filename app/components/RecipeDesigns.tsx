@@ -1,4 +1,6 @@
 "use client";
+import { VerifiedImage } from "./VerifiedImage";
+import { prepareClientImage, resolveImageResponse } from "@/lib/preparedImageClient";
 
 import { useEffect, useRef, useState } from "react";
 import { prepareRecipeDownload } from "@/lib/recipeWebp";
@@ -48,7 +50,7 @@ function ImageBlob({ blob, alt, className }: { blob: Blob; alt: string; classNam
   const [url,setUrl] = useState("");
   useEffect(() => { const next=URL.createObjectURL(blob); setUrl(next); return () => URL.revokeObjectURL(next); },[blob]);
   // eslint-disable-next-line @next/next/no-img-element
-  return url ? <img src={url} alt={alt} className={className} /> : null;
+  return <VerifiedImage source={blob} alt={alt} className={className} />;
 }
 function ReferenceDNA({plan}:{plan:DesignPlan}) {
   if(plan.evidenceMode!=="uploaded_reference" || !plan.styleDNA)return null;
@@ -88,6 +90,7 @@ class DesignRequestError extends Error {
 async function post(path: string, body: unknown, signal: AbortSignal) {
   const response = await fetch(path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),signal});
   const data = await response.json().catch(() => ({}));
+  if (!response.ok && data.assetId && data.retryable) return resolveImageResponse(response, data);
   if (!response.ok) {
     const outcome = data.outcome === "reported" || data.outcome === "not_dispatched" ? data.outcome : "unknown";
     const usage = data.usage && Number.isFinite(data.usage.cost) && typeof data.usage.costIncomplete === "boolean" ? data.usage as Cost : undefined;
@@ -96,7 +99,9 @@ async function post(path: string, body: unknown, signal: AbortSignal) {
   return data;
 }
 async function download(blob: Blob, name: string, format?: "png" | "webp") {
-  if (format) { blob = await prepareRecipeDownload(blob, format); name = name.replace(/\.[^.]+$/, "." + format); }
+  const prepared = await prepareClientImage(blob, ["png", "webp"]);
+  blob = format ? await (await fetch(prepared.variants[format])).blob() : prepared.blob;
+  if (format) name = name.replace(/\.[^.]+$/, "." + format);
   const file=new File([blob],name,{type:blob.type || "image/png"});
   if (window.matchMedia("(pointer: coarse)").matches && navigator.canShare?.({files:[file]})) { await navigator.share({files:[file]}); return; }
   const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),30_000);
@@ -216,7 +221,7 @@ export function RecipeDesigns() {
     if(notes.length>1000)throw new Error("Notes must be at most 1000 characters.");
     if(previewStyleId===INGREDIENT_CARD_STYLE_ID)validateRecipeIngredients(ingredients);
   }
-  async function record(result: Result) {const saved={...result,designSignature:result.qa.designSignature};setSelected(saved); await saveLocal("history",saved.id,saved); setHistory(h=>mergeHistory(h,saved));announce("history",saved.id);}
+  async function record(result: Result) { setStage("Preparing image…"); const prepared = await prepareClientImage(result.image, ["png", "webp"], result.artwork || (result.sourceId === photo?.id ? photo.blob : undefined)); result = {...result, image: prepared.blob}; const saved={...result,designSignature:result.qa.designSignature};setSelected(saved); await saveLocal("history",saved.id,saved); setHistory(h=>mergeHistory(h,saved));announce("history",saved.id);}
   async function saveFilteredCopy(filtered: FilteredImage) {
     if (!filterTarget) throw new Error("The source design is no longer available.");
     const { blob, ...settings } = filtered;
@@ -351,7 +356,7 @@ export function RecipeDesigns() {
         <aside className="rounded-[22px] border border-gray-200 bg-white/60 p-4"><div className="flex items-center justify-between gap-2"><div><p className="text-xs uppercase tracking-[.18em] text-blue-700">Output preview</p><h2 className="studio-title mt-1 text-xl">{selected ? selected.outputWidth ?? 1200 : recipeDesignDimensions(settings.image.size).width} × {selected ? selected.outputHeight ?? 1500 : recipeDesignDimensions(settings.image.size).height} · {selected ? recipeResultFormat(selected).toUpperCase() : settings.image.size === "1536x864" ? "WEBP" : "PNG"} download</h2></div><button type="button" className={buttonClass} onClick={()=>setShowHistory(v=>!v)}>Design History ({history.length})</button></div>
           <div style={{aspectRatio:`${selected ? selected.outputWidth ?? 1200 : recipeDesignDimensions(settings.image.size).width} / ${selected ? selected.outputHeight ?? 1500 : recipeDesignDimensions(settings.image.size).height}`}} className="mt-4 flex items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white">{selected?<ImageBlob blob={compare && selectedSource?selectedSource.blob:selected.image} alt={compare?"Original food photograph":"Recipe design preview"} className="h-full w-full object-contain"/>:<p className="px-6 text-center text-sm text-gray-600">Your OpenAI design will appear here.</p>}</div>
           {selected?.ingredients && <details className="mt-3 rounded-xl border border-gray-200 p-3 text-xs text-blue-700"><summary className="cursor-pointer font-medium">Check the supplied ingredients</summary><p className="mt-2">Compare the generated words and amounts with this list before sharing.</p><pre className="mt-2 whitespace-pre-wrap break-words text-gray-900">{selected.ingredients}</pre></details>}
-          {selected && <><p className="mt-3 text-sm font-medium text-blue-700">{selected.status}</p><p className="mt-1 text-xs text-gray-600">{selected.plan.styleId ? getRecipeStyle(selected.plan.styleId)?.name : labels[selected.plan.family]} · {selected.researchStatus}</p>{selected.filter?<p className="mt-2 text-xs text-blue-700">Filtered copy: the food photo pixels are not verified. The original design remains in history.</p>:selected.status==="OpenAI image edit"?<p className="mt-2 text-xs text-blue-700">The image model edits the food photo directly. Compare it with the original before publishing; exact photo pixels cannot be verified in an AI edit.</p>:<p className="mt-2 text-xs text-green-700">Protected photo: {selected.qa.pixelDifferences===0?"verified · zero pixel differences vs resized original":"failed"} · Visual quality: review required</p>}{selected.plan.paletteSource==="fallback" && <p className="mt-2 text-xs text-blue-700">Some colors were missing or invalid, so a compatible palette was completed locally.</p>}<div className="mt-4 flex flex-wrap gap-2"><button type="button" className={buttonClass} onClick={()=>void download(selected.image,`recipe-design-${selected.outputWidth ?? 1200}x${selected.outputHeight ?? 1500}.${recipeResultFormat(selected)}`,recipeResultFormat(selected)).catch(e=>setError(String(e)))}>{recipeResultFormat(selected) === "webp" ? "Download optimized WebP" : "Download PNG"}</button><button type="button" className={buttonClass} onClick={()=>setFilterTarget(selected)}>Add Filter</button>{selected.status==="OpenAI image edit" && selected.artwork && <button type="button" className={buttonClass} onClick={()=>void download(selected.artwork!,`recipe-design-openai-original.${selected.artwork!.type==="image/jpeg"?"jpg":selected.artwork!.type==="image/webp"?"webp":"png"}`).catch(e=>setError(String(e)))}>Download OpenAI original</button>}{selected.status!=="OpenAI image edit" && !selected.filter && <button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void redoLayout()}>Redo Design · free</button>}<button type="button" className={buttonClass} disabled={!selectedSource} onClick={()=>setCompare(v=>!v)}>{compare?"Show design":"Compare original"}</button><button type="button" className={buttonClass} onClick={()=>setZoom(true)}>Zoom</button></div>
+          {selected && <><p className="mt-3 text-sm font-medium text-blue-700">{selected.status}</p><p className="mt-1 text-xs text-gray-600">{selected.plan.styleId ? getRecipeStyle(selected.plan.styleId)?.name : labels[selected.plan.family]} · {selected.researchStatus}</p>{selected.filter?<p className="mt-2 text-xs text-blue-700">Filtered copy: the food photo pixels are not verified. The original design remains in history.</p>:selected.status==="OpenAI image edit"?<p className="mt-2 text-xs text-blue-700">The image model edits the food photo directly. Compare it with the original before publishing; exact photo pixels cannot be verified in an AI edit.</p>:<p className="mt-2 text-xs text-green-700">Protected photo: {selected.qa.pixelDifferences===0?"verified · zero pixel differences vs resized original":"failed"} · Visual quality: review required</p>}{selected.plan.paletteSource==="fallback" && <p className="mt-2 text-xs text-blue-700">Some colors were missing or invalid, so a compatible palette was completed locally.</p>}<div className="mt-4 flex flex-wrap gap-2"><button type="button" className={buttonClass} onClick={()=>void download(selected.image,`recipe-design-${selected.outputWidth ?? 1200}x${selected.outputHeight ?? 1500}.${recipeResultFormat(selected)}`,recipeResultFormat(selected)).catch(e=>setError(String(e)))}>{recipeResultFormat(selected) === "webp" ? "Download optimized WebP" : "Download PNG"}</button><button type="button" className={buttonClass} onClick={()=>setFilterTarget(selected)}>Add Filter</button>{selected.status==="OpenAI image edit" && selected.artwork && <button type="button" className={buttonClass} onClick={()=>void download(selected.artwork!,`recipe-design-openai-original.${selected.artwork!.type==="image/jpeg"?"jpg":selected.artwork!.type==="image/webp"?"webp":"png"}`).catch(e=>setError(String(e)))}>Download verified artwork</button>}{selected.status!=="OpenAI image edit" && !selected.filter && <button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void redoLayout()}>Redo Design · free</button>}<button type="button" className={buttonClass} disabled={!selectedSource} onClick={()=>setCompare(v=>!v)}>{compare?"Show design":"Compare original"}</button><button type="button" className={buttonClass} onClick={()=>setZoom(true)}>Zoom</button></div>
             {selected.status!=="OpenAI image edit" && !selected.filter && <details className="mt-4 rounded-xl border border-gray-200 p-3 text-sm"><summary className="cursor-pointer font-medium">Advanced Edit · free</summary>
               <p className="mt-2 text-xs leading-relaxed text-gray-600">Adjust this template locally. Your original photograph stays protected, and no OpenAI request is sent.</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">

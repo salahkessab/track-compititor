@@ -95,7 +95,16 @@ export function extractArticle(html: string, url: string, feedDates: string[] = 
   const add = (kind: DateEvidence["kind"], value: any) => { if (typeof value === "string" && value.length <= 100) dates.push({ kind, value, parsed: parsePublication(value) }); };
   recipes.forEach(o => add("recipe", o.datePublished));
   objects.filter(o => types(o).some((t: string) => /(?:^|[/#])(?:Article|BlogPosting|NewsArticle)$/.test(t)) && relevant(o)).forEach(o => add("article", o.datePublished));
-  $('meta[property="article:published_time"], meta[itemprop="datePublished"], meta[name="datePublished"], time[itemprop="datePublished"]').each((_, e) => add("metadata", $(e).attr("content") || $(e).attr("datetime")));
+  $('meta[property="article:published_time"], meta[itemprop="datePublished"], meta[name="datePublished"], time[itemprop="datePublished"]').each((_, e) => {
+    // A nested Comment/Review owns its publication date; it is not evidence
+    // about when the containing recipe was published.
+    const scope = $(e).closest('[itemscope]');
+    if (scope.length) {
+      const scopeTypes = (scope.attr('itemtype') || '').split(/\s+/);
+      if (!scopeTypes.some(t => /(?:^|[/#])(?:Recipe|Article|BlogPosting|NewsArticle|WebPage)$/.test(t))) return;
+    }
+    add("metadata", $(e).attr("content") || $(e).attr("datetime"));
+  });
   recipes.forEach(o => add("modified", o.dateModified));
   $('meta[property="article:modified_time"]').each((_, e) => add("modified", $(e).attr("content")));
   feedDates.slice(0, 30).forEach(v => add("feed", v));

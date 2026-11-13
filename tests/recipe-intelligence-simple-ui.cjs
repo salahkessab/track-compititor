@@ -12,8 +12,7 @@ async function screen(t, request) {
   const globals = {window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true};
   const before = Object.fromEntries(Object.keys(globals).map(k => [k,Object.getOwnPropertyDescriptor(globalThis,k)]));
   for (const [k,v] of Object.entries(globals)) Object.defineProperty(globalThis,k,{value:v,writable:true,configurable:true});
-  const code = ts.transpileModule(fs.readFileSync(path.join(__dirname,'../app/components/RecipeImports.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-  const mod = {exports:{}}; new Function('require','module','exports',code)(require,mod,mod.exports);
+  const mod = {exports:require('./helpers/load-component.cjs')('RecipeImports')};
   const root = require('react-dom/client').createRoot(document.getElementById('root'));
   const created = [];
   await React.act(async () => root.render(React.createElement(mod.exports.StartRecipe,{snapshot:{imports:[]},settings:DEFAULT_CONTENT_SETTINGS,change:()=>{},controls:React.createElement('span',null,'Optional controls'),request,created:b=>created.push(b)})));
@@ -23,14 +22,15 @@ async function screen(t, request) {
   return {set,click,created};
 }
 
-test('paste URL automatically prepares a complete estimate without selecting photos or approving charges', async t => {
+test('paste URL prepares a batch for photo review without selecting photos or approving charges', async t => {
   const calls=[];
   const imported={id:'ready-recipe',status:'ready',title:'Soup',revision:1,photos:[{id:'p1',state:'ready',selected:1}]};
-  const batch={id:'ready-batch',quote:{estimated:.5,recommendedLimit:.8,pending:0}};
+  const batch={id:'ready-batch',quote:{estimated:0,recommendedLimit:0,pending:1}};
   const ui=await screen(t,async(route,method='GET',data)=>{calls.push({route,method,data});if(route==='imports')return imported;if(route==='imports/ready-recipe')return imported;if(route==='imports/ready-recipe/estimate')return batch;throw new Error(route);});
   await ui.set('input[type=url]','https://food.example/soup/');
   await ui.click('Get estimate');
   assert.equal(ui.created[0]?.id,'ready-batch');
+  assert.equal(ui.created[0]?.quote.pending,1);
   assert.equal(calls.find(c=>c.route==='imports').data.url,'https://food.example/soup/');
   assert.equal(calls.filter(c=>c.route.endsWith('/estimate')).length,1);
   assert.ok(calls.every(c=>!c.route.includes('/approve')&&!c.route.includes('/selection')));

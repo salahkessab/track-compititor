@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { finalizeGeneration, preparationFailure } from '@/lib/imageFinalization';
+import { checkImageProcessing } from '@/lib/imageMetadata';
 import { generateRecipeDesignArtwork } from "@/lib/recipeDesignArtworkImage";
 import { withCostLedger, recordOpenAIImage, costSummary } from "@/lib/costLedger";
 import { recipeArtworkPrompt, validateDesignPlan, validateDesignSettings, validateTitle } from "@/lib/recipeDesigns";
@@ -24,13 +26,14 @@ async function run(req: Request) {
     const promptCopy=validateRecipePromptCopy(b.promptCopy,plan.styleId);
     const prompt=recipeArtworkPrompt(plan,title,noText,settings.strength,notes,promptCopy);
     if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY. Configure it on the server.");
+    await checkImageProcessing();
     dispatched = true;
     // Never provide a reference here: this must always be text-to-image, not edits.
     const image = await generateRecipeDesignArtwork(settings,prompt);
     recordOpenAIImage(settings.model, settings.image, image);
     // Stream large image data so serverless response body limits do not truncate
     // a valid full-resolution artwork response.
-    const json = JSON.stringify({ artwork: image.dataUrl, status: "AI Artwork Generated", ...costSummary(settings.model) });
+    const json = JSON.stringify(await finalizeGeneration({ artwork: image.dataUrl, status: "Metadata cleanup verified", ...costSummary(settings.model) }, 'artwork'));
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -40,6 +43,7 @@ async function run(req: Request) {
     });
     return new Response(body, { headers: { "content-type": "application/json", "cache-control": "no-store" } });
   } catch (e) {
+    if (preparationFailure(e)) return NextResponse.json(preparationFailure(e), { status: 422 });
     const message = e instanceof Error ? e.message : "Artwork generation failed.";
     return NextResponse.json({ error: message, dispatched, outcome: dispatched ? "unknown" : "not_dispatched", costStatus: dispatched ? "The provider outcome may be unknown; check OpenAI usage before trying again." : "No provider request was sent." }, { status: dispatched ? 502 : 400 });
   }

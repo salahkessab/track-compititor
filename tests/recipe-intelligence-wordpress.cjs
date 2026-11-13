@@ -150,7 +150,7 @@ test('non-lossless conversion is blocked without an upload or a lossy fallback; 
   f.artifacts.put(f.item, 'alternate.png', good, 'image/png');
   f.artifacts.put(f.item, 'article.html', '<article><img src="featured.png"><img src="alternate.png"></article>', 'text/html');
   const p = f.wp.plan(f.item.id, c.id);
-  await assert.rejects(upload(f, c, p, p.images[0]), /cannot be exported as lossless WebP/);
+  await assert.rejects(upload(f, c, p, p.images[0]), /cannot preserve every pixel and the source bit depth/);
   assert.equal(f.calls.filter(c => c.method === 'POST').length, 0);
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM wordpress_media').get().n, 0);
   await upload(f, c, p, p.images[1]);
@@ -158,17 +158,38 @@ test('non-lossless conversion is blocked without an upload or a lossy fallback; 
   assert.equal(f.providerCalls.length, 0);
 });
 
-test('a pre-upgrade JPEG upload with uncertain outcome reconciles without creating a second attachment', async t => {
+test('a pre-upgrade unverified attachment is not marked clean or uploaded again', async t => {
   const f = await fixture(t, 1), c = await f.connect(), p = f.wp.plan(f.item.id, c.id), image = p.images[0];
   const slug = `ri-${image.sha256}`;
   f.store.db.prepare("INSERT INTO wordpress_media(site_url,sha256,slug,state,updated_at) VALUES(?,?,?,'uncertain',?)").run(c.siteUrl, image.sha256, slug, new Date().toISOString());
   f.remote.set('https://first.example', [{ id: 12, slug, source_url: `https://first.example/uploads/${slug}.jpg`, mime_type: 'image/jpeg' }]);
-  await upload(f, c, p, image);
+  await assert.rejects(upload(f, c, p, image), /no metadata-verification receipt/);
   const restarted = new WordPressStore(f.store, async () => { throw new Error('Confirmed uploads must be reused'); }, secrets);
-  await restarted.upload(f.item.id, { connectionId: c.id, documentHash: p.documentHash, sha256: image.sha256 });
+  await assert.rejects(restarted.upload(f.item.id, { connectionId: c.id, documentHash: p.documentHash, sha256: image.sha256 }), /no metadata-verification receipt/);
   assert.equal(f.calls.filter(c => c.method === 'POST').length, 0);
-  assert.equal(restarted.plan(f.item.id, c.id).ready, true);
-  assert.deepEqual(restarted.plan(f.item.id, c.id).mediaIds, [12]);
+  assert.equal(restarted.plan(f.item.id, c.id).ready, false);
+  assert.deepEqual(restarted.plan(f.item.id, c.id).mediaIds, []);
+});
+
+test('verification failure blocks downloads and all WordPress media requests, then retry reuses saved bytes', async t => {
+  const f = await fixture(t, 1), c = await f.connect(), p = f.wp.plan(f.item.id, c.id);
+  const row = f.store.db.prepare("SELECT id FROM artifacts WHERE name='featured.jpg'").get();
+  const original = f.artifacts.read(row.id).data;
+  const saved = process.env.EXIFTOOL_PATH; process.env.EXIFTOOL_PATH = path.join(f.root, 'missing-exiftool');
+  const before = f.calls.length;
+  try {
+    await assert.rejects(f.artifacts.download(row.id), /preparation failed/i);
+    await assert.rejects(upload(f, c, p, p.images[0]), /preparation failed/i);
+    assert.equal(f.calls.length, before, 'no media lookup or upload before verification');
+    assert.equal(f.wp.plan(f.item.id, c.id).ready, false);
+  } finally { if (saved === undefined) delete process.env.EXIFTOOL_PATH; else process.env.EXIFTOOL_PATH = saved; }
+  await upload(f, c, p, p.images[0]);
+  const downloaded = await f.artifacts.download(row.id, 'webp');
+  assert.deepEqual(downloaded.data, uploadedWebP(f.calls.find(c => c.method === 'POST')), 'download and WordPress reuse exactly the verified variant');
+  assert.deepEqual(f.artifacts.read(row.id).data, original);
+  assert.equal(f.providerCalls.length, 0);
+  const posts = f.calls.filter(c => c.method === 'POST').length;
+  await upload(f, c, p, p.images[0]); assert.equal(f.calls.filter(c => c.method === 'POST').length, posts);
 });
 
 test('duplicate images and simultaneous export requests make a single media upload', async t => {

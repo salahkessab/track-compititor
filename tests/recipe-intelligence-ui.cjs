@@ -25,7 +25,7 @@ test('article library shows reference/output previews and approves only the chos
   const first=document.querySelector('article[aria-label="Article: Corn orzo"]');
   assert.ok(first);assert.match(first.textContent,/\$0\.90/);assert.match(first.textContent,/Maximum \$2\.20/);
   assert.ok(first.querySelector('img[src$="one-ref"]'));
-  assert.ok(document.querySelector('img[src*="artifacts/edited"]'));
+  assert.ok(document.querySelector('img[src*="/api/image-assets/"]'));
   assert.equal(first.querySelector('details').open,false);
   assert.equal(calls.filter(c=>c.init.method==='POST').length,0);
   await React.act(async()=>[...first.querySelectorAll('button')].find(b=>b.textContent==='Approve & Generate').click());
@@ -36,7 +36,7 @@ test('article library shows reference/output previews and approves only the chos
 
 test('library archives, restores and confirms deletion from the row while showing publication badges',async t=>{
  const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
- const row={id:'test-item',batchId:'test-batch',title:'Soup',state:'completed',createdAt:'2026-11-12',approved:true,canApprove:false,actual:.1,held:0,photos:[],files:[],archived:false,deletion:{allowed:true},publications:[{site:'food.example',status:'Published',checkedAt:'2026-11-12'}]};
+ const row={id:'test-item',batchId:'test-batch',title:'Soup',state:'completed',createdAt:'2026-11-12',approved:true,canApprove:false,actual:.1,held:0,photos:[],files:[],archived:false,deletion:{allowed:true},publications:[{site:'food.example',status:'Published',postUrl:'https://food.example/soup/',checkedAt:'2026-11-12'}]};
  let deleted=false;const calls=[];
  const fetcher=async(url,init={})=>{calls.push({url,init});if(url.endsWith('/capabilities'))return Response.json({enabled:true});if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,batches:[]});
  if(url.includes('/library?')){const visible=!deleted&&(new URL(url,'http://localhost').searchParams.get('archived')==='1')===row.archived;return Response.json({rows:visible?[row]:[],total:visible?1:0,page:0,pageSize:20});}
@@ -47,6 +47,7 @@ test('library archives, restores and confirms deletion from the row while showin
  const {root,Component,click}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
  await React.act(async()=>root.render(React.createElement(Component,{active:true})));
  assert.match(document.querySelector('[aria-label="Publication status"]').textContent,/food.example.*Published/);
+ const live=document.querySelector('a[aria-label="View live article on food.example"]');assert.equal(live?.href,'https://food.example/soup/');assert.equal(live.target,'_blank');assert.match(live.rel,/noopener/);
  await click('Archive');assert.equal(document.querySelector('article[aria-label="Article: Soup"]'),null);
  await click('Archived articles');await click('Restore');await click('Active articles');assert.ok(document.querySelector('article[aria-label="Article: Soup"]'));
  await click('Delete');assert.ok(document.querySelector('[role=dialog]'));assert.equal(deleted,false);await click('Keep recipe');assert.equal(deleted,false);
@@ -54,31 +55,7 @@ test('library archives, restores and confirms deletion from the row while showin
  assert.equal(calls.filter(c=>c.init.method==='DELETE').length,1);assert.ok(calls.every(c=>!c.url.includes('approve')&&!c.url.includes('wordpress')));
 });
 
-function component() {
-  const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components/RecipeIntelligence.tsx'), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText;
-  const mod = { exports: {} };
-  const scopedRequire = name => {
-    if (name === './IntelligenceContent') {
-      const childSource = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components/IntelligenceContent.tsx'), 'utf8'), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-      }).outputText;
-      const child = { exports: {} };
-      new Function('require', 'module', 'exports', childSource)(id => {
-        if (id === './RecipeImports' || id === './RecipeWordPress' || id === './RecipeApiKey' || id === './RecipeLibrary') {
-          const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components', id + '.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-          const imported = { exports: {} }; new Function('require','module','exports',code)(dependency => dependency === './WordPressPublishDialog' ? require('./helpers/load-component.cjs')('WordPressPublishDialog') : require(dependency),imported,imported.exports); return imported.exports;
-        }
-        return id === '../../lib/openaiImageSettings' ? require('../.test-build/openaiImageSettings.js') : id === '../../lib/recipe-intelligence/format' ? require('../.intelligence-build/lib/recipe-intelligence/format.js') : id === '../../lib/recipe-intelligence/textModels' ? require('../.intelligence-build/lib/recipe-intelligence/textModels.js') : require(id);
-      }, child, child.exports);
-      return child.exports;
-    }
-    return require(name);
-  };
-  new Function('require', 'module', 'exports', source)(scopedRequire, mod, mod.exports);
-  return mod.exports.RecipeIntelligence;
-}
+function component() { return require('./helpers/load-component.cjs')('RecipeIntelligence').RecipeIntelligence; }
 
 test('research cards expose visit and explicit replacement without automatic approval', async t => {
   const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
@@ -118,7 +95,7 @@ test('library opens single and bulk scheduling controls without publishing on se
 });
 async function ui(t, fetcher, url) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: url || 'http://127.0.0.1:34567/?tab=recipe-intelligence' });
-  const values = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true, fetch: (url, init) => url.includes('/library?') && !fetcher.library ? Promise.resolve(Response.json({ rows: [], total: 0, page: 0, pageSize: 20 })) : fetcher(url, init) };
+  const values = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true, fetch: (url, init) => url === '/api/image-assets' ? Promise.resolve(Response.json({imageUrl:'/api/image-assets/'+'a'.repeat(64),metadata:{state:'verified',c2pa:{present:false}},variants:{}})) : url.startsWith('/api/image-assets/') || /\/artifacts\/[^/?]+\?preview=1$/.test(url) ? Promise.resolve(new Response('verified fixture',{headers:{'Content-Type':'image/png','X-Image-Metadata':'verified'}})) : url.includes('/library?') && !fetcher.library ? Promise.resolve(Response.json({ rows: [], total: 0, page: 0, pageSize: 20 })) : fetcher(url, init) };
   const originals = Object.fromEntries(Object.keys(values).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries(values)) Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
   const { createRoot } = require('react-dom/client'); const root = createRoot(document.getElementById('root'));
@@ -212,7 +189,7 @@ test('Start a recipe shows four photos unchecked and saves only selected photos 
   const select=[...document.querySelectorAll('select')].find(s=>s.parentElement.textContent.startsWith('Saved preparations'));
   await React.act(async()=>{select.value='import-ui';select.dispatchEvent(new window.Event('change',{bubbles:true}));});
   const region=document.querySelector('[aria-label="Photo selection"]');assert.ok(region);const checkboxes=[...region.querySelectorAll('input[type=checkbox]')];assert.equal(checkboxes.length,4);assert.ok(checkboxes.every(c=>!c.checked));
-  await React.act(async()=>{checkboxes[1].click();checkboxes[3].click();});await click('Save photo selection (2)');
+  await React.act(async()=>{checkboxes[1].click();checkboxes[3].click();});await click('Confirm photo selection (2)');
   const selection=calls.find(c=>c.url.endsWith('/selection'));assert.deepEqual(JSON.parse(selection.init.body).photoIds,['p1','p3']);assert.ok(calls.every(c=>!c.url.includes('/approve')&&!c.url.includes('openai.com')));
   const advanced = [...document.querySelectorAll('summary')].find(s => s.textContent === 'Advanced options').parentElement;
   assert.equal(advanced.open, false);
@@ -456,7 +433,7 @@ for (const lossless of [false,true]) test(`results prioritize article actions, e
   const actions = document.querySelector('[aria-label="Article and download actions"]'), gallery = document.querySelector('[aria-label="Edited photo gallery"]');
   assert.ok(actions.compareDocumentPosition(gallery) & window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.equal(gallery.querySelectorAll('img').length, 1);
-  assert.ok(gallery.querySelector('img').src.includes('/artifacts/jpg1?preview=1'));
+  assert.ok(gallery.querySelector('img').src.includes('/api/image-assets/'));
   assert.equal(document.querySelectorAll('img[src*="/references/"]').length, 0);
   assert.equal(document.querySelectorAll('a[href$="/artifacts/jpg1"]').length, 1);
   if(lossless){assert.match(gallery.textContent,/Download WebP/);assert.ok(gallery.querySelector('a[href$="?format=png"]'));assert.doesNotMatch(gallery.textContent,/Download JPEG/);}

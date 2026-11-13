@@ -35,6 +35,7 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
   }
   return <section className="studio-panel space-y-4 rounded-2xl border p-5" aria-label="WordPress websites">
     <h2 className="text-lg">WordPress websites</h2>
+    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked readOnly disabled />Clean metadata before upload</label><p className="text-xs text-gray-600">Automatic for every final image before preview, download and upload.</p>
     <p className="text-sm text-gray-600">Connect your WordPress websites and choose a destination per article. Install the bridge plugin to send drafts or publish live with the site's default recipe card.</p>
     <a className={`${button} inline-block`} href="/api/recipe-wordpress-plugin" download>Download WordPress plugin</a>
     <p className="text-sm text-gray-600">Install or update Recipe Intelligence Bridge 1.2 using WordPress → Plugins → Add New → Upload Plugin. Open Recipe Intelligence in the WordPress sidebar, create a Site Token, copy a User Slug, and choose your default recipe card.</p>
@@ -53,13 +54,20 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
   </section>;
 }
 
-export function WordPressCopy({ itemId, connections, request }: { itemId: string; connections: Connection[]; request: RequestFn }) {
+export function WordPressCopy({ itemId, connections, request, publications = [] }: { itemId: string; connections: Connection[]; request: RequestFn; publications?: { siteUrl: string; state: string; result: any; checkedAt: string }[] }) {
   const [target, setTarget] = useState(connections.length === 1 ? connections[0].id : "");
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   const [prepared, setPrepared] = useState<{ html: string; text: string; siteUrl: string; connectionId: string } | null>(null);
   const [review, setReview] = useState<any>(null); const [sent, setSent] = useState<any>(null);
   const [publishConfirmed, setPublishConfirmed] = useState(false);
   const lock = useRef(false);
+  const publication = publications.find(p => p.siteUrl.replace(/\/$/, '') === connections.find(c => c.id === target)?.siteUrl.replace(/\/$/, ''));
+  const publicationKey = JSON.stringify(publication || null);
+  useEffect(() => {
+    setSent(publication?.result || null);
+    setPublishConfirmed(false);
+    setMessage("");
+  }, [itemId, target, publicationKey]);
   useEffect(() => { if (target && !connections.some(c => c.id === target)) { setTarget(""); setPrepared(null); } }, [connections, target]);
   async function copy(value: { html: string; text: string; siteUrl: string }) {
     if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("This browser cannot copy formatted content. Use Download WordPress HTML below; the images are already hosted.");
@@ -102,12 +110,13 @@ export function WordPressCopy({ itemId, connections, request }: { itemId: string
       }
       const final = await request(`items/${itemId}/wordpress-publish?connectionId=${encodeURIComponent(target)}`);
       if (plan.documentHash !== final.documentHash || !final.ready) throw new Error("The article changed during preparation. Prepare again; saved images will be reused.");
-      setReview(final); setSent(final.previous?.result || null); setMessage("Ready to send. Review the destination and recipe card below.");
+      const existing = final.previous?.result || null;
+      setReview(final); setSent(existing); setMessage(existing?.status === "publish" ? "Already published on this website. Open the saved post below." : existing?.status === "future" ? "Already scheduled on this website. Manage its schedule in WordPress." : "Ready to send. Review the destination and recipe card below.");
     } catch (e) { setMessage(""); setError(e instanceof Error ? e.message : "Could not prepare article."); }
     finally { lock.current = false; setBusy(false); }
   }
   async function send(status: "draft" | "publish") {
-    if (!review || lock.current) return; lock.current = true; setBusy(true); setError(""); setMessage("");
+    if (!review || lock.current || sent?.status === "publish" || sent?.status === "future") return; lock.current = true; setBusy(true); setError(""); setMessage("");
     try {
       const saved = await request(`items/${itemId}/wordpress-publish`, "POST", { connectionId: target, reviewHash: review.reviewHash, status, confirmPublish: status === "publish" && publishConfirmed });
       setSent(saved); setMessage(saved.status === "publish" ? "Article published with hosted images and its recipe card." : "Article saved in WordPress with hosted images and its recipe card.");
@@ -128,10 +137,10 @@ export function WordPressCopy({ itemId, connections, request }: { itemId: string
   if (!connections.length) return null;
   return <div className="space-y-3 rounded-xl border border-gray-200 p-3" aria-label="Upload article images to WordPress">
     <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">WordPress destination<select className={`${input} mt-1`} value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setPrepared(null); setReview(null); setSent(null); setPublishConfirmed(false); setMessage(""); setError(""); }}><option value="">Choose a website</option>{connections.map(c => <option key={c.id} value={c.id}>{c.siteUrl}</option>)}</select></label><button className={button} disabled={busy || !target} onClick={() => void prepareSend()}>Prepare WordPress post</button><button className={button} disabled={busy || !target} onClick={() => void uploadAndCopy()}>{busy ? "Working…" : "Upload images and copy"}</button></div>
-    <p className="text-xs text-gray-600">New image uploads use lossless WebP. The article uses permanent image URLs, and existing uploads on this destination are reused.</p>
+    <p className="text-xs text-gray-600">Image metadata is cleaned and verified before preview, download and upload. WordPress reuses the verified WebP output. Previously unverified uploads need review.</p>
     {message && <p role="status" className="text-sm text-green-700">{message}</p>}{error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-    {review && <div className="space-y-3 rounded-xl border border-gray-200 p-3"><p className="text-sm">{review.title} → {review.siteUrl}</p><p className="text-sm">Recipe card: <strong>{review.profile.recipeCardLabel}</strong> · {review.images.length} hosted images</p><p className="text-xs text-gray-600">Uses saved recipe facts. No new AI request. Changing the default card in WordPress requires preparing again.</p><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => void send("draft")}>Save draft</button><button className={button} disabled={busy} onClick={() => void checkSent()}>Check saved post</button></div>{review.profile.canPublish && sent?.status !== "publish" && <div className="space-y-2"><label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy} checked={publishConfirmed} onChange={e => setPublishConfirmed(e.target.checked)} />Publish this article publicly on {new URL(review.siteUrl).host} now.</label><button className={button} disabled={busy || !publishConfirmed} onClick={() => void send("publish")}>Publish live</button></div>}</div>}
-    {sent && <div className="flex flex-wrap gap-3 text-sm"><span>{sent.status === "publish" ? "Published" : "Saved"} · Post {sent.postId}</span><a className="text-blue-700 underline" href={sent.editUrl} target="_blank" rel="noreferrer">Open in WordPress</a>{sent.status === "publish" && <a className="text-blue-700 underline" href={sent.postUrl} target="_blank" rel="noreferrer">View live article</a>}</div>}
+    {review && <div className="space-y-3 rounded-xl border border-gray-200 p-3"><p className="text-sm">{review.title} → {review.siteUrl}</p><p className="text-sm">Recipe card: <strong>{review.profile.recipeCardLabel}</strong> · {review.images.length} hosted images</p><p className="text-xs text-gray-600">Uses saved recipe facts. No new AI request. Changing the default card in WordPress requires preparing again.</p><div className="flex flex-wrap gap-2">{!sent && <button className={button} disabled={busy} onClick={() => void send("draft")}>Save draft</button>}<button className={button} disabled={busy} onClick={() => void checkSent()}>Check saved post</button></div>{review.profile.canPublish && (!sent || sent.status === "draft") && <div className="space-y-2"><label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy} checked={publishConfirmed} onChange={e => setPublishConfirmed(e.target.checked)} />Publish this article publicly on {new URL(review.siteUrl).host} now.</label><button className={button} disabled={busy || !publishConfirmed} onClick={() => void send("publish")}>Publish live</button></div>}</div>}
+    {sent && <div className="flex flex-wrap gap-3 text-sm"><span>{sent.status === "publish" ? "Published" : sent.status === "future" ? "Scheduled" : "Saved draft"} · Post {sent.postId}</span><a className="text-blue-700 underline" href={sent.editUrl} target="_blank" rel="noreferrer">Open in WordPress</a>{sent.status === "publish" && <a className="text-blue-700 underline" href={sent.postUrl} target="_blank" rel="noreferrer">View live article</a>}</div>}
     {prepared && <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => void copy(prepared).catch(e => setError(e.message))}>Copy uploaded article</button><button className={button} disabled={busy} onClick={download}>Download WordPress HTML</button></div>}
   </div>;
 }

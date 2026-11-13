@@ -13,6 +13,7 @@ import { digest } from "./artifacts";
 import { normalizeUrl, publicUrl } from "./urls";
 import { IMAGE_STORAGE_VERSION } from "./imageStorage";
 import { editorialPayload, EDITORIAL_VERSION } from "./editorial";
+import { REFINEMENT_INPUT_LIMIT, REFINEMENT_VERSION } from './refinement';
 
 const now = () => new Date().toISOString();
 export const isPhotoStage = (kind: string) => kind.startsWith("photo:") || kind.startsWith("analysis:");
@@ -25,13 +26,13 @@ export function prepareImportEstimate(b: BatchStore, importId: string, input: Pa
   if (settings.images && settings.imageWorkflow === "reference") {
     const usable = imported.photos.filter((p: any) => p.state === "ready");
     if (!usable.length && completeRecipe(imported.recipe)) settings.imageWorkflow = "legacy";
-    else if (!imported.selection_confirmed) imports.select(importId, usable.map((p: any) => p.id));
+    // Default selection is a suggestion. Only the user can confirm photographs.
   }
   // A repeated estimate request reuses the same unpaid draft instead of creating duplicates.
   const candidates = b.store.db.prepare("SELECT DISTINCT b.id,b.settings_json FROM content_batches b JOIN content_items i ON i.batch_id=b.id WHERE i.import_id=? AND i.state NOT IN ('deleted','deleting','delete_failed') AND b.approved_at IS NULL AND b.status='awaiting_cost_approval'").all(importId) as any[];
   const existing = candidates.find(c => JSON.stringify(validateContentSettings(JSON.parse(c.settings_json))) === JSON.stringify(settings));
   const batch = existing ? prepareReferenceBatch(b, existing.id) : b.create([{ importId }], settings);
-  if (batch.quote.pending || !batch.quote.lines.length) throw new Error(batch.items.find((i: any) => i.error)?.error || "Choose at least one image, or select article only.");
+  if (!batch.quote.pending && !batch.quote.lines.length) throw new Error(batch.items.find((i: any) => i.error)?.error || "Choose at least one image, or select article only.");
   return batch;
 }
 export function createReferenceBatch(b: BatchStore, selections: Selection[], input: Partial<ContentSettings>) {
@@ -92,16 +93,18 @@ function prepareReferenceBatchLocked(b: BatchStore, id: string) {
       const inputBytes = Math.max(32000, Buffer.byteLength(JSON.stringify(kind === "editorial" ? editorialPayload(source, settings) : writingPayload(source, settings))) + (kind === "correction" ? 12000 : 0) + (adaptive ? kind === "editorial" ? 5000 : 8500 : 0));
       itemLines.push({ itemId: item.id, kind, inputBytes, ...stageEstimate(kind, settings, inputBytes) });
     }
+    if (settings.output !== 'images_only') itemLines.push({ itemId: item.id, kind: 'refinement', inputBytes: REFINEMENT_INPUT_LIMIT, ...stageEstimate('refinement', settings, REFINEMENT_INPUT_LIMIT) });
     if (wantsPhotos) {
       for (let i = 0; i < photos.length; i += 10) itemLines.push({ itemId: item.id, kind: `analysis:${i / 10}`, count: photos.slice(i, i + 10).length, ...analysisEstimate(photos.slice(i, i + 10)) });
       for (const p of photos) itemLines.push({ itemId: item.id, kind: `photo:${p.id}`, referenceId: p.id, ...photoEstimate(settings) });
     } else if (settings.images) for (const kind of ["featured", "alternate", "pinterest"]) itemLines.push({ itemId: item.id, kind, ...stageEstimate(kind, settings) });
     const frozen = { importRevision: imported.revision, sourceUrl: source?.url || imported.url, palette: settings.palette, imageStorage: settings.imageStorage, photoProfile: PHOTO_PROFILE_VERSION, photoInstructions: PHOTO_INSTRUCTIONS, analysisProfile: ANALYSIS_PROFILE_VERSION, analysisInstructions: ANALYSIS_INSTRUCTIONS, writingProfile: writingProfile(settings.articleFormat), writingRequest: source && settings.output !== "images_only" ? writingPayload(source, settings) : null, ...(adaptive ? { editorialProfile: EDITORIAL_VERSION, editorialRequest: editorialPayload(source, settings) } : {}), lines: itemLines };
+    Object.assign(frozen, { refinementProfile: REFINEMENT_VERSION });
     db.transaction(() => {
       db.prepare("DELETE FROM content_photos WHERE item_id=?").run(item.id);
       if (!hasCalls) db.prepare("DELETE FROM content_stages WHERE item_id=? AND (kind LIKE 'photo:%' OR kind LIKE 'analysis:%')").run(item.id);
       if (wantsPhotos) photos.forEach((p, i) => db.prepare("INSERT INTO content_photos(id,item_id,reference_id,position,source_url,relative_path,sha256,width,height,mime_type,caption) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(randomUUID(), item.id, p.id, i, p.source_url, p.relative_path, p.sha256, p.width, p.height, p.mime_type, p.caption));
-      const kinds = ["source", "research", "select", ...(adaptive ? ["editorial"] : []), "article", "correction", "save_article", ...(wantsPhotos ? itemLines.filter(l => isPhotoStage(l.kind)).map(l => l.kind) : settings.images ? ["featured", "alternate", "pinterest"] : [])];
+      const kinds = ["source", "research", "select", ...(adaptive ? ["editorial"] : []), "article", "correction", ...(settings.output !== 'images_only' ? ['refinement'] : []), "save_article", ...(wantsPhotos ? itemLines.filter(l => isPhotoStage(l.kind)).map(l => l.kind) : settings.images ? ["featured", "alternate", "pinterest"] : [])];
       for (const kind of kinds) db.prepare("INSERT OR IGNORE INTO content_stages(item_id,kind,state,updated_at) VALUES(?,?,'waiting',?)").run(item.id, kind, now());
       const start = item.selection_reason ? (settings.output === "images_only" ? "source" : "article") : "source";
       b.stage(item.id, start, "queued");
@@ -118,6 +121,8 @@ export function validateReferenceApproval(b: BatchStore, id: string) {
   const items = b.store.db.prepare("SELECT * FROM content_items WHERE batch_id=? AND state NOT IN ('deleted','deleting','delete_failed')").all(id) as any[];
   if (!items.some(i => i.config_json)) throw new Error(items.find(i => i.error)?.error || "The recipe is still being prepared. Wait for the estimate before generating.");
   for (const item of items) if (item.config_json && ["queued", "awaiting_item_approval"].includes(item.state) && !b.store.db.prepare("SELECT 1 FROM api_calls WHERE stage_id IN (SELECT id FROM content_stages WHERE item_id=?)").get(item.id)) {
+    const settings = JSON.parse(b.get(id).settings_json);
+    if (settings.images && settings.imageWorkflow === "reference" && !new ImportStore(b.store).get(item.import_id).selection_confirmed) throw new Error("Review and confirm your original photographs before generating.");
     if (JSON.parse(item.config_json).importRevision !== new ImportStore(b.store).get(item.import_id).revision) throw new Error("Photo selection changed. Refresh the estimate before approving.");
   }
 }

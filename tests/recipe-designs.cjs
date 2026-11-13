@@ -31,6 +31,12 @@ const {parseVisualResults,separatePlatformGuidance} = load(path.resolve(__dirnam
 const {fetchVisualCandidates} = load(path.resolve(__dirname,'../lib/recipeVisualFetch.ts'));
 const plan = {family:'notebook',palette:['#211E1A','#F5E6C9'],typography:'serif',layout:'food first',decoration:'paper texture',referenceSummary:'warm labels',photoSummary:'golden tones',researchSummary:'Designs use restrained framing.'};
 const image = 'data:image/jpeg;base64,YWJj';
+let generatedPng;
+const originalRoot=process.env.IMAGE_ASSET_ROOT;
+const imageRoot=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'ri-design-route-'));
+process.env.IMAGE_ASSET_ROOT=imageRoot;
+test.before(async()=>{generatedPng=(await require('sharp')({create:{width:3,height:2,channels:4,background:'#45332288'}}).png().toBuffer()).toString('base64');});
+test.after(()=>{if(originalRoot===undefined)delete process.env.IMAGE_ASSET_ROOT;else process.env.IMAGE_ASSET_ROOT=originalRoot;fs.rmSync(imageRoot,{recursive:true,force:true});});
 const request = (data) => new Request('http://localhost/api/recipe-designs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});
 // Preserve the historical research-on fixture in older research tests; new
 // preset defaults are independently asserted below.
@@ -99,14 +105,14 @@ test('Recipe Designs sends each full style prompt and original photo to one dire
     assert.equal(form.get('output_format'),'png');
     assert.equal(form.getAll('image[]').length,2);
     assert.equal(Buffer.from(await form.getAll('image[]')[0].arrayBuffer()).toString(),'abc');
-    return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:5,image_tokens:5}}});
+    return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:5,image_tokens:5}}});
   };
   try{
     for(const preset of RECIPE_STYLE_PRESETS){
       const ingredients='Potatoes (2 cups)\nBacon (4 slices)';
       const res=await directRoute.POST(request({approved:true,settings:settings({styleId:preset.id,model:'gpt-image-2.6-sunburst',artworkSize:'selected',researchEnabled:false}),title:'Loaded Baked Potato Soup',ingredients,notes:'Make the title bold.',photo:image,references:[image]}));
       assert.equal(res.status,200);
-      const result=await res.json();assert.equal(result.styleId,preset.id);assert.equal(result.image,'data:image/png;base64,YWJj');
+      const result=await res.json();assert.equal(result.styleId,preset.id);assert.match(result.image,/^\/api\/image-assets\/[a-f0-9]{64}$/);assert.equal(result.metadata.state,'verified');
       const prompt=calls.at(-1).get('prompt');
       assert.ok(prompt.includes(preset.template.replaceAll('{{TITLE}}','Loaded Baked Potato Soup').replaceAll('{{INGREDIENTS}}',ingredients)));
       assert.match(prompt,/COMPLETE finished recipe graphic/);
@@ -120,7 +126,7 @@ test('Recipe Designs sends each full style prompt and original photo to one dire
 
 test('ingredient cards send the original photo and the complete supplied list, rejecting missing or oversized lists before dispatch',async()=>{
   const original=global.fetch;const calls=[];
-  global.fetch=async(url,init)=>{calls.push({url,form:init.body});return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:5,image_tokens:5}}});};
+  global.fetch=async(url,init)=>{calls.push({url,form:init.body});return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:5,image_tokens:5}}});};
   const ingredients='Chicken breast (1 lb)\nBroccoli (2 cups)\nSpinach (1½ cups)\nGarlic (3 cloves)';
   const s=settings({styleId:INGREDIENT_CARD_STYLE_ID,model:'gpt-image-2.6-sunburst',artworkSize:'selected',researchEnabled:false});
   const make=(changes={})=>request({approved:true,settings:s,title:'Garlic Chicken',ingredients,notes:'',photo:image,references:[],...changes});
@@ -162,7 +168,7 @@ test('saved 4:5 Sunburst setting uses image edits and a versioned prompt copy',a
   const preset=RECIPE_STYLE_PRESETS[0];
   const copy={baseStyleId:preset.id,version:2,template:preset.template+'\nUse a restrained olive accent.'};
   const original=global.fetch;let seen;
-  global.fetch=async(url,init)=>{seen={url,form:init.body};return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:5,image_tokens:5}}});};
+  global.fetch=async(url,init)=>{seen={url,form:init.body};return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:5,image_tokens:5}}});};
   try{
     const res=await directRoute.POST(request({approved:true,settings:settings({styleId:preset.id,artworkSize:'1280x1600',researchEnabled:false}),title:'Loaded Baked Potato Soup',notes:'',promptCopy:copy,photo:image,references:[]}));
     assert.equal(res.status,200);
@@ -191,7 +197,7 @@ test('each selected full prompt and text model reach planning without a real pro
 
 test('each full preset reaches decorative artwork with selected model, size and photo exclusion',async()=>{
   const original=global.fetch;const seen=[];
-  global.fetch=async(_url,init)=>{seen.push(JSON.parse(init.body));return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
+  global.fetch=async(_url,init)=>{seen.push(JSON.parse(init.body));return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
   try {
     for(const preset of RECIPE_STYLE_PRESETS){
       const styledPlan={...plan,family:preset.family,styleId:preset.id,stylePromptVersion:1};
@@ -211,7 +217,7 @@ test('a local prompt copy is versioned, used by both stages, and cannot bypass i
   assert.throws(()=>validateRecipePromptCopy({...copy,template:'short'},base.id));
   assert.throws(()=>validateRecipePromptCopy({...copy,baseStyleId:'black_label_vintage'},base.id));
   const original=global.fetch;const seen=[];
-  global.fetch=async(url,init)=>{const sent=JSON.parse(init.body);seen.push(sent);return Response.json(url.includes('/responses')?response(false):{data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
+  global.fetch=async(url,init)=>{const sent=JSON.parse(init.body);seen.push(sent);return Response.json(url.includes('/responses')?response(false):{data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
   try{
     const s=settings({styleId:base.id,researchEnabled:false,artworkSize:'selected'});
     const planning=await planRoute.POST(request(body({settings:s,promptCopy:copy})));
@@ -229,7 +235,7 @@ test('a local prompt copy is versioned, used by both stages, and cannot bypass i
 });
 test('Recipe Designs honors a manually selected alternate OpenAI image model and settings',async()=>{
   const preset=RECIPE_STYLE_PRESETS[1];const original=global.fetch;let sent;
-  global.fetch=async(_url,init)=>{sent=JSON.parse(init.body);return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
+  global.fetch=async(_url,init)=>{sent=JSON.parse(init.body);return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
   try{
     const s=settings({styleId:preset.id,model:'gpt-image-2.6-sunburst',artworkSize:'selected',image:{...DEFAULT_DESIGN_SETTINGS.image,size:'1024x1536',quality:'high',complexity:'default'}});
     const res=await artRoute.POST(request({approved:true,settings:s,plan:{...plan,family:preset.family,styleId:preset.id,stylePromptVersion:1},title:'Loaded Baked Potato Soup',noText:false,notes:''}));
@@ -468,8 +474,8 @@ test('fresh research without real images reports a knowledge-based fallback',asy
 });
 test('artwork uses text-to-image only, honors settings, and never receives food or reference pixels',async()=>{
   const original=global.fetch;let calls=0;
-  global.fetch=async(url,init)=>{calls++;assert.equal(url,'https://api.openai.com/v1/images/generations');const sent=JSON.parse(init.body);assert.equal(sent.model,'gpt-image-2.5-sunburst');assert.equal(sent.quality,'high');assert.equal(sent.size,'1024x1536');assert.equal(sent.image,undefined);assert.ok(!JSON.stringify(sent).includes(image));assert.match(sent.prompt,/Do not render any food/);return Response.json({data:[{b64_json:'YWJj'}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
-  try {const res=await artRoute.POST(request({approved:true,settings:settings(),plan:{...plan,styleId:'notebook_comfort_food',stylePromptVersion:1},title:'Loaded Baked Potato Soup',noText:false,photo:image,references:[image]}));assert.equal(res.status,200);const data=await res.json();assert.equal(data.artwork,'data:image/png;base64,YWJj');assert.equal(calls,1);}finally{global.fetch=original;}
+  global.fetch=async(url,init)=>{calls++;assert.equal(url,'https://api.openai.com/v1/images/generations');const sent=JSON.parse(init.body);assert.equal(sent.model,'gpt-image-2.5-sunburst');assert.equal(sent.quality,'high');assert.equal(sent.size,'1024x1536');assert.equal(sent.image,undefined);assert.ok(!JSON.stringify(sent).includes(image));assert.match(sent.prompt,/Do not render any food/);return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
+  try {const res=await artRoute.POST(request({approved:true,settings:settings(),plan:{...plan,styleId:'notebook_comfort_food',stylePromptVersion:1},title:'Loaded Baked Potato Soup',noText:false,photo:image,references:[image]}));assert.equal(res.status,200);const data=await res.json();assert.match(data.artwork,/^\/api\/image-assets\/[a-f0-9]{64}$/);assert.equal(data.metadata.state,'verified');assert.equal(calls,1);}finally{global.fetch=original;}
 });
 test('provider failure is surfaced as uncertain and is not retried',async()=>{
   const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw new Error('network lost');};

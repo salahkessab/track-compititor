@@ -72,7 +72,7 @@ test('prepared imports freeze analysis settings and include its cost in article-
   const imports=new ImportStore(f.store),imported=imports.createFromText('https://food.example/soup','Carrot soup\nIngredients\n500 g carrots\n750 ml water\n1 tsp salt\nInstructions\nSimmer 500 g carrots in 750 ml water for 20 minutes.\nBlend the carrots with the cooking water and 1 tsp salt.');
   const batch=f.batches.create([{importId:imported.id}],{...settings(f),imageWorkflow:'reference'});
   const config=JSON.parse(batch.items[0].config_json);assert.equal(config.editorialProfile,'recipe-editorial-v1');assert.equal(config.writingProfile,'recipe-master-v5');
-  assert.deepEqual(batch.quote.lines.map(l=>l.kind),['editorial','article']);
+  assert.deepEqual(batch.quote.lines.map(l=>l.kind),['editorial','article','refinement']);
   assert.ok(batch.quote.recommendedLimit>=batch.quote.lines.reduce((sum,l)=>sum+l.reservation,0));
   f.approve(batch);await f.drainBatch();assert.equal(f.batches.detail(batch.id).items[0].state,'completed');assert.equal(f.providerCalls.length,2);
   assert.equal(f.providerCalls[0].payload.instructions,config.editorialRequest.instructions);assert.equal(f.providerCalls[1].payload.instructions,config.writingRequest.instructions);

@@ -119,6 +119,8 @@ test('browser import stages safely, survives worker recovery, deduplicates retri
   assert.equal(imported.photos.length,1); assert.equal(imported.photos[0].selected,1); assert.equal(imported.status,'ready');
   assert.match(imported.recipe.sourceNotes.join(' '),/1 source photographs/);
   assert.equal(finishBrowserCapture(imports,imported.id,{}).revision,imported.revision);
+  assert.equal(imported.selection_confirmed,0,'captured photos require review before a paid estimate');
+  imports.select(imported.id,imported.photos.map(photo=>photo.id));
   const settings={...f.defaults,images:true,imageWorkflow:'reference',output:'article_images'};
   const batch=prepareImportEstimate(f.batches,imported.id,settings);
   assert.equal(batch.quote.pending,0); assert.ok(batch.quote.estimated>0); assert.equal(batch.approved_at,null);
@@ -219,7 +221,7 @@ test('authenticated browser bridge imports text and image bytes, rejects cross-o
   assert.equal((await call(photo)).photos.length,1);
   const finished=await call({op:'finish',id:row.id,missingPhotos:0});assert.equal(finished.status,'ready');
   assert.equal((await call(photo)).status,400,'Finished captures cannot be modified by a retry');
-  const batch=await call({op:'estimate',id:row.id});assert.ok(batch.quote.estimated>0);assert.equal(batch.approved_at,null);
+  const batch=await call({op:'estimate',id:row.id});assert.equal(batch.quote.pending,1,'browser capture waits for photo selection in the app');assert.equal(batch.approved_at,null);
   assert.equal((await call({op:'estimate',id:row.id})).id,batch.id);
   assert.ok(requests.every(r=>!r.includes('approve')));
   const store=await [...globalThis.recipeIntelligenceStores.values()][0];assert.equal(store.db.prepare('SELECT count(*) n FROM api_calls').get().n,0);

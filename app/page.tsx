@@ -7,6 +7,9 @@ import { OpenAIImageControls } from "./components/OpenAIImageControls";
 import { RecipeImageToImage } from "./components/RecipeImageToImage";
 import { RecipeTwoInOne } from "./components/RecipeTwoInOne";
 import { RecipeDesigns } from "./components/RecipeDesigns";
+import { HomeDecor } from "./components/HomeDecor";
+import { prepareClientImage } from "@/lib/preparedImageClient";
+import { VerifiedImage, ImagePreparationNotifications } from './components/VerifiedImage';
 import { RecipeIntelligence } from "./components/RecipeIntelligence";
 import { ImageFilterStudio } from "./components/ImageFilterStudio";
 import { DEFAULT_IMAGE_SETTINGS, isOpenAIImageModel, imageQualitiesFor, supportsImageComplexity, type OpenAIImageSettings } from "@/lib/openaiImageSettings";
@@ -104,6 +107,7 @@ const MAIN_TABS = [
   { id: "image-to-image", label: "Image to Image", contentType: "recipes", workflow: "imageToImage" },
   { id: "two-in-one", label: "2 in one image", contentType: "recipes", workflow: "twoInOne" },
   { id: "recipe-intelligence", label: "Recipe Intelligence", contentType: "recipes", workflow: "intelligence" },
+  { id: "home-decor", label: "Home & Decor", contentType: "recipes", workflow: "decor" },
 ] as const;
 const RECIPE_MODES: { value: string; label: string }[] = [
   { value: "dessert", label: "Desserts & sweets" },
@@ -277,7 +281,7 @@ export default function Page() {
   const [count, setCount] = useState<number>(1);
   const [countRaw, setCountRaw] = useState<string>("1");
   const [contentType, setContentType] = useState<ContentType>("horses");
-  const [recipeWorkflow, setRecipeWorkflow] = useState<"designs" | "imageToImage" | "twoInOne" | "intelligence">("designs");
+  const [recipeWorkflow, setRecipeWorkflow] = useState<"designs" | "imageToImage" | "twoInOne" | "intelligence" | "decor">("designs");
   const showRecipeImageToImage = contentType === "recipes" && recipeWorkflow === "imageToImage";
   const [modes, setModes] = useState<Set<string>>(new Set(DEFAULT_HORSE_MODES));
   const [customSubject, setCustomSubject] = useState<string>("");
@@ -707,7 +711,7 @@ export default function Page() {
     try {
       const resp = await fetch(proxyUrl);
       if (!resp.ok) throw new Error("Could not download the original image.");
-      const blob = await resp.blob();
+      const blob = (await prepareClientImage(await resp.blob())).blob;
       // Mobile browsers can save the unchanged image through their share sheet.
       if (isMobileDevice() && typeof navigator !== "undefined" && typeof navigator.share === "function") {
         const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
@@ -843,6 +847,7 @@ export default function Page() {
 
   return (
     <main className="studio-main mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
+      <ImagePreparationNotifications />
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[220px] bg-[radial-gradient(circle_at_top,rgba(201,122,61,0.12),transparent_55%)]" />
       <div className="pointer-events-none absolute right-0 top-20 -z-10 h-56 w-56 rounded-full bg-green-50/8 blur-3xl" />
 
@@ -892,6 +897,7 @@ export default function Page() {
       <div hidden={contentType !== "recipes" || recipeWorkflow !== "designs"}>
         <RecipeDesigns />
       </div>
+      <HomeDecor active={contentType === "recipes" && recipeWorkflow === "decor"} />
       <div hidden={contentType !== "recipes" || recipeWorkflow !== "intelligence"}>
         <RecipeIntelligence active={contentType === "recipes" && recipeWorkflow === "intelligence"} />
       </div>
@@ -1126,7 +1132,7 @@ export default function Page() {
       {openAIImage && <OpenAIImageControls model={imageModel} value={imageSettings} onChange={setImageSettings} disabled={loading} />}
       {partialPreview && loading && <section className="studio-panel mb-4 rounded-[24px] p-4" aria-live="polite">
         <p className="mb-2 text-sm">Image preview · generation in progress</p>
-        <img src={partialPreview} alt="In-progress image preview" className="max-h-80 rounded-xl object-contain" />
+        <p role="status">{partialPreview}</p>
       </section>}
 
 
@@ -1347,8 +1353,8 @@ export default function Page() {
                         onPointerLeave={(e) => { if (e.pointerType === "mouse" && !previewPinned) setPreview(null); }}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={proxiedImageUrl(i.imageUrl)}
+                        <VerifiedImage
+                          source={proxiedImageUrl(i.imageUrl)}
                           alt={i.idea}
                           draggable
                           title="Click to open the preview, or drag the image to your computer"
@@ -1585,16 +1591,16 @@ export default function Page() {
             aria-label="Close preview"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={proxiedImageUrl(preview.url)}
+            <VerifiedImage
+              source={proxiedImageUrl(preview.url)}
               alt={preview.alt}
               className="max-h-[90vh] max-w-full rounded-2xl object-contain shadow-2xl"
             />
           </button>
           <div className={`fixed left-6 top-1/2 z-50 hidden -translate-y-1/2 md:block ${previewPinned ? "pointer-events-auto" : "pointer-events-none"}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={proxiedImageUrl(preview.url)}
+            <VerifiedImage
+              source={proxiedImageUrl(preview.url)}
               alt={preview.alt}
               draggable
               title={previewPinned ? "Drag this image to your computer" : "Click the thumbnail to keep this preview open"}

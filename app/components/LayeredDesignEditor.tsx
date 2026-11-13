@@ -1,4 +1,5 @@
 "use client";
+import { prepareClientImage } from "@/lib/preparedImageClient";
 
 import { useEffect, useRef, useState } from "react";
 import type { Canvas, FabricObject, Textbox } from "fabric";
@@ -187,7 +188,8 @@ export function LayeredDesignEditor({ photo, title, ingredients, family, project
     setBusy(true); setError(""); setNotice("");
     try {
       stage.discardActiveObject(); stage.renderAll();
-      const blob = await stage.toBlob({ format: "png", multiplier: 1 });
+      const composed = await stage.toBlob({ format: "png", multiplier: 1 });
+      const blob = composed ? (await prepareClientImage(composed, [], photo?.blob)).blob : null;
       if (!blob) throw new Error("Could not export this layered design.");
       const scene = JSON.stringify(stage.toObject(["layerId", "selectable", "evented"]));
       if (scene !== lastSaved.current) {

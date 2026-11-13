@@ -32,7 +32,7 @@ async function referenceFixture(t, options={}) {
    return textResponse(article());
  }});
  const imports=new ImportStore(f.store);
- const upload=async(count=1,start=0)=>{const row=imports.create(); for(let i=0;i<count;i++){ const index=(start+i)%8; const id=await imports.add(row.id,fs.readFileSync(path.join(directory,names[index]+'.jpg')),names[index]+'.jpg');photoMap.set(id,index); }return imports.detail(row.id);};
+ const upload=async(count=1,start=0,confirm=true)=>{const row=imports.create(); for(let i=0;i<count;i++){ const index=(start+i)%8; const id=await imports.add(row.id,fs.readFileSync(path.join(directory,names[index]+'.jpg')),names[index]+'.jpg');photoMap.set(id,index); }if(confirm) imports.select(row.id,imports.detail(row.id).photos.filter(p=>p.selected).map(p=>p.id));return imports.detail(row.id);};
  const settings={...DEFAULT_CONTENT_SETTINGS,output:'images_only',correction:false};
  return {...f,imports,upload,settings};
 }
@@ -57,7 +57,7 @@ test('responsive and lazy photos deduplicate while ads, portraits and unrelated 
 test('all usable photos auto-select, including a fourth; exact duplicate bytes do not count twice',async t=>{
  const f=await referenceFixture(t); const row=await f.upload(3);assert.equal(row.selection_confirmed,1); assert.equal(row.photos.filter(p=>p.selected).length,3);
  await f.imports.add(row.id,fs.readFileSync(path.join(directory,names[0]+'.jpg')),'same-photo.jpg'); assert.equal(f.imports.detail(row.id).photos.length,3);
- await f.imports.add(row.id,fs.readFileSync(path.join(directory,names[3]+'.jpg')),'fourth.jpg');const four=f.imports.detail(row.id);assert.equal(four.photos.filter(p=>p.selected).length,4);assert.equal(four.selection_confirmed,1);
+ await f.imports.add(row.id,fs.readFileSync(path.join(directory,names[3]+'.jpg')),'fourth.jpg');const four=f.imports.detail(row.id);assert.equal(four.photos.filter(p=>p.selected).length,4);assert.equal(four.selection_confirmed,0); f.imports.select(row.id,four.photos.filter(p=>p.selected).map(p=>p.id));
  const b=f.batches.create([{importId:row.id}],f.settings); assert.equal(b.quote.lines.filter(l=>l.kind.startsWith('photo:')).length,4);assert.equal(b.quote.pending,0);assert.equal(f.providerCalls.length,0);
 });
 test('URL preparation is free, persistent and independent of historical publication verification',async t=>{
@@ -76,7 +76,7 @@ test('selected references alone enter quotes, high-detail analysis and image edi
  for(const call of f.providerCalls.filter(c=>c.operation==='image')) {assert.equal(call.payload.references.length,1); assert.equal(call.payload.complexity,undefined);assert.match(call.payload.prompt,/#607D8B/); const original=Buffer.from(call.payload.references[0].split(',')[1],'base64');assert.ok(ids.some(id=>f.imports.read(id).bytes.equals(original)));}
  const files=done.items[0].files;assert.equal(files.filter(x=>/^photo-.*\.webp$/.test(x.name)).length,3);assert.equal(files.filter(x=>/^photo-.*\.(jpg|png)$/.test(x.name)).length,0);assert.ok(files.some(x=>x.name==='gallery.html'));
  const manifest=JSON.parse(f.batches.artifacts.read(files.find(x=>x.name==='manifest.json').id).data);assert.equal(manifest.profiles.photoProfile,PHOTO_PROFILE_VERSION);
- const zip=f.batches.artifacts.zip(f.batches.item(done.items[0].id));assert.equal(zip.readUInt32LE(0),0x04034b50);assert.ok(zip.includes(Buffer.from('prompts.json')));assert.ok(zip.includes(Buffer.from('Original and edited photographs')));
+ const zip=await f.batches.artifacts.zip(f.batches.item(done.items[0].id));assert.equal(zip.readUInt32LE(0),0x04034b50);assert.ok(zip.includes(Buffer.from('prompts.json')));assert.ok(zip.includes(Buffer.from('Original and edited photographs')));
 });
 test('palette, selection, prompt versions and analysis cache survive settings changes and restart',async t=>{
  const f=await referenceFixture(t);const row=await f.upload(1,7);const palette={...f.settings.palette,utensil:'#3a705e'};const b=f.batches.create([{importId:row.id}],{...f.settings,palette});f.approve(b);
@@ -102,7 +102,8 @@ for (const version of [2,3,4]) test(`frozen v${version} jobs keep their instruct
  const expected=`recipe-photo-editor-v${version}\n${config.photoInstructions}\nSelected cookware/bowl color: #112233. Selected surrounding surface color: #ccbbaa.${version>=3?' Selected spoon/utensil color: #664422.':''} Keep this palette consistent throughout this recipe.\nConfirmed photograph context: ${JSON.stringify(analysis)}\nOutput dimensions: 1536x864. Use this photograph's own original reference. Return one edited photograph.`;
  assert.equal(image.prompt,expected);assert.equal(f.providerCalls[0].payload.instructions,config.analysisProfile+'\n'+config.analysisInstructions);
  assert.deepEqual(f.batches.detail(b.id).settings.palette,oldPalette);assert.equal(f.batches.item(item.id).config_json,JSON.stringify(config));
- assert.ok(f.batches.detail(b.id).items[0].files.some(f=>f.name.endsWith('.jpg')));assert.ok(!f.batches.detail(b.id).items[0].files.some(f=>f.name.endsWith('.webp')));
+ const exported=f.batches.detail(b.id).items[0].files.find(f=>f.name.endsWith('.webp'));
+ assert.ok(exported,'legacy prompts now use the verified lossless output pipeline');assert.equal(exported.metadataVerified,true);
  const calls=f.providerCalls.length;f.batches.retry(item.id,'photo:'+row.photos[0].id);await f.drainBatch();assert.equal(f.providerCalls.length,calls);
 });
 test('changed selections invalidate approval and a refreshed estimate snapshots only the new selection',async t=>{
@@ -163,7 +164,7 @@ test('alternative source selection rediscovers photos and requires a fresh estim
  const alternative={...source,url:'https://alternative.example/soup/'};f.store.db.prepare("UPDATE content_items SET source_json=?,selection_reason='Selected alternative source.' WHERE id=?").run(JSON.stringify(alternative),itemId);f.batches.stage(itemId,'select','done');
  assert.equal(f.batches.selectedSource(itemId,alternative,b.settings),true);assert.equal(f.batches.item(itemId).state,'preparing');assert.equal(f.store.db.prepare('SELECT count(*) n FROM content_photos WHERE item_id=?').get(itemId).n,0);
  const nextImport=f.batches.item(itemId).import_id;f.responses.set(alternative.url,html().replace('</body>','<article><img src="https://alternative.example/photo.jpg"></article></body>'));f.responses.set('https://alternative.example/photo.jpg',fs.readFileSync(path.join(directory,'06-creamy-chili.jpg')));await f.imports.process(nextImport,f.fetcher);
- b=prepareReferenceBatch(f.batches,b.id);assert.equal(b.items[0].state,'awaiting_item_approval');await f.drainBatch();assert.equal(f.providerCalls.length,0);f.approve(b);await f.drainBatch();assert.equal(f.batches.item(itemId).review_kind,'article');f.batches.approveItem(itemId);await f.drainBatch();assert.equal(f.batches.detail(b.id).status,'completed');
+ b=prepareReferenceBatch(f.batches,b.id);assert.equal(b.items[0].state,'photo_selection');f.imports.select(nextImport,f.imports.detail(nextImport).photos.filter(p=>p.selected).map(p=>p.id));b=prepareReferenceBatch(f.batches,b.id);assert.equal(b.items[0].state,'awaiting_item_approval');await f.drainBatch();assert.equal(f.providerCalls.length,0);f.approve(b);await f.drainBatch();assert.equal(f.batches.item(itemId).review_kind,'article');f.batches.approveItem(itemId);await f.drainBatch();assert.equal(f.batches.detail(b.id).status,'completed');
  assert.ok(f.providerCalls.filter(c=>c.operation==='image').every(c=>Buffer.from(c.payload.references[0].split(',')[1],'base64').equals(fs.readFileSync(path.join(directory,'06-creamy-chili.jpg')))));
 });
 
@@ -230,7 +231,7 @@ test('skipping a ready photo rebuilds saved article and exports without deleting
  const after=f.batches.detail(b.id).items[0];assert.ok(!after.files.some(x=>x.id===file.id));assert.ok(f.batches.artifacts.read(file.id).data.length>0);
  const saved=f.batches.artifacts.read(after.files.find(x=>x.name==='article.html').id).data.toString();assert.ok(!saved.includes(file.name));assert.ok(saved.includes(`photo-${row.photos[1].id}.webp`));
  const doc=new (require('../.intelligence-build/lib/recipe-intelligence/wordpress.js').WordPressStore)(f.store).document(item.id);assert.equal(doc.images.length,1);assert.ok(doc.images.every(i=>i.name!==file.name));
- const zip=f.batches.artifacts.zip(f.batches.item(item.id));assert.ok(!zip.includes(Buffer.from(file.name)));assert.equal(f.providerCalls.length,count);assert.deepEqual(f.batches.budget(b.id),budget);
+ const zip=await f.batches.artifacts.zip(f.batches.item(item.id));assert.ok(!zip.includes(Buffer.from(file.name)));assert.equal(f.providerCalls.length,count);assert.deepEqual(f.batches.budget(b.id),budget);
 });
 
 test('library approvals isolate one recipe and never start or charge the other rows',async t=>{
@@ -253,4 +254,19 @@ test('library approval rejects changed photos without moving a recipe out of its
  f.imports.select(first.id,[first.photos[0].id]);
  assert.throws(()=>approveLibraryItem(f.batches,b.items[0].id,10,b.quote.createdAt),/selection changed/);
  assert.equal(f.batches.item(b.items[0].id).batch_id,b.id);assert.equal(f.providerCalls.length,0);
+});
+
+test('generation waits for explicit photo review and excludes unchecked originals', async t => {
+ const f=await referenceFixture(t); const imported=await f.upload(3,0,false);
+ assert.equal(imported.selection_confirmed,0);
+ const pending=f.batches.create([{importId:imported.id}],f.settings);
+ assert.equal(pending.quote.pending,1);
+ assert.equal(pending.items[0].state,'photo_selection');
+ assert.throws(()=>f.batches.approve(pending.id,10,pending.quote.createdAt));
+ assert.equal(f.providerCalls.length,0);
+ f.imports.select(imported.id,[imported.photos[0].id]);
+ const ready=prepareReferenceBatch(f.batches,pending.id);
+ assert.equal(ready.quote.pending,0);
+ assert.equal(ready.quote.lines.filter(l=>l.kind.startsWith('photo:')).length,1);
+ assert.equal(f.providerCalls.length,0);
 });

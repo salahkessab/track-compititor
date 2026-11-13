@@ -18,7 +18,8 @@ export interface ObjectTransport {
   remove(key: string): Promise<void>;
 }
 const mime: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", json: "application/json", html: "text/html", md: "text/markdown", txt: "text/plain", zip: "application/zip" };
-const folders = ["articles", "images", "reports", "research/references", "research/browser", "research/requests", "research/api-receipts", "exports/wordpress-receipts"];
+const folders = ["articles", "images", "reports", "research/references", "research/browser", "research/requests", "research/api-receipts", "exports/wordpress-receipts", "verified-images"];
+const objectMime = (relative: string) => mime[relative.split('.').pop()!.toLowerCase()] || (/^verified-images\/(?:outputs\/[a-f0-9]{64}|private\/[a-f0-9]{64}\/(?:original|input|candidate\.(?:png|jpeg|webp)|(?:original|input)\.image))$/.test(relative) ? 'application/octet-stream' : '');
 export function r2Config(env: NodeJS.ProcessEnv = process.env): Config | null {
   if (env.R2_ENABLED !== "1") return null;
   if (!/^[a-f0-9]{32}$/i.test(env.R2_ACCOUNT_ID || "")) throw new Error("Set R2_ACCOUNT_ID to your Cloudflare account ID.");
@@ -61,7 +62,7 @@ export class R2Transport implements ObjectTransport {
 const normal = (relative: string) => relative.replaceAll("\\", "/");
 function allowed(relative: string) {
   return !relative.split("/").some(p => !p || p === "." || p === ".." || /[\x00-\x1f:]/.test(p))
-    && folders.some(p => relative.startsWith(p + "/")) && !!mime[relative.split(".").pop()!.toLowerCase()];
+    && folders.some(p => relative.startsWith(p + "/")) && !!objectMime(relative);
 }
 function safeError(e: any) {
   const status = Number(e?.$metadata?.httpStatusCode);
@@ -132,7 +133,7 @@ export class ObjectStorage {
         this.store.db.prepare(`INSERT INTO r2_objects(destination,relative_path,sha256,object_key,size_bytes,media_type,mtime_ms,is_current,state,updated_at)
           VALUES(?,?,?,?,?,?,?,1,'pending',?) ON CONFLICT(destination,relative_path,sha256) DO UPDATE SET is_current=1,mtime_ms=excluded.mtime_ms,
           state=CASE WHEN r2_objects.state='superseded' THEN 'pending' ELSE r2_objects.state END`)
-          .run(this.destination, relative, hash, key, bytes.length, mime[relative.split(".").pop()!.toLowerCase()], info.mtimeMs, new Date().toISOString());
+          .run(this.destination, relative, hash, key, bytes.length, objectMime(relative), info.mtimeMs, new Date().toISOString());
       }).immediate();
       await yieldLoop();
     };

@@ -1,4 +1,5 @@
 import { articleLibrary, approveLibraryItem, archiveLibraryItem } from "./library";
+import { DecorStore } from './decor';
 import { timingSafeEqual } from "node:crypto";
 import { IntelligenceStore } from "./database";
 import { localRoot } from "./paths";
@@ -10,6 +11,7 @@ import { atomicWrite } from "./artifacts";
 import { ImportStore, MAX_PHOTO_BYTES } from "./imports";
 import { prepareReferenceBatch, prepareImportEstimate, reviewPhoto, skipPhoto } from "./referenceWorkflow";
 import { WordPressStore } from "./wordpress";
+import { preparationFailure } from '../imageFinalization';
 import { WordPressPublisher } from "./wordpress-publish";
 import { beginBrowserCapture, finishBrowserCapture, MAX_CAPTURE_BYTES } from "./browserCapture";
 import { publicUrl } from "./urls";
@@ -93,6 +95,26 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     const database = await store();
     const reports = new ReportStore(database); const batches = new BatchStore(database); const imports = new ImportStore(database);
     const [area, id, child] = segments;
+    if (area === 'decor') {
+      const decor = new DecorStore(database);
+      if (!id && request.method === 'GET') return json({ jobs: decor.list(), worker: database.snapshot().worker });
+      if (!id && request.method === 'POST') { const data = await body(request, 180000); return json(decor.create(data.url, data.text), 201); }
+      if (id && !child && request.method === 'GET') return json(decor.detail(id));
+      if (id && !child && request.method === 'DELETE') { const data = await body(request); if (data.confirmed !== true) throw new Error('Confirm deletion of this article and its saved photos.'); return json(decor.remove(id)); }
+      if (id && child === 'selection' && request.method === 'POST') return json(decor.select(id, await body(request)));
+      if (id && child === 'approve' && request.method === 'POST') return json(decor.approve(id, (await body(request)).version));
+      if (id && child === 'retry-image' && request.method === 'POST') return json(await decor.retryPreparation(id, String((await body(request)).photoId)));
+      if (id && child === 'archive' && request.method === 'POST') return json(decor.archive(id, (await body(request)).archived));
+      if (id && child === 'upload' && request.method === 'POST') {
+        const reader = request.body?.getReader(); if (!reader) throw new Error('Upload is empty.');
+        const chunks: Uint8Array[] = []; let size = 0;
+        try { for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 10 * 1024 * 1024) throw new Error('Photo exceeds 10 MB.'); chunks.push(part.value); } } finally { await reader.cancel().catch(() => {}); }
+        return json(await decor.upload(id, Buffer.concat(chunks), decodeURIComponent(request.headers.get('x-photo-caption') || 'Uploaded reference')));
+      }
+      if (id && ['photo', 'output'].includes(child) && segments[3] && request.method === 'GET') return new Response(new Uint8Array(child === 'output' ? await decor.exportedFile(id, segments[3]) : decor.file(id, segments[3], false)), { headers: { 'Content-Type': child === 'output' ? 'image/webp' : 'image/png', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
+      if (id && ['preview', 'zip'].includes(child) && request.method === 'GET') return new Response(new Uint8Array(await decor.document(id, child === 'zip')), { headers: { 'Content-Type': child === 'zip' ? 'application/zip' : 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', ...(child === 'zip' ? { 'Content-Disposition': 'attachment; filename="home-decor-article.zip"' } : { 'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'" }) } });
+      return json({ error: 'Unknown Home & Decor operation.' }, 404);
+    }
     const wordpress = new WordPressStore(database);
     const publisher = new WordPressPublisher(wordpress);
     const storage = objectStorage(database);
@@ -136,7 +158,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "batches" && id && child === "estimate" && request.method === "POST") { await body(request); return json(prepareReferenceBatch(batches, id)); }
     if (area === "items" && id && child === "photo-skip" && request.method === "POST") { const data = await body(request); await skipPhoto(batches, id, data.referenceId); return json({ skipped: true }); }
     if (area === "items" && id && child === "photo-context" && request.method === "POST") { const data = await body(request); reviewPhoto(batches, id, data.referenceId, data.analysis); return json({ queued: true }, 202); }
-    if (area === "items" && id && child === "zip" && request.method === "GET") { const bytes = batches.artifacts.zip(batches.item(id)); return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="recipe-outputs.zip"', "Cache-Control": "no-store" } }); }
+    if (area === "items" && id && child === "zip" && request.method === "GET") { const bytes = await batches.artifacts.zip(batches.item(id)); return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="recipe-outputs.zip"', "Cache-Control": "no-store" } }); }
     if (area === "reports" && !id && request.method === "POST") {
       const data = await body(request);
       if (!Array.isArray(data.siteIds) || data.siteIds.some((v: unknown) => typeof v !== "string")) throw new Error("Choose tracked websites.");
@@ -220,6 +242,6 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "integrity" && request.method === "POST") { await body(request); return json({ result: database.integrity() }); }
     return json({ error: "Unknown Recipe Intelligence operation." }, 404);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message.slice(0, 400) : "Local operation failed." }, 400);
+    return json(preparationFailure(error) || { error: error instanceof Error ? error.message.slice(0, 400) : "Local operation failed." }, 400);
   }
 }

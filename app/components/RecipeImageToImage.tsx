@@ -1,4 +1,5 @@
 "use client";
+import { VerifiedImage } from './VerifiedImage';
 
 import { useEffect, useRef, useState } from "react";
 import { compressRecipeWebp } from "@/lib/recipeWebp";
@@ -160,7 +161,7 @@ export function RecipeImageToImage() {
       const response = await fetch(url);
       if (!response.ok) throw new Error("Could not download the image.");
       const original = await response.blob();
-      const blob = result.imageSettings.output_format === "webp" ? await compressRecipeWebp(original) : original;
+      const blob = original;
       const extension = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
       const file = new File([blob], "recipe-variation-" + (index + 1) + "." + extension, { type: blob.type });
       if (window.matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
@@ -258,18 +259,16 @@ export function RecipeImageToImage() {
             <p className="text-xs uppercase tracking-[.18em] text-blue-700">Output preview</p>
             <h2 className="studio-title mt-1 text-xl">{selectedResult ? `Variation ${selectedIndex + 1}` : "Your variation"}</h2>
             <div className="mt-4 flex aspect-[4/5] items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white">
-              {selectedResult ? <button type="button" className="block h-full w-full" onClick={() => setPreview(selectedResult)} aria-label={`Open variation ${selectedIndex + 1}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={selectedResult.imageUrl} alt={`Realistic variation ${selectedIndex + 1} of the uploaded dish`} className="h-full w-full object-contain" />
-              </button> : partial ?
+              {selectedResult ? <VerifiedImage source={selectedResult.imageUrl} alt={`Realistic variation ${selectedIndex + 1} of the uploaded dish`} className="h-full w-full object-contain"
+                action={{ className: 'block h-full w-full', onClick: () => setPreview(selectedResult), 'aria-label': `Open variation ${selectedIndex + 1}` }} /> : partial ?
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={partial} alt="Food variation in progress" className="h-full w-full object-contain" /> :
+                <p role="status">{partial}</p> :
                 <p className="px-6 text-center text-sm text-gray-600">Your generated image will appear here.</p>}
             </div>
             {loading && <p role="status" aria-live="polite" className="mt-3 text-sm text-gray-600">
               {completed + " of " + numberOfImages + " variations ready. Creating a new setting for your dish…"}
             </p>}
-            {!selectedResult && partial && <p className="mt-2 text-xs text-gray-600">Preview · still generating</p>}
+            {!selectedResult && partial && <p className="mt-2 text-xs text-gray-600">Image preparation</p>}
             {selectedResult && <div className="mt-4">
               <p className="break-words text-xs text-gray-600">{selectedResult.imageModel}</p>
               <p className="mt-2 text-xs text-gray-600">{selectedResult.imageCost === null ? "Cost unavailable from provider usage" : "$" + selectedResult.cost.toFixed(5) + (selectedResult.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
@@ -283,18 +282,17 @@ export function RecipeImageToImage() {
             {results.length > 1 && <div className="mt-5">
               <p className="mb-2 text-sm font-medium text-gray-900">Choose a variation</p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {results.map((result, index) => <button key={result.id} type="button" aria-label={`Select variation ${index + 1}`} aria-pressed={selectedIndex === index} onClick={() => setSelectedIndex(index)}
-                  className={`overflow-hidden rounded-lg border p-1 text-xs ${selectedIndex === index ? "border-blue-600 bg-blue-50 text-gray-900" : "border-gray-200 text-gray-600"}`}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={result.imageUrl} alt="" className="aspect-square w-full rounded object-cover" />
-                  <span className="block py-1">{index + 1}</span>
-                </button>)}
+                {results.map((result, index) => <VerifiedImage key={result.id} source={result.imageUrl} alt="" className="aspect-square w-full rounded object-cover" action={{
+                  'aria-label': `Select variation ${index + 1}`, 'aria-pressed': selectedIndex === index, onClick: () => setSelectedIndex(index),
+                  className: `overflow-hidden rounded-lg border p-1 text-xs ${selectedIndex === index ? "border-blue-600 bg-blue-50 text-gray-900" : "border-gray-200 text-gray-600"}`,
+                  children: <span className="block py-1">{index + 1}</span>,
+                }} />)}
               </div>
             </div>}
             {selectedResult && partial && <div className="mt-4 rounded-xl border border-gray-200 p-2">
               <p className="mb-2 text-xs text-gray-600">Next variation · still generating</p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={partial} alt="Food variation in progress" className="max-h-40 w-full object-contain" />
+              <p role="status">{partial}</p>
             </div>}
           </aside>
         </div>
@@ -310,7 +308,7 @@ export function RecipeImageToImage() {
           <button type="button" autoFocus className={secondaryClass} onClick={() => setPreview(null)}>Close image preview</button>
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        {preview && <img src={preview.imageUrl} alt="Enlarged food photo variation" className="max-h-[78vh] w-full object-contain" />}
+        {preview && <VerifiedImage source={preview.imageUrl} alt="Enlarged food photo variation" className="max-h-[78vh] w-full object-contain" />}
       </dialog>
       {filterTarget && <ImageFilterStudio webOptimized={filterTarget.result.imageSettings.output_format === "webp"} source={filterTarget.result.imageUrl} fileName={`recipe-variation-${filterTarget.index + 1}`} onClose={() => setFilterTarget(null)} />}
     </div>

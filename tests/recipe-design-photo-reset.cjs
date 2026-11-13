@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { imageAssetFetch, assetUrl } = require('./helpers/image-asset-fetch.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -32,7 +33,7 @@ test('changing a recipe photo clears the old draft only after a valid upload', a
   const originals = Object.fromEntries(globals.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;
   for (const [name, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement, File: dom.window.File, crypto: webcrypto, BroadcastChannel: undefined, IS_REACT_ACT_ENVIRONMENT: true })) {
+    HTMLElement: dom.window.HTMLElement, File: require('node:buffer').File, crypto: webcrypto, BroadcastChannel: undefined, IS_REACT_ACT_ENVIRONMENT: true })) {
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
   }
   URL.createObjectURL = () => 'blob:local-test'; URL.revokeObjectURL = () => {};
@@ -46,14 +47,14 @@ test('changing a recipe photo clears the old draft only after a valid upload', a
     releasePaidJob: async () => {},
   };
   const requests = [];
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = imageAssetFetch(async (url, init) => {
     if (url === '/api/recipe-designs/generate') {
       requests.push(JSON.parse(init.body));
       return Response.json({ image: 'data:image/png;base64,YXJ0', cost: 0.05, textCost: 0, imageCost: 0.05, searchCost: 0, costIncomplete: false });
     }
     if (String(url).startsWith('data:')) return new Response('art', { headers: { 'content-type': 'image/png' } });
     throw new Error(`Unexpected network request: ${url}`);
-  };
+  });
   let finishPhoto, finishReference;
   const makePhoto = file => ({ id: file.name, name: file.name, type: 'image/png', blob: new Blob([file.name], { type: 'image/png' }),
     sha256: 'a'.repeat(64), width: 100, height: 100, createdAt: new Date().toISOString() });
@@ -104,7 +105,8 @@ test('changing a recipe photo clears the old draft only after a valid upload', a
     const referencePicker = document.querySelector('input[aria-label="Design reference images"]');
     Object.defineProperty(referencePicker, 'files', { configurable: true, value: [file('reference.png')] });
     await React.act(async () => { referencePicker.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await settle(); });
-    assert.ok(document.querySelector('img[alt="Style reference 1"]'));
+    await React.act(async()=>{await settle();});
+    assert.ok(document.querySelector('img[alt="Style reference 1"]'),document.body.textContent);
     await React.act(async () => { generate().click(); await settle(); });
     assert.equal(requests.length, 1);
     assert.equal(stores.history.size, 1);

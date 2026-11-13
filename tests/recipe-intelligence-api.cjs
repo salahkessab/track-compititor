@@ -129,6 +129,8 @@ test('import upload, originals, selection and ZIP APIs retain local authenticati
   const photo=await request(`references/${data.photos[0].id}`);assert.equal(photo.status,200);assert.equal(photo.headers.get('content-type'),'image/jpeg');assert.ok(Buffer.from(await photo.arrayBuffer()).equals(original));
   assert.equal((await request(`references/${data.photos[0].id}`,'GET',undefined,{'X-RI-Key':''})).status,401);
   assert.equal((await request(`imports/${row.id}/selection`,'POST',{photoIds:['unknown']})).status,400);
+  assert.equal(data.selection_confirmed,0);
+  assert.equal((await request(`imports/${row.id}/selection`,'POST',{photoIds:[data.photos[0].id]})).status,200);
   const batch=await(await request('batches','POST',{selections:[{importId:row.id}],settings:{output:'images_only'}})).json();assert.equal(batch.items[0].photos.length,1);
   const zip=await request(`items/${batch.items[0].id}/zip`);assert.equal(zip.status,200);assert.equal(zip.headers.get('content-type'),'application/zip');assert.equal((await request(`items/${batch.items[0].id}/zip`,'GET',undefined,{'X-RI-Key':''})).status,401);
   const store=await [...globalThis.recipeIntelligenceStores.values()][0];assert.equal(store.db.prepare('SELECT count(*) n FROM api_calls').get().n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM tracked_sites').get().n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM recipe_records').get().n,0);

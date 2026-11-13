@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { imageAssetFetch, assetUrl } = require('./helpers/image-asset-fetch.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -121,7 +122,7 @@ test('Image to Image previews each completed variation and targets its download 
   const globals = ['window', 'document', 'navigator', 'HTMLElement', 'Image', 'File', 'FileReader', 'fetch', 'IS_REACT_ACT_ENVIRONMENT'];
   const originals = Object.fromEntries(globals.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const [name, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement, File: dom.window.File, FileReader: dom.window.FileReader, IS_REACT_ACT_ENVIRONMENT: true })) {
+    HTMLElement: dom.window.HTMLElement, File: require('node:buffer').File, FileReader: dom.window.FileReader, IS_REACT_ACT_ENVIRONMENT: true })) {
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
   }
   globalThis.Image = class { constructor() { this.width = 640; this.height = 480; } set src(_value) { queueMicrotask(() => this.onload()); } };
@@ -135,7 +136,7 @@ test('Image to Image previews each completed variation and targets its download 
   const requests = [];
   let finishSecond;
   const makeResult = imageUrl => ({ imageUrl, imageModel: 'gpt-image-2.6-sunburst', imageSettings: { output_format: 'png' }, cost: 0.05, imageCost: 0.05, costIncomplete: false });
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = imageAssetFetch(async (url, init) => {
     if (url !== '/api/generate') return new Response('selected image', { headers: { 'content-type': 'image/png' } });
     requests.push(JSON.parse(init.body));
     if (requests.length === 1) return Response.json(makeResult(urls[0]));
@@ -144,7 +145,7 @@ test('Image to Image previews each completed variation and targets its download 
       controller.enqueue(encode({ type: 'partial', imageUrl: 'data:image/png;base64,cHJldmlldw==' }));
       finishSecond = () => { controller.enqueue(encode({ type: 'result', data: makeResult(urls[1]) })); controller.close(); };
     } }), { headers: { 'content-type': 'application/x-ndjson' } });
-  };
+  });
   const { createRoot } = require('react-dom/client');
   const { RecipeImageToImage } = loadComponent(path.resolve(__dirname, '../app/components/RecipeImageToImage.tsx'));
   const root = createRoot(document.getElementById('root'));
@@ -165,16 +166,17 @@ test('Image to Image previews each completed variation and targets its download 
     await React.act(async () => { [...document.querySelectorAll('button')].find(button => button.textContent === 'Generate').click(); await settle(); });
     assert.equal(requests.length, 2);
     assert.equal(requests[0].references[0], requests[1].references[0]);
-    assert.ok(panel.querySelector('img[alt="Realistic variation 1 of the uploaded dish"]'));
-    assert.ok(panel.querySelector('img[alt="Food variation in progress"]'));
+    await React.act(async()=>{await settle();});
+    assert.ok(panel.querySelector('img[alt="Realistic variation 1 of the uploaded dish"]'),panel.textContent);
+    assert.equal(panel.querySelector('img[alt="Food variation in progress"]'), null, 'unverified partial images stay hidden');
     assert.match(panel.textContent, /1 of 2 variations ready/);
     await React.act(async () => { finishSecond(); await settle(); });
     assert.equal(panel.querySelectorAll('button[aria-label^="Select variation"]').length, 2);
     await React.act(async () => panel.querySelector('[aria-label="Select variation 2"]').click());
-    assert.equal(panel.querySelector('img[alt="Realistic variation 2 of the uploaded dish"]').getAttribute('src'), urls[1]);
+    assert.equal(panel.querySelector('img[alt="Realistic variation 2 of the uploaded dish"]').getAttribute('src'), assetUrl(Buffer.from('second')));
     assert.equal(panel.querySelector('[aria-label="Select variation 2"]').getAttribute('aria-pressed'), 'true');
     await React.act(async () => panel.querySelector('[aria-label="Open variation 2"]').click());
-    assert.equal(document.querySelector('img[alt="Enlarged food photo variation"]').getAttribute('src'), urls[1]);
+    assert.equal(document.querySelector('img[alt="Enlarged food photo variation"]').getAttribute('src'), assetUrl(Buffer.from('second')));
     await React.act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'Close image preview').click());
     await React.act(async () => [...panel.querySelectorAll('button')].find(button => button.textContent === 'Add Filter').click());
     assert.equal(document.querySelector('[data-filter-source]').getAttribute('data-filter-source'), urls[1]);
@@ -203,7 +205,7 @@ test('2 in one image accepts two files together and sends both in one request', 
   }
   globalThis.Image = class { constructor() { this.width = 640; this.height = 480; } set src(_value) { queueMicrotask(() => this.onload()); } };
   const requests=[];
-  globalThis.fetch=async(url,init)=>{requests.push({url,body:JSON.parse(init.body)});return Response.json({imageUrl:'data:image/png;base64,aW1hZ2U=',imageModel:'gpt-image-2.6-sunburst',imageSettings:{output_format:'png'},cost:0.05,imageCost:0.05,costIncomplete:false});};
+  globalThis.fetch=imageAssetFetch(async(url,init)=>{requests.push({url,body:JSON.parse(init.body)});return Response.json({imageUrl:'data:image/png;base64,aW1hZ2U=',imageModel:'gpt-image-2.6-sunburst',imageSettings:{output_format:'png'},cost:0.05,imageCost:0.05,costIncomplete:false});});
   const {createRoot}=require('react-dom/client');
   const {RecipeTwoInOne}=loadComponent(path.resolve(__dirname,'../app/components/RecipeTwoInOne.tsx'));
   const root=createRoot(document.getElementById('root'));

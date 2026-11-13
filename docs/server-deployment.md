@@ -70,6 +70,49 @@ The local launcher uses Windows DPAPI. Migration re-encrypts a saved provider ke
 alongside WordPress credentials in the disposable backup; the original is unchanged.
 Server backups include the encrypted credential, so retain the server encryption key.
 
+## Image metadata preparation
+
+Every generated final image passes the official ExifTool CLI before the app
+returns its preview. The CLI is provided by exact-pinned `exiftool-vendored`
+39.3.0 and its 13.63.0 platform package; the backend checks `exiftool -ver`
+against 13.63. `EXIFTOOL_PATH` may select another absolute path to that same
+version. Windows includes the executable and supporting files. Linux requires
+Perl (installed in the runtime Docker image) and the npm Perl package. Keep
+optional npm dependencies enabled. The checked-in `config/image-metadata.config`
+enables common PNG generation fields; arbitrary home-directory configs are not loaded.
+
+Final resizing/composition/conversion finishes first. ExifTool edits only a
+temporary copy, then the backend rereads it and compares decoded pixels,
+compressed image payload, dimensions, alpha, orientation, ICC and attribution.
+The source, preparation jobs and verification receipts stay private under
+`RECIPE_INTELLIGENCE_ROOT/verified-images` (or `IMAGE_ASSET_ROOT` for standalone
+image tools). Private R2 sync includes this directory. PNG and WebP variants are
+prepared and verified independently, once, and reused. Cleanup never re-encodes.
+
+GPS, device identifiers, personal/contact fields, optional timestamps/comments,
+Software/CreatorTool and supported prompt/workflow/parameters/model/seed/sampler/
+steps/CFG fields are removed. Copyright, attribution and color/display fields
+are preserved. Conflicting attribution in a field targeted for removal, unknown
+non-writable fields, malformed images, verification failures and changed cache
+bytes block output. Retry uses saved private bytes, never another paid generation.
+
+C2PA/JUMBF is inspected separately and removed from the final copies under the
+user's updated policy (`optional-metadata-v3-remove-c2pa`). The private original
+remains unchanged. ExifTool reopens every output and checks that embedded
+manifests and supported XMP manifest links are absent. External manifest servers
+are not contacted or modified. Possible rights inside a manifest block cleanup
+until those rights can be preserved. Old verification receipts must pass the new
+policy before being reused. Signatures are not validated.
+“Ready” and the small check icon mean this metadata policy passed verification;
+they make no claim about SynthID removal or avoiding Pinterest/other AI labels.
+The “Clean metadata before upload” indicator is always enabled because the same
+automatic policy also protects previews and downloads.
+
+A serverless Vercel deployment has no durable image store or guaranteed Perl
+runtime. Generation fails before billing there unless the persistent image
+backend/storage and pinned CLI are available. Deploy the complete Docker service
+for the full workflow. Do not use raw-provider URLs as a fallback.
+
 Reference: [OpenAI API authentication](https://developers.openai.com/api/reference/overview#authentication).
 
 ## Safe cutover

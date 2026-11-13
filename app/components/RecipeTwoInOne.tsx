@@ -1,4 +1,5 @@
 "use client";
+import { VerifiedImage } from './VerifiedImage';
 /* eslint-disable @next/next/no-img-element -- previews and generated data URLs are runtime images. */
 
 import { useRef, useState } from "react";
@@ -113,7 +114,7 @@ export function RecipeTwoInOne() {
       const url = result.imageUrl.startsWith("data:") ? result.imageUrl : "/api/download?url=" + encodeURIComponent(result.imageUrl);
       const response = await fetch(url); if (!response.ok) throw new Error("Could not download the image.");
       const original = await response.blob();
-      const blob = result.imageSettings.output_format === "webp" ? await compressRecipeWebp(original) : original;
+      const blob = original;
       const extension = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
       const file = new File([blob], `two-in-one-food.${extension}`, { type: blob.type });
       if (window.matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; }
@@ -144,11 +145,11 @@ export function RecipeTwoInOne() {
         </div>
       </div>
     </section>
-    <OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} hideQuickSettings countDescription="Both original food photos are used as references for one image. Partial images show progress before the finished image." />
+    <OpenAIImageControls recipePresets model={model} value={settings} onChange={setSettings} disabled={loading} hideQuickSettings countDescription="Both original food photos are used as references for one image. Images appear after metadata verification." />
     {loading && <p role="status" aria-live="polite" className="mb-4 text-sm text-gray-600">Creating one food photo from both references…</p>}
-    {partial && <div className="studio-panel mb-4 rounded-2xl p-4"><p className="mb-3 text-sm text-gray-600">Preview · still generating</p><img src={partial} alt="Combined food photo in progress" className="max-h-[440px] w-full rounded-xl object-contain" /></div>}
+    {partial && <div className="studio-panel mb-4 rounded-2xl p-4"><p className="mb-3 text-sm text-gray-600">Image preparation</p><p role="status">{partial}</p></div>}
     {result && <section aria-label="Combined food photo" className="studio-panel mt-6 overflow-hidden rounded-[24px] p-4"><h2 className="studio-title mb-4 text-2xl">Your combined image</h2>
-      <img src={result.imageUrl} alt="Food photo combining both references" className="max-h-[600px] w-full rounded-xl bg-white object-contain" />
+      <VerifiedImage source={result.imageUrl} alt="Food photo combining both references" className="max-h-[600px] w-full rounded-xl bg-white object-contain" />
       <p className="mt-3 text-xs text-gray-600">{result.imageModel} · {result.imageCost === null ? "Cost unavailable from provider usage" : "$" + result.cost.toFixed(5) + (result.costIncomplete ? " · partial estimate" : " · recorded usage")}</p>
       <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondaryClass} disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : (result.imageSettings.output_format === "webp" ? "Download optimized WebP" : "Download Original · " + result.imageSettings.output_format.toUpperCase())}</button>
       <button type="button" className={secondaryClass} onClick={() => setFilterTarget(result.imageUrl)}>Add Filter</button></div></section>}

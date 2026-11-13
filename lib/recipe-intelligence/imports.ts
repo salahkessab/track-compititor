@@ -100,7 +100,7 @@ export class ImportStore {
     this.store.db.transaction(() => { this.store.db.prepare("UPDATE reference_photos SET selected=0 WHERE import_id=?").run(id); for (const photo of new Set(ids)) this.store.db.prepare("UPDATE reference_photos SET selected=1 WHERE id=?").run(photo); this.store.db.prepare("UPDATE recipe_imports SET selection_confirmed=1,revision=revision+1,updated_at=? WHERE id=?").run(now(), id); }).immediate();
     return this.detail(id);
   }
-  applySelectionRule(id: string) { const photos = this.store.db.prepare("SELECT id FROM reference_photos WHERE import_id=? AND state='ready' ORDER BY position").all(id) as any[]; this.store.db.prepare("UPDATE reference_photos SET selected=1 WHERE import_id=? AND state='ready'").run(id); this.store.db.prepare("UPDATE recipe_imports SET selection_confirmed=?,revision=revision+1 WHERE id=?").run(Number(photos.length > 0), id); }
+  applySelectionRule(id: string) { const photos = this.store.db.prepare("SELECT id FROM reference_photos WHERE import_id=? AND state='ready' ORDER BY position").all(id) as any[]; this.store.db.prepare("UPDATE reference_photos SET selected=1 WHERE import_id=? AND state='ready'").run(id); this.store.db.prepare("UPDATE recipe_imports SET selection_confirmed=?,revision=revision+1 WHERE id=?").run(0, id); }
   async add(id: string, bytes: Buffer, name: string, sourceUrl: string | null = null, caption = "", existingId?: string) {
     this.get(id); if (bytes.length > MAX_PHOTO_BYTES) throw new Error("Photographs must be at most 10 MB.");
     if (!existingId && (this.store.db.prepare("SELECT count(*) n FROM reference_photos WHERE import_id=?").get(id) as any).n >= MAX_PHOTOS) throw new Error("This recipe has reached the 80-photo preparation limit.");

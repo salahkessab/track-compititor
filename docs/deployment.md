@@ -28,11 +28,15 @@ Store credentials in Vercel's environment settings, never in Git. Do not set
 on Vercel. Preview deployments need the same password protection if API keys
 are configured there.
 
-The Vercel-hosted studio supports its existing recipe-design and image-generation
-tools. Deploying to Vercel alone does not migrate the database or run the durable
-worker. The persistent-server runtime supports tracking, reports, batches, private
-files and encrypted WordPress connections. Keep RECIPE_INTELLIGENCE_MODE unset on
-Vercel; use the migration guide for the complete server deployment.
+The Vercel deployment serves the studio interface. Verified image processing now
+requires the persistent Node runtime with the pinned ExifTool installation and
+private storage. Standalone Vercel generation is blocked before a provider request
+when that backend is unavailable; setting an ephemeral `/tmp` directory is not a
+production substitute. Deploying to Vercel alone does not migrate the database or
+run the durable worker. The persistent-server runtime supports generation,
+tracking, reports, batches, private files and encrypted WordPress connections.
+Keep RECIPE_INTELLIGENCE_MODE unset on Vercel; use the migration guide for the
+complete server deployment. The local launcher remains a working destination.
 
 ## Local Recipe Intelligence
 

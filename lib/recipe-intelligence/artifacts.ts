@@ -10,6 +10,7 @@ import type { ArticleFormat } from "./settings";
 import { andText, articleDocument, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
 import { IMAGE_STORAGE_VERSION, GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
+import { prepareImage, readVerifiedImage, verifiedImage, verifiedVariant } from '../verifiedImages';
 export type { Article } from "./article-document";
 
 export const digest = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
@@ -84,7 +85,7 @@ export class ArtifactStore {
   }
   private imageFile(item: any, stem: string): any {
     if (excludedPhotoFile(this.store, item.id, `${stem}.webp`)) return;
-    const formats = this.lossless(item) ? ["webp", "png", "jpg", "jpeg"] : ["jpg"];
+    const formats = ["webp", "png", "jpg", "jpeg"];
     for (const format of formats) {
       const row = this.store.db.prepare("SELECT id,name,media_type FROM artifacts WHERE item_id=? AND name=?").get(item.id, `${stem}.${format}`);
       if (row) return row;
@@ -121,25 +122,52 @@ export class ArtifactStore {
   }
   async download(id: string, format?: string | null) {
     const file = this.read(id);
-    if (format) {
-      if (format !== "png" || file.media_type !== "image/webp" || !GENERATED_IMAGE_NAME.test(file.name)) throw new Error("PNG download is available for saved WebP recipe images only.");
-      const data = await sharp(file.data, { limitInputPixels: 40_000_000 }).keepIccProfile().png().toBuffer();
-      return { ...file, data, name: file.name.replace(/\.webp$/, ".png"), media_type: "image/png" };
+    if (file.media_type.startsWith('image/')) {
+      const prepared = await this.prepareSavedImage(file.data);
+      const output = format ? verifiedVariant(prepared.data, format as any, this.store.root) : prepared;
+      return { ...file, data: output.data, sha256: output.sha256, media_type: output.mediaType, metadata: output, name: file.name.replace(/\.(?:png|jpe?g|webp)$/, '.' + output.format) };
     }
-    if (file.name !== "article.html") return file;
+    if (format) throw new Error("Format selection is available for saved images only.");
+    if (file.media_type !== "text/html") return file;
     // Store image references once on disk and in ZIPs. Standalone HTML downloads
     // and previews embed checked images on demand, without retaining another copy.
     let embeddedBytes = 0;
+    for (const row of this.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND media_type LIKE 'image/%'").all(file.item_id) as any[]) await this.prepareSavedImage(this.read(row.id).data);
+    // Older gallery exports may already contain embedded image bytes. They
+    // pass the same gate before the HTML or ZIP can leave the backend.
+    for (const match of file.data.toString('utf8').matchAll(/src="data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/=]+)"/g)) {
+      const bytes = Buffer.from(match[1], 'base64');
+      try { this.cachedImage(bytes); } catch {
+        const ready = await prepareImage(bytes, { root: this.store.root });
+        atomicWrite(this.store.root, `verified-images/sources/${digest(bytes)}.json`, JSON.stringify({ id: ready.id }));
+      }
+    }
     const html = file.data.toString("utf8").replace(/src="([a-z0-9.-]+)"/g, (match: string, name: string) => {
       if (!GENERATED_IMAGE_NAME.test(name)) return match;
       const row = this.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name=?").get(file.item_id, name) as any;
       if (!row) throw new Error("An article image is missing. Repair its saved files first.");
-      const image = this.read(row.id);
+      const image = this.read(row.id); const checked = this.cachedImage(image.data);
       embeddedBytes += image.data.length;
       if (embeddedBytes > 180 * 1024 * 1024) throw new Error("Standalone HTML is too large. Download the ZIP with separate images instead.");
-      return `src="data:${image.media_type};base64,${image.data.toString("base64")}"`;
+      return `src="data:${checked.mediaType};base64,${checked.data.toString("base64")}"`;
+    }).replace(/src="data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)"/g, (_match: string, _type: string, b64: string) => {
+      const checked = this.cachedImage(Buffer.from(b64, 'base64')); return `src="data:${checked.mediaType};base64,${checked.data.toString('base64')}"`;
     });
     return { ...file, data: Buffer.from(html) };
+  }
+  private cachedImage(bytes: Buffer) {
+    try { return readVerifiedImage(verifiedImage(bytes, this.store.root).id, this.store.root); }
+    catch {
+      const pointer = JSON.parse(fs.readFileSync(storagePath(this.store.root, 'verified-images', 'sources', digest(bytes) + '.json'), 'utf8'));
+      return readVerifiedImage(pointer.id, this.store.root);
+    }
+  }
+  metadataVerified(id: string) { try { this.cachedImage(this.read(id).data); return true; } catch { return false; } }
+  async prepareSavedImage(bytes: Buffer) {
+    try { const ready = this.cachedImage(bytes); if (ready.variants.png && ready.variants.webp) return ready; } catch { /* Legacy output is kept private until verified. */ }
+    const ready = await prepareImage(bytes, { root: this.store.root, formats: ['png', 'webp'] });
+    atomicWrite(this.store.root, `verified-images/sources/${digest(bytes)}.json`, JSON.stringify({ id: ready.id }));
+    return readVerifiedImage(ready.id, this.store.root);
   }
   manifest(item: any) {
     const files = (this.store.db.prepare("SELECT name,sha256,size_bytes,media_type FROM artifacts WHERE item_id=? AND name!='manifest.json'").all(item.id) as any[]).filter(f => !excludedPhotoFile(this.store, item.id, f.name));
@@ -180,7 +208,11 @@ export class ArtifactStore {
     }
     const document = articleDocument(article, recipe, images);
     const times = publicationTimes(recipe);
-    const recipeCard = { "@context": "https://schema.org", "@type": "Recipe", name: publicationTitle(article, recipe), description: article.format === "master_recipe_v1" ? article.metaDescription : article.introduction,
+    const canonicalFile = this.store.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name='article-canonical.json' AND relative_path LIKE ?").get(item.id, this.directory(item) + '%') as any;
+    const canonicalArticle: Article = canonicalFile ? JSON.parse(this.read(canonicalFile.id).data.toString('utf8')).article : article;
+    // Compact articles use the introduction as JSON-LD description. Freeze that
+    // value to the canonical writer output so prose refinement cannot edit cards.
+    const recipeCard = { "@context": "https://schema.org", "@type": "Recipe", name: publicationTitle(article, recipe), description: canonicalArticle.format === "master_recipe_v1" ? canonicalArticle.metaDescription : canonicalArticle.introduction,
       recipeIngredient: recipe.ingredients.map(value => article.format === "master_recipe_v1" ? publicationIngredient(value) : value), recipeInstructions: article.instructions.map(text => ({ "@type": "HowToStep", text })),
       ...(recipe.yield ? { recipeYield: recipe.yield } : {}), ...(times.prepTime ? { prepTime: times.prepTime } : {}),
       ...(times.cookTime ? { cookTime: times.cookTime } : {}), ...(times.totalTime ? { totalTime: times.totalTime } : {}),
@@ -198,16 +230,11 @@ export class ArtifactStore {
     const bytes = Buffer.from(base64, "base64"); const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
     if (!metadata.width || !metadata.height || !["png", "jpeg", "webp"].includes(metadata.format || "") || (metadata.pages || 1) > 1) throw new Error("Edited photo could not be decoded.");
     const name = `photo-${photo.reference_id}`;
-    let storage;
-    if (this.lossless(item)) {
-      const encoded = await losslessImage(bytes);
-      this.putImage(item, name, encoded);
-      storage = encoded.storage;
-    } else {
-      this.put(item, `${name}.${metadata.format === "jpeg" ? "jpeg" : metadata.format}`, bytes, `image/${metadata.format}`);
-      this.put(item, `${name}.png`, metadata.format === "png" ? bytes : await sharp(bytes).png().toBuffer(), "image/png");
-      this.put(item, `${name}.jpg`, await sharp(bytes).flatten({ background: "#ffffff" }).jpeg({ quality: 95 }).toBuffer(), "image/jpeg");
-    }
+    this.store.db.prepare("UPDATE content_stages SET result_json=? WHERE item_id=? AND kind=?").run(JSON.stringify({ phase: 'preparing' }), item.id, `photo:${photo.reference_id}`);
+    const prepared = await this.prepareSavedImage(bytes), final = verifiedVariant(prepared.data, 'webp', this.store.root);
+    this.putImage(item, name, { data: final.data, mediaType: final.mediaType, extension: 'webp', storage: { policy: IMAGE_STORAGE_VERSION, converted: metadata.format !== 'webp', pixelsVerified: true, originalBytes: bytes.length, storedBytes: final.data.length } });
+    const { data: _data, ...verification } = final;
+    const storage = { metadata: verification, policy: IMAGE_STORAGE_VERSION, pixelsVerified: true };
     this.put(item, `${name}-prompt.txt`, prompt, "text/plain");
     this.store.db.prepare("UPDATE content_stages SET result_json=? WHERE item_id=? AND kind=?").run(JSON.stringify({ width: metadata.width, height: metadata.height, ...(storage ? { storage } : {}) }), item.id, `photo:${photo.reference_id}`);
     if (item.article_json) this.article(item, JSON.parse(item.article_json), JSON.parse(item.source_json));
@@ -220,18 +247,26 @@ export class ArtifactStore {
       try {
       const original = fs.readFileSync(storagePath(this.store.root, p.relative_path)); if (digest(original) !== p.sha256) throw new Error("Reference checksum changed.");
       const thumbnail = async (data: Buffer) => (await sharp(data, { limitInputPixels: 40_000_000 }).rotate().resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer()).toString("base64");
-      figures.push(`<section><h2>Photograph ${p.position + 1}</h2><div class="pair"><figure><img alt="Original reference" src="data:image/jpeg;base64,${await thumbnail(original)}"><figcaption>Original reference</figcaption></figure>${file ? `<figure><img alt="Edited photograph" src="data:image/jpeg;base64,${await thumbnail(this.read(file.id).data)}"><figcaption>Edited photograph</figcaption></figure>` : "<p>Awaiting edited output</p>"}</div></section>`);
+      const edited = file ? await this.prepareSavedImage(this.read(file.id).data) : null;
+      figures.push(`<section><h2>Photograph ${p.position + 1}</h2><div class="pair"><figure><img alt="Original reference" src="data:image/jpeg;base64,${await thumbnail(original)}"><figcaption>Original reference</figcaption></figure>${edited ? `<figure><span title="Metadata cleanup verified">✓</span><img alt="Edited photograph" src="data:${edited.mediaType};base64,${edited.data.toString('base64')}"><figcaption>Edited photograph</figcaption></figure>` : "<p>Awaiting edited output</p>"}</div></section>`);
       } catch { figures.push(`<section><h2>Photograph ${p.position + 1}</h2><p>One saved file is unavailable or changed. Use the targeted repair action for this photo.</p></section>`); }
     }
     this.put(item, "gallery.html", `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Recipe photographs</title><style>body{font:16px system-ui;margin:2rem;background:#f5f1ea;color:#262626}.pair{display:flex;gap:1rem;flex-wrap:wrap}figure{margin:0;flex:1;min-width:240px}img{max-width:100%;max-height:650px;object-fit:contain}section{margin-bottom:2rem}</style><h1>Original and edited photographs</h1>${figures.join("\n")}</html>`, "text/html");
   }
-  zip(item: any) {
+  async zip(item: any) {
     this.manifest(item);
     const rows = (this.store.db.prepare("SELECT * FROM artifacts WHERE item_id=? ORDER BY name").all(item.id) as any[]).filter(f => !excludedPhotoFile(this.store, item.id, f.name));
     if (rows.reduce((sum, f) => sum + f.size_bytes, 0) > 250 * 1024 * 1024) throw new Error("ZIP exceeds 250 MB. Download the individual files instead.");
-    const files = rows.map(f => ({ name: f.name, data: this.read(f.id).data }));
+    const files = await Promise.all(rows.map(async f => ({ name: f.name, data: (await this.download(f.id)).data })));
     const requests = (this.store.db.prepare("SELECT kind,attempt,profile_version,request_path FROM content_stages WHERE item_id=? AND request_path IS NOT NULL").all(item.id) as any[]).map(s => { const payload = JSON.parse(fs.readFileSync(storagePath(this.store.root, s.request_path), "utf8")); return { ...s, request_path: undefined, request: JSON.parse(JSON.stringify(payload).replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, "[original reference bytes retained locally]")) }; });
-    files.push({ name: "prompts.json", data: Buffer.from(JSON.stringify(requests, null, 2)) }); return createZip(files);
+    files.push({ name: "prompts.json", data: Buffer.from(JSON.stringify(requests, null, 2)) });
+    const manifestFile = files.find(f => f.name === 'manifest.json');
+    if (manifestFile) {
+      const manifest = JSON.parse(manifestFile.data.toString('utf8'));
+      manifest.files = files.filter(f => f !== manifestFile).map(f => ({ name: f.name, sha256: digest(f.data), size_bytes: f.data.length, media_type: rows.find(r => r.name === f.name)?.media_type || 'application/json' }));
+      manifestFile.data = Buffer.from(JSON.stringify(manifest, null, 2));
+    }
+    return createZip(files);
   }
   async image(item: any, name: string, base64: string, title?: string) {
     if (!/^[a-zA-Z0-9+/=]+$/.test(base64) || base64.length > 55_000_000) throw new Error("Invalid generated image data.");
@@ -239,7 +274,7 @@ export class ArtifactStore {
     const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
     if (!metadata.width || !metadata.height || !["png", "jpeg", "webp"].includes(metadata.format || "")) throw new Error("Generated image cannot be decoded.");
     const width = name === "pinterest" ? 1000 : 1200; const height = 1500;
-    let output = sharp(bytes, { limitInputPixels: 40_000_000 }).rotate().resize(width, height, { fit: "cover", position: "centre" });
+    let output = sharp(bytes, { limitInputPixels: 40_000_000 }).keepMetadata().resize(width, height, { fit: "cover", position: "centre" });
     if (title) {
       const words = title.slice(0, 120).split(/\s+/); const lines: string[] = []; let line = "";
       for (const word of words) { if ((line + " " + word).length > 28) { lines.push(line); line = word; } else line = `${line} ${word}`.trim(); } if (line) lines.push(line);
@@ -248,11 +283,11 @@ export class ArtifactStore {
     }
     // Legacy image stages still apply their requested crop/title first. Lossless
     // compression preserves that rendered output, not pre-resize source pixels.
-    const encoded = this.lossless(item) ? await losslessImage(await output.png().toBuffer()) : null;
-    const result = encoded ? encoded.data : await output.jpeg({ quality: 94 }).toBuffer();
+    this.store.db.prepare("UPDATE content_stages SET result_json=? WHERE item_id=? AND kind=?").run(JSON.stringify({ phase: 'preparing' }), item.id, name);
+    const ready = await prepareImage(await output.png().toBuffer(), { root: this.store.root, original: bytes, formats: ['png', 'webp'] });
+    const final = readVerifiedImage(ready.variants.webp!, this.store.root), result = final.data;
     const check = await sharp(result).metadata(); if (check.width !== width || check.height !== height) throw new Error("Image dimensions did not match the requested export.");
-    if (encoded) this.putImage(item, name, encoded);
-    else this.put(item, `${name}.jpg`, result, "image/jpeg");
+    this.putImage(item, name, { data: result, mediaType: final.mediaType, extension: 'webp', storage: { policy: IMAGE_STORAGE_VERSION, converted: true, pixelsVerified: true, originalBytes: bytes.length, storedBytes: result.length } });
     // Refresh the standalone HTML from saved prose, without another paid writing request.
     if (item.article_json && item.source_json) this.article(item, JSON.parse(item.article_json), JSON.parse(item.source_json));
     else this.manifest(item);
