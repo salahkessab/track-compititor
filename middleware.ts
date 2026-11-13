@@ -5,6 +5,14 @@ import { NextResponse, type NextRequest } from "next/server";
 // Username can be anything; password must match APP_PASSWORD.
 
 export function middleware(req: NextRequest) {
+  // Middleware authentication can run before Vercel's declarative redirect.
+  // Send the old production entry point to its authenticated persistent host.
+  if (process.env.VERCEL && req.nextUrl.hostname === "track-compititor.vercel.app") {
+    const destination = new URL("https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech");
+    destination.pathname = req.nextUrl.pathname;
+    destination.search = req.nextUrl.search;
+    return NextResponse.redirect(destination, 307);
+  }
   const server = process.env.RECIPE_INTELLIGENCE_MODE === "server" && !process.env.VERCEL;
   if (server && req.nextUrl.pathname === "/api/server-health") return NextResponse.next();
   if (server && !process.env.APP_PASSWORD) return new NextResponse("Server authentication is not configured.", { status: 503 });
