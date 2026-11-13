@@ -6,5 +6,9 @@
     respond @wrongHost "Unexpected workspace host." 403
     reverse_proxy app:3000 {
         header_up Host {$RI_PUBLIC_HOST}
+        # The authenticated app must never become a shared CDN response.
+        header_down Cache-Control "private, no-store"
+        header_down CDN-Cache-Control "no-store"
+        header_down Vercel-CDN-Cache-Control "no-store"
     }
 }

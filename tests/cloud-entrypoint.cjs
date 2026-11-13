@@ -27,6 +27,8 @@ test('proxy routes static assets and disables middleware body inspection and pri
  assert.equal(config.rewrites[0].has[0].value,'track-compititor.vercel.app');
  assert.equal(config.rewrites[0].destination,'https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech/:path*');
  assert.equal(config.headers[0].headers.find(h=>h.key==='x-vercel-enable-rewrite-caching').value,'0');
+ const gateway=fs.readFileSync(path.join(__dirname,'../deploy/instabox/Caddyfile'),'utf8');
+ assert.match(gateway,/header_down Cache-Control "private, no-store"/);assert.match(gateway,/header_down Vercel-CDN-Cache-Control "no-store"/);
 });
 test('preview deployments and the personal server retain password authentication',()=>{
  const preview=middleware({VERCEL:'1',APP_PASSWORD:'owner'});assert.equal(preview(new NextRequest('https://preview.vercel.app/')).status,401);
