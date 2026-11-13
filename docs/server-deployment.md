@@ -14,11 +14,17 @@ own data transfer and record counts before declaring cutover complete. R2 object
 storage alone cannot run this application. InstaBox Free has mandatory pauses and
 cooldowns; persistent storage does not mean uninterrupted availability.
 
-The production `track-compititor.vercel.app` address redirects to the full
-personal InstaBox service using a temporary redirect in `vercel.json`. This
-avoids opening a second application that lacks the persistent worker. Preview
-deployments and local installations are unaffected. The redirect carries no
-credentials; the cloud service retains its own password authentication.
+The production `track-compititor.vercel.app` address proxies the full personal
+InstaBox service, so the short address stays visible. Only this exact hostname
+uses the proxy; preview deployments and local installations keep their gates.
+Middleware validates the browser Origin before translating Host and Origin to
+the fixed upstream. The owner-supplied Authorization and CSRF headers are passed
+through unchanged; InstaBox still authenticates every protected request.
+Private responses are not cached. Request bodies bypass Vercel middleware and
+go directly to the rewrite target, preserving large image uploads. Long image
+operations use NDJSON with 15-second heartbeats; they do not retry provider calls.
+The backend and persistent files remain on InstaBox, with the same free-plan
+availability limits. Direct access through the existing InstaBox URL still works.
 
 Use a persistent Linux Node 24 host, with at least 2 GB RAM initially for Next.js,
 the worker and image decoding. Check actual peak usage before reducing it. A Docker

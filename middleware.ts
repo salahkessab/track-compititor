@@ -5,13 +5,22 @@ import { NextResponse, type NextRequest } from "next/server";
 // Username can be anything; password must match APP_PASSWORD.
 
 export function middleware(req: NextRequest) {
-  // Middleware authentication can run before Vercel's declarative redirect.
-  // Send the old production entry point to its authenticated persistent host.
+  // Keep the public URL while the persistent server owns authentication and work.
+  // Validate the browser origin before translating it for that exact upstream.
   if (process.env.VERCEL && req.nextUrl.hostname === "track-compititor.vercel.app") {
     const destination = new URL("https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech");
     destination.pathname = req.nextUrl.pathname;
     destination.search = req.nextUrl.search;
-    return NextResponse.redirect(destination, 307);
+    const suppliedOrigin = req.headers.get("origin");
+    const read = req.method === "GET" || req.method === "HEAD";
+    if ((suppliedOrigin && suppliedOrigin !== "https://track-compititor.vercel.app") || (!read && !suppliedOrigin)) {
+      return NextResponse.json({ error: "Workspace origin check failed." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    }
+    const headers = new Headers(req.headers);
+    headers.set("host", destination.host);
+    headers.set("x-forwarded-host", destination.host);
+    if (suppliedOrigin) headers.set("origin", destination.origin);
+    return NextResponse.rewrite(destination, { request: { headers } });
   }
   const server = process.env.RECIPE_INTELLIGENCE_MODE === "server" && !process.env.VERCEL;
   if (server && req.nextUrl.pathname === "/api/server-health") return NextResponse.next();

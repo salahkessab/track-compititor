@@ -1,6 +1,7 @@
 "use client";
 import { VerifiedImage } from "./VerifiedImage";
 import { prepareClientImage, resolveImageResponse } from "@/lib/preparedImageClient";
+import { readGenerationPayload } from "@/lib/generationResponse";
 
 import { useEffect, useRef, useState } from "react";
 import { prepareRecipeDownload } from "@/lib/recipeWebp";
@@ -88,8 +89,8 @@ class DesignRequestError extends Error {
   constructor(message: string, readonly outcome: "reported" | "unknown" | "not_dispatched", readonly usage?: Cost) { super(message); }
 }
 async function post(path: string, body: unknown, signal: AbortSignal) {
-  const response = await fetch(path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),signal});
-  const data = await response.json().catch(() => ({}));
+  const incoming = await fetch(path,{method:"POST",headers:{"content-type":"application/json",accept:"application/x-ndjson"},body:JSON.stringify(body),signal});
+  const {response,data} = await readGenerationPayload(incoming);
   if (!response.ok && data.assetId && data.retryable) return resolveImageResponse(response, data);
   if (!response.ok) {
     const outcome = data.outcome === "reported" || data.outcome === "not_dispatched" ? data.outcome : "unknown";

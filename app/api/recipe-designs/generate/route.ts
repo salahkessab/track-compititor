@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { finalizeGeneration, preparationFailure } from '@/lib/imageFinalization';
 import { checkImageProcessing } from '@/lib/imageMetadata';
+import { streamGeneration } from '@/lib/generationStream';
 import { generateRecipeDesignArtwork } from "@/lib/recipeDesignArtworkImage";
 import { withCostLedger, recordOpenAIImage, costSummary } from "@/lib/costLedger";
 import { MAX_RECIPE_EDIT_REQUEST_CHARS, recipeDirectPrompt, validateRecipeEditImage } from "@/lib/recipeDesignDirect";
@@ -10,7 +11,7 @@ import { INGREDIENT_CARD_STYLE_ID, validateRecipeIngredients } from "@/lib/recip
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-async function run(req: Request) {
+async function run(req: Request, phase: (value: 'generating' | 'preparing') => void) {
   let dispatched = false;
   try {
     const b = await req.json();
@@ -31,6 +32,7 @@ async function run(req: Request) {
     dispatched = true;
     const image = await generateRecipeDesignArtwork(settings, prompt, [photo, ...references]);
     recordOpenAIImage(settings.model, settings.image, image);
+    phase('preparing');
     const json = JSON.stringify(await finalizeGeneration({ image: image.dataUrl, styleId, status: "Metadata cleanup verified", ...costSummary(settings.model) }, 'image'));
     const encoder = new TextEncoder();
     return new Response(new ReadableStream<Uint8Array>({ start(controller) {
@@ -46,4 +48,4 @@ async function run(req: Request) {
   }
 }
 
-export async function POST(req: Request) { return withCostLedger(() => run(req)); }
+export async function POST(req: Request) { return streamGeneration(req, phase => withCostLedger(() => run(req, phase))); }

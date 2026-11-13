@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { finalizeGeneration, preparationFailure } from '@/lib/imageFinalization';
 import { checkImageProcessing } from '@/lib/imageMetadata';
+import { streamGeneration } from '@/lib/generationStream';
 import { generateRecipeDesignArtwork } from "@/lib/recipeDesignArtworkImage";
 import { withCostLedger, recordOpenAIImage, costSummary } from "@/lib/costLedger";
 import { recipeArtworkPrompt, validateDesignPlan, validateDesignSettings, validateTitle } from "@/lib/recipeDesigns";
@@ -9,7 +10,7 @@ import {getRecipeStyle,validateRecipePromptCopy} from "@/lib/recipeDesignStylePr
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-async function run(req: Request) {
+async function run(req: Request, phase: (value: 'generating' | 'preparing') => void) {
   let dispatched = false;
   try {
     const b = await req.json();
@@ -31,6 +32,7 @@ async function run(req: Request) {
     // Never provide a reference here: this must always be text-to-image, not edits.
     const image = await generateRecipeDesignArtwork(settings,prompt);
     recordOpenAIImage(settings.model, settings.image, image);
+    phase('preparing');
     // Stream large image data so serverless response body limits do not truncate
     // a valid full-resolution artwork response.
     const json = JSON.stringify(await finalizeGeneration({ artwork: image.dataUrl, status: "Metadata cleanup verified", ...costSummary(settings.model) }, 'artwork'));
@@ -48,4 +50,4 @@ async function run(req: Request) {
     return NextResponse.json({ error: message, dispatched, outcome: dispatched ? "unknown" : "not_dispatched", costStatus: dispatched ? "The provider outcome may be unknown; check OpenAI usage before trying again." : "No provider request was sent." }, { status: dispatched ? 502 : 400 });
   }
 }
-export async function POST(req: Request) { return withCostLedger(() => run(req)); }
+export async function POST(req: Request) { return streamGeneration(req, phase => withCostLedger(() => run(req, phase))); }

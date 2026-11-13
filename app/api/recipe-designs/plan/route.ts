@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { streamGeneration } from '@/lib/generationStream';
 import { withCostLedger, recordTextUsage, recordSearchUsage, costSummary } from "@/lib/costLedger";
 import { DESIGN_SCHEMA, RECIPE_DESIGN_FAMILIES, RECIPE_ART_DIRECTION_VERSION, normalizeModelDesignPlan, normalizeModelPalette, selectRecipeStyle, validateAnalysisImage, validateDesignSettings, validateResearch, validateSources, validateTitle, type VisualExample } from "@/lib/recipeDesigns";
 import { getRecipeStyle, renderRecipeStylePrompt, validateRecipePromptCopy } from "@/lib/recipeDesignStylePresets";
@@ -161,4 +162,4 @@ async function run(req: Request) {
     }, { status: dispatched ? 502 : 400 });
   }
 }
-export async function POST(req: Request) { return withCostLedger(() => run(req)); }
+export async function POST(req: Request) { return streamGeneration(req, () => withCostLedger(() => run(req))); }

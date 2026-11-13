@@ -6,6 +6,7 @@ import { isOpenAIImageModel, validateImageSettings, type OpenAIImageSettings } f
 import { imageModelsFor, OPENAI_MODELS } from "@/lib/config";
 import { NextResponse } from "next/server";
 import { finalizeGeneration, preparationFailure } from '@/lib/imageFinalization';
+import { streamGeneration } from '@/lib/generationStream';
 import { checkImageProcessing } from '@/lib/imageMetadata';
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -1557,21 +1558,5 @@ async function handleGenerateWithLedger(req: Request, onPartial?: PartialImageHa
 
 // Stream previews while the same request continues rendering and captioning.
 export async function POST(req: Request) {
-  if (!req.headers.get("accept")?.includes("application/x-ndjson")) return handleGenerate(req);
-  const encoder = new TextEncoder();
-  let cancelled = false;
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (value: unknown) => { if (!cancelled) controller.enqueue(encoder.encode(JSON.stringify(value) + "\n")); };
-      try {
-        send({ type: 'status', phase: 'generating' });
-        const response = await handleGenerate(req, () => send({ type: 'status', phase: 'preparing' }));
-        const data = await response.json();
-        send(response.ok ? { type: "result", data } : { type: "error", ...data });
-      } catch (error) { send({ type: "error", error: error instanceof Error ? error.message : "Generation failed" }); }
-      finally { if (!cancelled) controller.close(); }
-    },
-    cancel() { cancelled = true; },
-  });
-  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-Accel-Buffering": "no" } });
+  return streamGeneration(req, phase => handleGenerate(req, () => phase('preparing')));
 }

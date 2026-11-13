@@ -1,11 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "redirects": [
+  "skipMiddlewareRequestBody": true,
+  "rewrites": [
     {
       "source": "/:path*",
       "has": [{ "type": "host", "value": "track-compititor.vercel.app" }],
-      "destination": "https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech/:path*",
-      "permanent": false
+      "destination": "https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "track-compititor.vercel.app" }],
+      "headers": [
+        { "key": "Cache-Control", "value": "private, no-store" },
+        { "key": "CDN-Cache-Control", "value": "no-store" },
+        { "key": "x-vercel-enable-rewrite-caching", "value": "0" }
+      ]
     }
   ]
 }
