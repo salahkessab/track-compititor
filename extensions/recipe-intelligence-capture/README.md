@@ -36,6 +36,7 @@ If the app disconnects, reopen it with the desktop shortcut and click **Reconnec
 - The main readable article, its title and source URL, recipe metadata, ingredients, instructions, and supported article context such as storage and serving guidance.
 - Up to 24 article photos, including loaded/lazy image URLs and recipe metadata images. Related posts, navigation, forms, comments, scripts and obvious advertisements are excluded.
 - Actual image files, not just remote links. Each image is limited to 10 MB and 40 megapixels, with a minimum size of 160 × 120. Browser-readable formats such as AVIF are converted to JPEG when needed.
+- Version 2.3 previews the same readable bytes used for import. Black or transparent loading placeholders are rejected by the extension and server. If a photo is unavailable, leave the recipe tab open, scroll to that photograph and let it finish loading, then capture again. A lazy `data-src` alone never proves its pixels have loaded.
 
 The local app stores plain article text and structured recipe facts under `research/browser/` in its selected storage folder. Photos go under `research/references/`. The local app validates files and groups exact duplicates. The app currently generates recipe articles; an article without readable ingredients and instructions can be captured but cannot receive a recipe-writing estimate.
 

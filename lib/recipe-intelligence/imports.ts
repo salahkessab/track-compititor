@@ -107,6 +107,10 @@ export class ImportStore {
     const meta = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
     if (!meta.width || !meta.height || !["jpeg", "png", "webp"].includes(meta.format || "") || (meta.pages || 1) > 1) throw new Error("Use a still JPEG, PNG or WebP photograph, up to 40 megapixels.");
     if (meta.width < 160 || meta.height < 120) throw new Error("Image is too small for recipe editing.");
+    const sample = await sharp(bytes, { limitInputPixels: 40_000_000 }).rotate().resize(64, 64, { fit: 'inside' }).toColourspace('srgb').ensureAlpha().raw().toBuffer();
+    let visible = false, nonBlack = false;
+    for (let i = 0; i < sample.length; i += 4) { if (sample[i + 3] > 8) { visible = true; if (sample[i] > 2 || sample[i + 1] > 2 || sample[i + 2] > 2) nonBlack = true; } }
+    if (!visible || !nonBlack) throw new Error('This photo is an empty or black loading placeholder. Let the original photograph load in the recipe tab, then capture it again.');
     const hash = digest(bytes); const pixels = digest(await sharp(bytes, { limitInputPixels: 40_000_000 }).rotate().raw().toBuffer());
     const duplicate = this.store.db.prepare("SELECT id FROM reference_photos WHERE import_id=? AND state='ready' AND (sha256=? OR pixel_hash=?) AND id!=?").get(id, hash, pixels, existingId || "") as any;
     if (duplicate) { if (existingId) this.store.db.prepare("UPDATE reference_photos SET state='duplicate',error='Exact duplicate of another photograph.' WHERE id=?").run(existingId); return duplicate.id; }

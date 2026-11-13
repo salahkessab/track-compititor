@@ -44,11 +44,19 @@
   // it. Cross-origin tainted canvases fail; no browser security is bypassed.
   function renderedPhoto(urls) {
     for (const img of document.images) {
-      if (![img.currentSrc,img.src,img.dataset.src,img.dataset.lazySrc].some(url => urls.includes(url)) || !img.complete || img.naturalWidth < 160 || img.naturalHeight < 120) continue;
+      // data-src describes a future image, not the pixels currently decoded.
+      // A transparent lazy placeholder can have the full photograph's dimensions.
+      if (!urls.includes(img.currentSrc || img.src) || !img.complete || img.naturalWidth < 160 || img.naturalHeight < 120) continue;
       try {
         const canvas = document.createElement('canvas'); const scale = Math.min(1, 4096 / Math.max(img.naturalWidth,img.naturalHeight));
         canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
         canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        const sample = document.createElement('canvas'); sample.width = 64; sample.height = 64;
+        const ctx = sample.getContext('2d'); ctx.drawImage(canvas, 0, 0, 64, 64);
+        const pixels = ctx.getImageData(0, 0, 64, 64).data;
+        let useful = false;
+        for (let i = 0; i < pixels.length; i += 4) if (pixels[i+3] > 8 && (pixels[i] > 2 || pixels[i+1] > 2 || pixels[i+2] > 2)) { useful = true; break; }
+        if (!useful) continue;
         return canvas.toDataURL('image/jpeg', .94).split(',')[1];
       } catch { /* Chrome does not permit pixel access to this image. */ }
     }

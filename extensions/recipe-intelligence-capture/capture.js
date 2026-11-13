@@ -5,6 +5,16 @@ const extensionVersion = chrome.runtime.getManifest().version;
 $('version').textContent = `Capture v${extensionVersion} · Recipe photo filter enabled`;
 const sourceTab = Number(new URLSearchParams(location.search).get('sourceTab'));
 let job, previous, app, busy = false;
+const photoCache = new Map();
+const previewQueues = Array.from({length:3}, () => Promise.resolve());
+function readablePhoto(photo, captureJob = job) {
+  const key = `${captureJob.id}:${photo.url}`;
+  if (!photoCache.has(key)) {
+    const pending = getPhoto(photo, captureJob).catch(error => { photoCache.delete(key); throw error; });
+    photoCache.set(key, pending);
+  }
+  return photoCache.get(key);
+}
 const status = text => { $('status').textContent = text; };
 const showError = error => { $('error').hidden = false; $('error').textContent = error.message || String(error); };
 const clearError = () => { $('error').hidden = true; $('error').textContent = ''; };
@@ -42,10 +52,23 @@ function render() {
   $('photos').replaceChildren();
   capture.images.forEach((photo,index) => {
     const label = document.createElement('label'); label.className = 'photo';
-    const img = document.createElement('img'); img.src = photo.url; img.alt = photo.caption || `Photo ${index+1}`; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer';
+    const img = document.createElement('img'); img.alt = photo.caption || `Photo ${index+1}`; img.hidden = true;
+    const notice = document.createElement('p'); notice.textContent = 'Loading photo…';
+    const captureJob = job;
+    const lane = index % previewQueues.length;
+    previewQueues[lane] = previewQueues[lane].then(async () => {
+      if (!label.isConnected) return;
+      try {
+        const data = await readablePhoto(photo, captureJob);
+        img.src = `data:${data.mime};base64,${data.base64}`;
+        img.hidden = false; notice.remove();
+      } catch {
+        notice.textContent = 'Photo unavailable. Open the recipe tab, scroll to this photo and let it load, then capture again. This photo will not be imported unless it can be read.';
+      }
+    });
     const span = document.createElement('span'), checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = job.selected.includes(index); checkbox.disabled = !!job.started;
     checkbox.onchange = () => { job.selected = checkbox.checked ? [...job.selected,index].sort((a,b)=>a-b) : job.selected.filter(i=>i!==index); };
-    span.append(checkbox,document.createTextNode(photo.caption || `Photo ${index+1}`)); label.append(img,span); $('photos').append(label);
+    span.append(checkbox,document.createTextNode(photo.caption || `Photo ${index+1}`)); label.append(img,notice,span); $('photos').append(label);
   });
   $('warnings').replaceChildren();
   if (job.extensionVersion !== extensionVersion) warn('This saved capture comes from an earlier extension version. Its photo selection is preserved. Start a fresh capture from the recipe page to use the current filter.');
@@ -83,6 +106,12 @@ async function normalizedPhoto(blob) {
   const bitmap = await createImageBitmap(blob);
   try {
     if (bitmap.width < 160 || bitmap.height < 120 || bitmap.width * bitmap.height > 40000000) throw new Error('Photo must be at least 160 × 120 and at most 40 megapixels.');
+    const sample = new OffscreenCanvas(64,64), ctx = sample.getContext('2d');
+    ctx.drawImage(bitmap,0,0,64,64);
+    const pixels = ctx.getImageData(0,0,64,64).data;
+    let useful = false;
+    for (let i=0;i<pixels.length;i+=4) if (pixels[i+3]>8 && (pixels[i]>2 || pixels[i+1]>2 || pixels[i+2]>2)) { useful=true; break; }
+    if (!useful) throw new Error('Photo is an empty or black loading placeholder. Let the photo load in the recipe tab, then capture again.');
     // Normalize AVIF and other browser-readable formats to a supported still JPEG.
     if (!['image/jpeg','image/png','image/webp'].includes(blob.type)) {
       const canvas = new OffscreenCanvas(bitmap.width,bitmap.height); canvas.getContext('2d').drawImage(bitmap,0,0);
@@ -92,16 +121,16 @@ async function normalizedPhoto(blob) {
     return {base64:await base64(blob),mime:blob.type};
   } finally { bitmap.close(); }
 }
-async function getPhoto(photo) {
+async function getPhoto(photo, captureJob = job) {
   let failure;
   for (const url of [...new Set([photo.url,...photo.alternatives])]) {
     try { return await normalizedPhoto(await fetchPhoto(url)); } catch (e) { failure = e; }
   }
   try {
-    const source = await chrome.tabs.get(job.sourceTab);
-    const current = new URL(source.url), captured = new URL(job.capture.url); current.hash = ''; captured.hash = '';
+    const source = await chrome.tabs.get(captureJob.sourceTab);
+    const current = new URL(source.url), captured = new URL(captureJob.capture.url); current.hash = ''; captured.hash = '';
     if (current.href !== captured.href) throw new Error('The source tab has navigated away from this recipe.');
-    const [result] = await chrome.scripting.executeScript({target:{tabId:job.sourceTab},func:renderedPhoto,args:[[photo.url,...photo.alternatives]]});
+    const [result] = await chrome.scripting.executeScript({target:{tabId:captureJob.sourceTab},func:renderedPhoto,args:[[photo.url,...photo.alternatives]]});
     if (result?.result && result.result.length <= 14000000) return {base64:result.result,mime:'image/jpeg'};
   } catch { /* Source tab closed or pixels are unavailable. */ }
   throw failure || new Error('This photograph could not be read.');
@@ -126,7 +155,7 @@ async function importRecipe() {
           if (job.uploaded.includes(index)) continue;
           status(`Importing photo ${job.selected.indexOf(index)+1} of ${job.selected.length}…`);
           const photo = job.capture.images[index]; let data;
-          try { data = await getPhoto(photo); } catch (e) { job.failed.push({index,message:e.message}); await save(); continue; }
+          try { data = await readablePhoto(photo); } catch (e) { job.failed.push({index,message:e.message}); await save(); continue; }
           try {
             await bridge(app,{op:'photo',id:job.id,...data,url:photo.url,caption:photo.caption,name:`Photo ${index+1}`}); job.uploaded.push(index);
           } catch (e) { if (e.status !== 400) throw e; job.failed.push({index,message:e.message}); }

@@ -38,6 +38,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,wind
   w.navigator.locks={request:async(name,options,callback)=>callback({name})};
   w.fetch=async()=>downloadFailure?new Response('',{status:403}):new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'image/jpeg'}});
   w.createImageBitmap=async()=>({width:300,height:250,close(){}});
+  w.OffscreenCanvas=class {getContext(){return {drawImage(){},getImageData(){return {data:new Uint8ClampedArray([40,30,20,255])};}};}};
   w.AbortController=AbortController;
   w.eval(fs.readFileSync(path.join(directory,'shared.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(directory,'connection.js'),'utf8'));
@@ -51,9 +52,11 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,wind
 }
 test('extension preview imports image bytes, finishes before estimating, and opens the exact unpaid draft',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.2\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.3\.0/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
+  await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
+  assert.equal(screen.button('photos').querySelector('img').hidden,false);
   const operations=screen.calls.map(m=>m.op).filter(op=>op!=='probe');
   assert.deepEqual(operations,['begin','photo','finish','estimate']);
   assert.equal(screen.calls.find(m=>m.op==='photo').base64,'AQID');
@@ -61,7 +64,7 @@ test('extension preview imports image bytes, finishes before estimating, and ope
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/\$0.7100/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.2.0');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.3.0');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 test('resuming an older capture explains that its original photo selection is preserved',async t=>{
@@ -96,6 +99,8 @@ test('lost local connection keeps the capture ID and resumes without finalizing 
 });
 test('unavailable source photo is reported and does not erase readable article capture',async t=>{
   const screen=await ui(t,{downloadFailure:true});await screen.run();
+  await until(()=>screen.button('photos').textContent.includes('Photo unavailable'));
+  assert.equal(screen.button('photos').querySelector('img').hasAttribute('src'),false);
   assert.equal(screen.calls.some(c=>c.op==='photo'),false);
   assert.equal(screen.calls.find(c=>c.op==='finish').missingPhotos,1);
   assert.match(screen.button('warnings').textContent,/403/);

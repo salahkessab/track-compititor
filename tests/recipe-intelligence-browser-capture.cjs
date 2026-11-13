@@ -13,6 +13,35 @@ const extension = path.join(__dirname, '../extensions/recipe-intelligence-captur
 const recipeHtml = html(recipeData(), '').replace('</body>','<article><p>A warming carrot soup, made with carrots, water and salt.</p><h2>Storage</h2><p>Keep the cooked soup in a covered container in the refrigerator for up to three days.</p></article></body>');
 const captureInput = (extra = {}) => ({captureId:randomUUID(),url:'https://food.example/blocked/',html:recipeHtml,...extra});
 
+test('imports reject transparent and black loading placeholders but preserve readable dark photographs', async t => {
+  const f=await contentFixture(t), imports=new ImportStore(f.store), row=beginBrowserCapture(imports,captureInput());
+  const sharp=require('sharp');
+  for(const background of [{r:0,g:0,b:0,alpha:1},{r:255,g:255,b:255,alpha:0}]) {
+    const bytes=await sharp({create:{width:600,height:900,channels:4,background}}).png().toBuffer();
+    await assert.rejects(imports.add(row.id,bytes,'Placeholder','https://cdn.example/blank.png'),/placeholder/);
+  }
+  const dark=await sharp({create:{width:600,height:900,channels:3,background:'#080808'}}).png().toBuffer();
+  await imports.add(row.id,dark,'Dark photograph','https://cdn.example/dark.png');
+  assert.equal(imports.detail(row.id).photos.length,1);
+});
+
+test('rendered fallback rejects unloaded data-src, transparent and black pixels, and accepts loaded photographs', () => {
+  const dom=new JSDOM('<img>',{url:'https://food.example/',runScripts:'outside-only'}), w=dom.window;
+  const img=w.document.querySelector('img'), url='https://cdn.example/photo.jpg';
+  img.src='https://cdn.example/placeholder.png';img.dataset.src=url;
+  for(const [key,value] of Object.entries({complete:true,naturalWidth:600,naturalHeight:900})) Object.defineProperty(img,key,{value});
+  let pixel=[0,0,0,255];
+  w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},getImageData(){return {data:pixel};}});
+  w.HTMLCanvasElement.prototype.toDataURL=()=> 'data:image/jpeg;base64,cGhvdG8=';
+  w.eval(fs.readFileSync(path.join(extension,'shared.js'),'utf8'));
+  assert.equal(w.CaptureHelpers.renderedPhoto([url]),null);
+  img.src=url;
+  assert.equal(w.CaptureHelpers.renderedPhoto([url]),null);
+  pixel=[255,255,255,0];assert.equal(w.CaptureHelpers.renderedPhoto([url]),null);
+  pixel=[10,12,15,255];assert.equal(w.CaptureHelpers.renderedPhoto([url]),'cGhvdG8=');
+  dom.window.close();
+});
+
 function capture(html) {
   const dom = new JSDOM(html,{url:'https://food.example/blocked/',runScripts:'outside-only'});
   const result = dom.window.eval(fs.readFileSync(path.join(extension,'content.js'),'utf8'));
@@ -26,7 +55,7 @@ test('Chrome capture preserves recipe facts and article context without scripts,
     <h2>Storage</h2><p>Keep the cooked soup in the refrigerator for up to three days.</p>
     <form><input value="secret"><textarea>Private draft</textarea></form><div hidden>Hidden private text</div><div style="display:none">Invisible text</div>
     <script>steal()</script><img src="https://cdn.example/soup-800x600.jpg" alt="Carrot soup"><img src="https://cdn.example/soup-300x200.jpg">
-    <aside><img src="https://cdn.example/advert.jpg"></aside><div class="related-posts"><img src="https://cdn.example/other.jpg"></div>
+    <img src="https://cdn.example/author.jpg" alt="About Heather"><aside><img src="https://cdn.example/advert.jpg"></aside><div class="related-posts"><img src="https://cdn.example/other.jpg"></div>
     </article></body></html>`);
   assert.equal(result.images.length,1);
   assert.equal(result.title,'Carrot soup');

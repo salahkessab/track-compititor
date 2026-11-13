@@ -103,8 +103,9 @@
   }
   for (const img of root.querySelectorAll('img')) {
     if (img.closest(excluded) || linksElsewhere(img.closest('a[href]'))) continue;
+    if (/^about\s+[a-z]+(?:\s+[a-z]+)?$/i.test((img.alt || '').trim())) continue;
     const label = [img.alt, img.title, img.id, img.className].join(' ').replace(/([a-z])([A-Z])/g, '$1 $2');
-    if (/\b(?:logo|avatar|gravatar|advertisement|tracking|pin[- ]button|(?:get it|available) on google play|download on the app store|app[- ]store[- ]badge|google[- ]play[- ]badge)\b/i.test(label)) continue;
+    if (/\b(?:logo|avatar|gravatar|advertisement|tracking|pin[- ]button|(?:get it|available) on google play|download on the app store|app[- ]store[- ]badge|google[- ]play[- ]badge|about (?:the author|me)|author (?:photo|portrait|bio))\b/i.test(label)) continue;
     let invisible = false;
     for (let ancestor = img; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) { if (hidden(ancestor)) { invisible = true; break; } }
     if (invisible) continue;
