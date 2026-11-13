@@ -13,7 +13,7 @@ const article = (photos = []) => ({ title: 'A comfortable small living room', se
 const image = async color => sharp({ create: { width: 320, height: 240, channels: 3, background: color } }).png().toBuffer();
 
 test('embedded decor skills match their maintained sources', () => {
-  for (const [key, folder] of [['DECOR_ARTICLE_SKILL', 'home-decor-article'], ['DECOR_IMAGE_SKILL', 'home-decor-images']]) assert.equal(prompts[key], fs.readFileSync(path.join(__dirname, '../skills', folder, 'SKILL.md'), 'utf8').split('---').slice(2).join('---').trim());
+  for (const [key, folder] of [['DECOR_ARTICLE_SKILL', 'home-decor-article'], ['DECOR_IMAGE_SKILL', 'home-decor-images']]) assert.equal(prompts[key].replace(/\r\n/g,'\n'), fs.readFileSync(path.join(__dirname, '../skills', folder, 'SKILL.md'), 'utf8').replace(/\r\n/g,'\n').split('---').slice(2).join('---').trim());
 });
 test('decor extraction accepts non-recipe articles and excludes related images and sidebar text', () => {
   const source = extractDecor(`<h1>Living room ideas</h1><article><p>${text}</p><figure><img src="/room.jpg" width="900" height="700" alt="Room"><figcaption>A bright living room</figcaption></figure><div class="related-posts"><p>Unrelated kitchen</p><img src="/other.jpg"></div><aside>About the author<img src="/author.jpg"></aside></article>`, 'https://decor.example/living-room');

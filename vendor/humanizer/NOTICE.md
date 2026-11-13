@@ -3,7 +3,7 @@ Selected editorial guidance adapted from Humanizer by Siqi Chen (MIT).
 Source: https://github.com/blader/humanizer
 Revision: b48c832f0f809c1b5658edbb838c2521b72f2413
 Upstream skill version: 4.0.0
-SKILL.md SHA-256: 804a119e924ac30295b298213e0b71b3e38b2667b8ef4fb7b69e9246369b9045
+SKILL.md SHA-256 (UTF-8, canonical LF line endings): 804a119e924ac30295b298213e0b71b3e38b2667b8ef4fb7b69e9246369b9045
 
 The original SKILL.md and full MIT LICENSE are retained beside this notice.
 The application does not execute upstream scripts or install an agent plugin.

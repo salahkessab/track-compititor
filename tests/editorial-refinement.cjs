@@ -9,7 +9,9 @@ const accepted=payload=>{assert.equal(payload.text.format.name,'editorial_refine
 test('pinned Humanizer source and MIT attribution are retained',()=>{
   assert.match(fs.readFileSync(path.join(__dirname,'../vendor/humanizer/NOTICE.md'),'utf8'),new RegExp(HUMANIZER_REVISION));
   assert.match(fs.readFileSync(path.join(__dirname,'../vendor/humanizer/LICENSE'),'utf8'),/Copyright \(c\) 2025 Siqi Chen/);
-  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,'../vendor/humanizer/SKILL.md'))).digest('hex'),'804a119e924ac30295b298213e0b71b3e38b2667b8ef4fb7b69e9246369b9045');
+  // Git/Windows may convert line endings; pin the upstream text canonically.
+  const source=fs.readFileSync(path.join(__dirname,'../vendor/humanizer/SKILL.md'),'utf8').replace(/\r\n/g,'\n');
+  assert.equal(crypto.createHash('sha256').update(source).digest('hex'),'804a119e924ac30295b298213e0b71b3e38b2667b8ef4fb7b69e9246369b9045');
 });
 for(const [name,mutate] of [
   ['ingredient substitutions',c=>c.recipe.ingredients[0]='500 g potatoes'],
