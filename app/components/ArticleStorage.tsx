@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
+import { StorageMeter } from './StorageMeter';
+import type { DiskStorage } from '../../lib/recipe-intelligence/diskStorage';
 type Summary = { total: number; recipes: number; decor: number; active: number; archived: number };
 type Preview = Summary & { revision: string; fileCount: number; bytes: number };
 async function request(route = '', method = 'GET', body?: unknown) {
@@ -10,11 +12,19 @@ async function request(route = '', method = 'GET', body?: unknown) {
 const button = 'rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed';
 export function ArticleStorage({ readOnly = false }: { readOnly?: boolean }) {
   const [summary, setSummary] = useState<Summary | null>(null), [preview, setPreview] = useState<Preview | null>(null);
+  const [storage, setStorage] = useState<DiskStorage | null>(null);
   const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const openButton = useRef<HTMLButtonElement>(null), cancelButton = useRef<HTMLButtonElement>(null), dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let mounted = true;
-    const load = async () => { try { const value = await request(); if (mounted && Number.isInteger(value.total)) setSummary(value); } catch { /* Keep the last count while reconnecting. */ } };
+    let loading = false;
+    const load = async () => {
+      if (loading) return;
+      loading = true;
+      try { const value = await request(); if (mounted && Number.isInteger(value.total)) { setSummary(value); setStorage(value.storage || { status: 'unavailable' }); } }
+      catch { if (mounted) setStorage({ status: 'unavailable' }); /* Keep the last article count while reconnecting. */ }
+      finally { loading = false; }
+    };
     void load(); const timer = setInterval(() => void load(), 5000); window.addEventListener('article-library-cleared', load);
     return () => { mounted = false; clearInterval(timer); window.removeEventListener('article-library-cleared', load); };
   }, []);
@@ -41,6 +51,7 @@ export function ArticleStorage({ readOnly = false }: { readOnly?: boolean }) {
       <p className="mt-2 text-sm text-gray-600">{summary ? `${summary.recipes} recipes · ${summary.decor} decor · ${summary.active} active · ${summary.archived} archived` : 'Loading saved article count…'}</p>
       <p className="mt-1 text-xs text-gray-500">Includes drafts and archived articles across Recipes and Home &amp; Decor.</p>
     </div><button ref={openButton} className={`${button} border-red-300 text-red-700 hover:bg-red-50`} disabled={readOnly || busy || !summary || (summary.total === 0 && !error)} onClick={() => void review()}>{busy ? 'Working…' : error ? 'Retry deleting all articles' : 'Delete all articles'}</button></div>
+    <StorageMeter storage={storage} />
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="text-sm text-green-700">{notice}</p>}
     {preview && <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-black/50 p-4"><div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="clear-articles-title" className="w-full max-w-xl rounded-2xl bg-white p-6 space-y-4 shadow-xl" onKeyDown={event => {

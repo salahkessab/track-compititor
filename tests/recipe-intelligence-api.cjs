@@ -32,7 +32,11 @@ test('local API requires launcher credentials, exact loopback origin and CSRF he
   assert.equal((await request('article-storage')).status, 401);
   assert.equal((await request('article-storage', 'DELETE', { confirmed: true }, { ...auth, Origin: 'https://attacker.example' })).status, 403);
   assert.equal((await request('article-storage', 'DELETE', { confirmed: false }, auth)).status, 400);
-  assert.equal((await (await request('article-storage', 'GET', undefined, auth)).json()).total, 0);
+  const stored = await (await request('article-storage', 'GET', undefined, auth)).json();
+  assert.equal(stored.total, 0); assert.equal(stored.storage.status, 'available');
+  assert.ok(stored.storage.totalBytes > 0); assert.ok(stored.storage.freeBytes >= 0);
+  assert.equal(stored.storage.usedBytes + stored.storage.freeBytes, stored.storage.totalBytes);
+  assert.ok(stored.storage.usedPercent >= 0 && stored.storage.usedPercent <= 100);
   process.env.RECIPE_INTELLIGENCE_READ_ONLY = '1';
   assert.equal((await request('article-storage', 'DELETE', { confirmed: true }, auth)).status, 423);
   assert.equal((await request('session', 'POST', {}, { 'X-RI-Key': 'test-session-secret' })).status, 200);

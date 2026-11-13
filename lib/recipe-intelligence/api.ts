@@ -23,6 +23,7 @@ import { deploymentPause } from "./deployment";
 import { ProviderCredentials } from "./providerCredentials";
 import { StudioStorage } from './studioStorage';
 import { articleStorageSummary, previewArticleStorageDeletion, deleteAllArticles } from './articleStorage';
+import { workspaceDiskStorage } from './diskStorage';
 
 const state = globalThis as typeof globalThis & { recipeIntelligenceStores?: Map<string, Promise<IntelligenceStore>> };
 const enabled = intelligenceEnabled;
@@ -98,7 +99,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     const reports = new ReportStore(database); const batches = new BatchStore(database); const imports = new ImportStore(database);
     const [area, id, child] = segments;
     if (area === 'article-storage') {
-      if (!id && request.method === 'GET') return json(articleStorageSummary(database));
+      if (!id && request.method === 'GET') return json({ ...articleStorageSummary(database), storage: await workspaceDiskStorage(database.root) });
       if (id === 'preview' && request.method === 'GET') return json(previewArticleStorageDeletion(database));
       if (!id && request.method === 'DELETE') { const data = await body(request); const result = deleteAllArticles(database, data.confirmed, data.revision); return json(result, result.deleted ? 200 : 409); }
     }
