@@ -1,5 +1,6 @@
 "use client";
 import { IntelligenceContent } from "./IntelligenceContent";
+import { ArticleStorage } from './ArticleStorage';
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -48,6 +49,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [view, setView] = useState("start");
+  const [contentEpoch, setContentEpoch] = useState(0);
   const [name, setName] = useState(""); const [url, setUrl] = useState("");
   const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
   const [historySite, setHistorySite] = useState(""); const [page, setPage] = useState(0);
@@ -61,6 +63,8 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
     if (!initialized.current) { setTimezone(data.settings.timezone); initialized.current = true; }
     return data;
   }, []);
+
+  useEffect(() => { const cleared = () => { void reload().finally(() => setContentEpoch(value => value + 1)).catch(() => {}); }; window.addEventListener('article-library-cleared', cleared); return () => window.removeEventListener('article-library-cleared', cleared); }, [reload]);
 
   useEffect(() => {
     if (!active) return;
@@ -159,7 +163,8 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
       </nav>
       {["start", "settings"].includes(view) && <CaptureSetup local server={snapshot.runtime === "server"} />}
       {snapshot.readOnly && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Recovery view: you can open and download saved recipes. Generation and changes are paused while the local worker is being reviewed.</p>}
-      <IntelligenceContent view={view} snapshot={snapshot} request={request} refresh={reload} navigate={navigate} active={active} />
+      <ArticleStorage readOnly={!!snapshot.readOnly} />
+      <IntelligenceContent key={contentEpoch} view={view} snapshot={snapshot} request={request} refresh={reload} navigate={navigate} active={active} />
       {view === "websites" && <>
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg">Your websites</h2><p className="mt-1 text-sm text-gray-600">Scan when you want, then use Find recipes to choose a publication date. Both steps are free.</p></div><button className={primary} disabled={busy || !snapshot.worker.online || !snapshot.sites.some(site => site.status === "active")} onClick={() => void scan()}>Scan all active websites</button></div>
         <details className="rounded-xl border border-gray-200/70 p-4" open={!snapshot.sites.length}><summary className="cursor-pointer text-sm">Add a website · {snapshot.sites.length}/10</summary><form className="mt-4 grid gap-3 sm:grid-cols-[1fr_2fr_auto]" onSubmit={event => { event.preventDefault(); void act(async () => { await request("sites", "POST", { name, url }); setName(""); setUrl(""); }, "Website saved. Start a manual scan when ready."); }}>

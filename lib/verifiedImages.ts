@@ -56,23 +56,25 @@ async function inheritMetadata(file: string, source: string, bytes: Buffer, orig
   const keys = Object.keys(tags).filter(k => !/^(?:File|System|Composite|ExifTool|ICC)/.test(k) && /copyright|rights|attribution|credit|licen[cs]e|usageterms|webstatement|:(?:Artist|Author|Creator|By-line)$/i.test(k));
   if (keys.length) await runExifTool(['-overwrite_original', '-tagsFromFile', source, ...keys.map(k => '-' + k), file]);
 }
-export async function prepareImage(bytes: Buffer, options: { root?: string; original?: Buffer; formats?: ImageFormat[] } = {}): Promise<VerifiedImage> {
+export async function prepareImage(bytes: Buffer, options: { root?: string; original?: Buffer; formats?: ImageFormat[]; owner?: 'articles' | 'other' | 'shared' } = {}): Promise<VerifiedImage> {
   const formats = [...new Set(options.formats || [])].sort(), original = options.original || bytes;
   const id = imageHash(Buffer.concat([Buffer.from(METADATA_POLICY + '|' + formats.join(',') + '|' + imageHash(original)), bytes]));
-  const base = imageRoot(options.root), key = base + id;
+  const base = imageRoot(options.root), key = base + id + '|' + (options.owner || 'other');
   if (locks.has(key)) return locks.get(key)!;
   const task = fileLock(path.join(base, 'locks', id), async () => {
     const dir = path.join(base, 'private', id), recordPath = path.join(dir, 'job.json');
     fs.mkdirSync(dir, { recursive: true });
+    let owner = options.owner || 'other';
     if (fs.existsSync(recordPath)) {
       const previous = JSON.parse(fs.readFileSync(recordPath, 'utf8'));
+      if (previous.owner && previous.owner !== owner) owner = 'shared';
       if (previous.state === 'ready') {
-        try { const output = readVerifiedImage(previous.output, options.root); for (const variant of Object.values(output.variants)) readVerifiedImage(variant!, options.root); return output; }
+        try { const output = readVerifiedImage(previous.output, options.root); for (const variant of Object.values(output.variants)) readVerifiedImage(variant!, options.root); if (previous.owner !== owner) write(recordPath, JSON.stringify({ ...previous, owner })); return output; }
         catch { throw new ImagePreparationError(id, 'A saved verified output is missing or changed.'); }
       }
     }
     write(path.join(dir, 'input'), bytes); write(path.join(dir, 'original'), original);
-    write(recordPath, JSON.stringify({ state: 'preparing', formats, policy: METADATA_POLICY }));
+    write(recordPath, JSON.stringify({ state: 'preparing', formats, policy: METADATA_POLICY, owner }));
     try {
       const meta = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
       if (!['png','jpeg','webp'].includes(meta.format || '') || (meta.pages || 1) !== 1) throw new Error('Only static JPEG, PNG and WebP are supported.');
@@ -127,11 +129,11 @@ export async function prepareImage(bytes: Buffer, options: { root?: string; orig
         write(path.join(base, 'outputs', output.record.id), output.data);
         write(path.join(base, 'proofs', output.record.id + '.json'), JSON.stringify(output.record));
       });
-      write(recordPath, JSON.stringify({ state: 'ready', output: outputs[0].record.id, formats, policy: METADATA_POLICY }));
+      write(recordPath, JSON.stringify({ state: 'ready', output: outputs[0].record.id, formats, policy: METADATA_POLICY, owner }));
       return outputs[0].record;
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Verification failed.';
-      write(recordPath, JSON.stringify({ state: 'failed', formats, error: reason, policy: METADATA_POLICY }));
+      write(recordPath, JSON.stringify({ state: 'failed', formats, error: reason, policy: METADATA_POLICY, owner }));
       throw new ImagePreparationError(id, reason);
     } finally {
       for (const format of ['jpeg', 'png', 'webp']) {
@@ -144,7 +146,7 @@ export async function prepareImage(bytes: Buffer, options: { root?: string; orig
 export async function retryImage(id: string, root?: string) {
   const dir = path.join(imageRoot(root), 'private', idCheck(id)), job = JSON.parse(fs.readFileSync(path.join(dir, 'job.json'), 'utf8'));
   if (job.state === 'ready') write(path.join(dir, 'job.json'), JSON.stringify({ ...job, state: 'preparing' }));
-  return prepareImage(fs.readFileSync(path.join(dir, 'input')), { root, original: fs.readFileSync(path.join(dir, 'original')), formats: job.formats });
+  return prepareImage(fs.readFileSync(path.join(dir, 'input')), { root, original: fs.readFileSync(path.join(dir, 'original')), formats: job.formats, owner: job.owner });
 }
 export const imageAssetUrl = (id: string) => '/api/image-assets/' + idCheck(id);
 export function saveImageResponse(id: string, response: unknown) { write(path.join(imageRoot(), 'private', idCheck(id), 'response.json'), JSON.stringify(response)); }

@@ -22,6 +22,7 @@ import { serverBackupStatus } from "./serverBackup";
 import { deploymentPause } from "./deployment";
 import { ProviderCredentials } from "./providerCredentials";
 import { StudioStorage } from './studioStorage';
+import { articleStorageSummary, previewArticleStorageDeletion, deleteAllArticles } from './articleStorage';
 
 const state = globalThis as typeof globalThis & { recipeIntelligenceStores?: Map<string, Promise<IntelligenceStore>> };
 const enabled = intelligenceEnabled;
@@ -96,6 +97,11 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     const database = await store();
     const reports = new ReportStore(database); const batches = new BatchStore(database); const imports = new ImportStore(database);
     const [area, id, child] = segments;
+    if (area === 'article-storage') {
+      if (!id && request.method === 'GET') return json(articleStorageSummary(database));
+      if (id === 'preview' && request.method === 'GET') return json(previewArticleStorageDeletion(database));
+      if (!id && request.method === 'DELETE') { const data = await body(request); const result = deleteAllArticles(database, data.confirmed, data.revision); return json(result, result.deleted ? 200 : 409); }
+    }
     if (area === 'studio' && serverMode()) {
       const studio = new StudioStorage(database);
       if (id === 'blob' && child && request.method === 'GET') return new Response(new Uint8Array(studio.blob(child)),{headers:{'Content-Type':'application/octet-stream','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});

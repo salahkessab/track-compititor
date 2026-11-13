@@ -138,7 +138,7 @@ export class ArtifactStore {
     for (const match of file.data.toString('utf8').matchAll(/src="data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/=]+)"/g)) {
       const bytes = Buffer.from(match[1], 'base64');
       try { this.cachedImage(bytes); } catch {
-        const ready = await prepareImage(bytes, { root: this.store.root });
+        const ready = await prepareImage(bytes, { owner: 'articles', root: this.store.root });
         atomicWrite(this.store.root, `verified-images/sources/${digest(bytes)}.json`, JSON.stringify({ id: ready.id }));
       }
     }
@@ -165,7 +165,7 @@ export class ArtifactStore {
   metadataVerified(id: string) { try { this.cachedImage(this.read(id).data); return true; } catch { return false; } }
   async prepareSavedImage(bytes: Buffer) {
     try { const ready = this.cachedImage(bytes); if (ready.variants.png && ready.variants.webp) return ready; } catch { /* Legacy output is kept private until verified. */ }
-    const ready = await prepareImage(bytes, { root: this.store.root, formats: ['png', 'webp'] });
+    const ready = await prepareImage(bytes, { owner: 'articles', root: this.store.root, formats: ['png', 'webp'] });
     atomicWrite(this.store.root, `verified-images/sources/${digest(bytes)}.json`, JSON.stringify({ id: ready.id }));
     return readVerifiedImage(ready.id, this.store.root);
   }
@@ -284,7 +284,7 @@ export class ArtifactStore {
     // Legacy image stages still apply their requested crop/title first. Lossless
     // compression preserves that rendered output, not pre-resize source pixels.
     this.store.db.prepare("UPDATE content_stages SET result_json=? WHERE item_id=? AND kind=?").run(JSON.stringify({ phase: 'preparing' }), item.id, name);
-    const ready = await prepareImage(await output.png().toBuffer(), { root: this.store.root, original: bytes, formats: ['png', 'webp'] });
+    const ready = await prepareImage(await output.png().toBuffer(), { owner: 'articles', root: this.store.root, original: bytes, formats: ['png', 'webp'] });
     const final = readVerifiedImage(ready.variants.webp!, this.store.root), result = final.data;
     const check = await sharp(result).metadata(); if (check.width !== width || check.height !== height) throw new Error("Image dimensions did not match the requested export.");
     this.putImage(item, name, { data: result, mediaType: final.mediaType, extension: 'webp', storage: { policy: IMAGE_STORAGE_VERSION, converted: true, pixelsVerified: true, originalBytes: bytes.length, storedBytes: result.length } });

@@ -27,7 +27,7 @@ export class DecorStore {
       CREATE TABLE IF NOT EXISTS decor_calls(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES decor_jobs(id),stage TEXT NOT NULL,state TEXT NOT NULL,reserved REAL NOT NULL,actual REAL,request_id TEXT,receipt TEXT,error TEXT,UNIQUE(job_id,stage));`);
   }
   get(id: string): Job {
-    const row = this.store.db.prepare('SELECT * FROM decor_jobs WHERE id=?').get(id) as any;
+    const row = this.store.db.prepare("SELECT * FROM decor_jobs WHERE id=? AND state<>'deleted'").get(id) as any;
     if (!row) throw new Error('Home & Decor article not found.');
     return { ...JSON.parse(row.data_json), id: row.id, state: row.state, createdAt: row.created_at, updatedAt: row.updated_at };
   }
@@ -35,7 +35,7 @@ export class DecorStore {
     job.updatedAt = now();
     this.store.db.prepare('UPDATE decor_jobs SET state=?,updated_at=?,data_json=? WHERE id=?').run(job.state, job.updatedAt, JSON.stringify(job), job.id);
   }
-  list() { return (this.store.db.prepare('SELECT id FROM decor_jobs ORDER BY created_at DESC LIMIT 200').all() as any[]).map(r => this.detail(r.id)); }
+  list() { return (this.store.db.prepare("SELECT id FROM decor_jobs WHERE state<>'deleted' ORDER BY created_at DESC LIMIT 200").all() as any[]).map(r => this.detail(r.id)); }
   detail(id: string) {
     const job = this.get(id);
     const calls = this.store.db.prepare('SELECT stage,state,reserved,actual,error FROM decor_calls WHERE job_id=?').all(id) as any[];
@@ -188,7 +188,7 @@ export class DecorStore {
         if (typeof b64 !== 'string' || !b64.length || b64.length > 55_000_000) throw new Error('Image response has no usable image. The receipt was saved.');
         photo.phase = 'preparing'; this.save(job);
         let ready;
-        try { ready = await prepareImage(Buffer.from(b64, 'base64'), { root: this.store.root, formats: ['png', 'webp'] }); }
+        try { ready = await prepareImage(Buffer.from(b64, 'base64'), { owner: 'articles', root: this.store.root, formats: ['png', 'webp'] }); }
         catch (e) { if (e instanceof ImagePreparationError) { photo.preparationId = e.assetId; photo.error = e.message; photo.phase = 'failed'; this.save(job); } throw e; }
         const data = readVerifiedImage(ready.variants.webp!, this.store.root).data;
         photo.output = `articles/home-decor/${id}/generated-${photo.id}.webp`;

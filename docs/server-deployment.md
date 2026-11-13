@@ -76,6 +76,21 @@ The local launcher uses Windows DPAPI. Migration re-encrypts a saved provider ke
 alongside WordPress credentials in the disposable backup; the original is unchanged.
 Server backups include the encrypted credential, so retain the server encryption key.
 
+## Clearing saved articles
+
+The **Stored articles** panel in Recipes and Home & Decor shows the combined
+count, including drafts and archives. **Delete all articles** reviews the exact
+count and requires confirmation before removing workspace articles, source
+photos, generated variants, old versions and their private preparation files.
+The API rechecks the preview under a SQLite write lock and refuses active imports,
+generation or WordPress uploads. An interrupted file removal is retryable and
+cannot restart paid work. Shared image assets used by independent tools are kept.
+
+Application code, credentials, tracked sites, search reports, billing history,
+design projects, existing backups and previously published WordPress posts/media
+are retained. Clearing the workspace is not a remote WordPress deletion or an
+erasure of offline backups. New articles can be created immediately afterwards.
+
 ## Image metadata preparation
 
 Every generated final image passes the official ExifTool CLI before the app

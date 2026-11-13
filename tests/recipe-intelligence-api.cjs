@@ -29,7 +29,12 @@ test('local API requires launcher credentials, exact loopback origin and CSRF he
   const session = await request('session', 'POST', {}, { 'X-RI-Key': 'test-session-secret' });
   assert.equal(session.status, 200); assert.match(session.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
   const auth = { Cookie: 'ri_session=test-session-secret' };
+  assert.equal((await request('article-storage')).status, 401);
+  assert.equal((await request('article-storage', 'DELETE', { confirmed: true }, { ...auth, Origin: 'https://attacker.example' })).status, 403);
+  assert.equal((await request('article-storage', 'DELETE', { confirmed: false }, auth)).status, 400);
+  assert.equal((await (await request('article-storage', 'GET', undefined, auth)).json()).total, 0);
   process.env.RECIPE_INTELLIGENCE_READ_ONLY = '1';
+  assert.equal((await request('article-storage', 'DELETE', { confirmed: true }, auth)).status, 423);
   assert.equal((await request('session', 'POST', {}, { 'X-RI-Key': 'test-session-secret' })).status, 200);
   assert.equal((await request('sites', 'POST', { name: 'Blocked', url: 'https://food.example/' }, auth)).status, 423);
   assert.equal((await request('items/test/retry', 'POST', { kind: 'research', regenerate: true, retryUncertain: true }, auth)).status, 423);

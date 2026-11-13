@@ -1,5 +1,6 @@
 "use client";
 import { VerifiedImage } from "./VerifiedImage";
+import { ArticleStorage } from './ArticleStorage';
 import { useEffect, useState } from 'react';
 
 const button = 'rounded-xl bg-purple-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed';
@@ -16,6 +17,7 @@ export function HomeDecor({ active }: { active: boolean }) {
   const [connectionError, setConnectionError] = useState('');
   const [url, setUrl] = useState(''), [text, setText] = useState(''), [online, setOnline] = useState(true), [connected, setConnected] = useState(false), [archived, setArchived] = useState(false);
   const [deleting, setDeleting] = useState<any>(null);
+  useEffect(() => { const cleared = () => { setJobs([]); setCurrent(''); setDeleting(null); }; window.addEventListener('article-library-cleared', cleared); return () => window.removeEventListener('article-library-cleared', cleared); }, []);
   async function reload() { const data = await request('decor'); setJobs(data.jobs); setOnline(data.worker?.online !== false); setConnected(true); setConnectionError(''); }
   useEffect(() => {
     if (!active) return;
@@ -37,6 +39,7 @@ export function HomeDecor({ active }: { active: boolean }) {
   if (!active) return null;
   const job = jobs.find(j => j.id === current);
   return <div className="space-y-5 text-gray-900">
+    {connected && <ArticleStorage />}
     <section className={panel}><h1 className="font-serif text-3xl">Home &amp; Decor</h1><p>Import an article, choose its original reference photos, review the cost, then create your article and images.</p><p className="text-sm text-gray-600">Uses your existing workspace and API settings. Original photos are references; only new generated images appear in the article.</p></section>
     {(error || connectionError) && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800">{error || connectionError} {connectionError && <button className={button} onClick={() => void act(reload)}>Reconnect</button>}</div>}
     {!online && <p role="status" className="rounded-xl bg-amber-50 p-4">The local worker is offline. Open the workspace launcher to continue queued work.</p>}
