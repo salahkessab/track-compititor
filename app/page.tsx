@@ -886,8 +886,8 @@ export default function Page() {
             </a>
           );
         })}
-        <ThemeToggle />
       </nav>
+      <ThemeToggle />
 
       {/* â”€â”€ Settings panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div hidden={!showRecipeImageToImage}>
