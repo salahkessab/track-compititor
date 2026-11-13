@@ -115,6 +115,7 @@ export function deleteGeneration(store: IntelligenceStore, id: string, confirmed
       }
       store.db.prepare("DELETE FROM artifacts WHERE item_id=?").run(id);
       store.db.prepare("DELETE FROM wordpress_exports WHERE item_id=?").run(id);
+      store.db.prepare("DELETE FROM settings WHERE key=?").run('internal_links:' + id);
       store.db.prepare("DELETE FROM content_photos WHERE item_id=?").run(id);
       // Keep tiny billing records, including unknown charges, so deleting an
       // output can never refund or increase another item's approved budget.

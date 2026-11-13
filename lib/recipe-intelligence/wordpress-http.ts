@@ -21,7 +21,8 @@ export function wordpressSite(input: unknown): string {
 export const wordpressRequest: WordPressTransport = async (input, options) => {
   const url = publicUrl(input);
   if (url.protocol !== "https:") throw new Error("WordPress connections require HTTPS.");
-  if (options.bridgeToken && !/\/wp-json\/recipe-intelligence\/v1\/(?:profile|media|exports(?:\/[a-f0-9]{64})?)$/.test(url.pathname)) throw new Error("Site Tokens can only be sent to Recipe Intelligence Bridge endpoints.");
+  if (options.bridgeToken && !/\/wp-json\/recipe-intelligence\/v1\/(?:profile|articles|media|exports(?:\/[a-f0-9]{64})?)$/.test(url.pathname)) throw new Error("Site Tokens can only be sent to Recipe Intelligence Bridge endpoints.");
+  if (/\/recipe-intelligence\/v1\/articles$/.test(url.pathname) && options.method !== 'GET') throw new Error('The article catalogue is read-only.');
   const addresses = await resolvePublic(url.hostname);
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = { Accept: "application/json", "Accept-Encoding": "identity", "User-Agent": "RecipeIntelligence/1.0" };

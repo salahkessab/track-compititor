@@ -9,6 +9,7 @@ import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
 import { andText, articleDocument, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
+import { linkedArtifact } from './internalLinkState';
 import { IMAGE_STORAGE_VERSION, GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
 import { prepareImage, readVerifiedImage, verifiedImage, verifiedVariant } from '../verifiedImages';
 export type { Article } from "./article-document";
@@ -120,8 +121,9 @@ export class ArtifactStore {
     if (digest(data) !== row.sha256) throw new Error("Saved file checksum changed. Retry the local save for this recipe.");
     return { ...row, data };
   }
-  async download(id: string, format?: string | null) {
+  async download(id: string, format?: string | null, destination?: string) {
     const file = this.read(id);
+    file.data = linkedArtifact(this.store, file.item_id, file.name, file.data, destination);
     if (file.media_type.startsWith('image/')) {
       const prepared = await this.prepareSavedImage(file.data);
       const output = format ? verifiedVariant(prepared.data, format as any, this.store.root) : prepared;

@@ -27,6 +27,7 @@
     "cheerio": "1.2.0",
     "exiftool-vendored": "39.3.0",
     "fabric": "^7.4.0",
+    "minisearch": "7.2.0",
     "next": "^15.5.29",
     "openai": "^4.73.0",
     "react": "^19.0.0",

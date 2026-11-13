@@ -353,6 +353,9 @@ test('WordPress transport pins public DNS results, retains TLS verification and 
   assert.equal(calls[1].options.headers['X-Recipe-Intelligence-Key'],token);
   assert.equal(calls[1].options.headers['X-Recipe-Intelligence-User'],'owner');
   assert.equal(calls[1].options.headers.Authorization,undefined);
+  await wordpressRequest('https://first.example/wp-json/recipe-intelligence/v1/articles?page=2', {method:'GET',bridgeToken:token,userSlug:'owner'});
+  assert.equal(calls[2].options.headers['X-Recipe-Intelligence-Key'],token);
+  await assert.rejects(wordpressRequest('https://first.example/wp-json/recipe-intelligence/v1/articles',{method:'POST',bridgeToken:token,userSlug:'owner'}),/read-only/);
   await assert.rejects(wordpressRequest('https://first.example/wp-json/wp/v2/users/me',{method:'GET',bridgeToken:token,userSlug:'owner'}),/only be sent to Recipe Intelligence Bridge/);
   await assert.rejects(wordpressRequest('https://first.example/wp-json/recipe-intelligence/v1/profile',{method:'GET',bridgeToken:token,userSlug:'owner\r\ninjected'}),/Invalid WordPress bridge credentials/);
   calls[0].options.lookup('first.example', { all: true }, (error, selected) => { assert.equal(error, null); assert.equal(selected, addresses); });

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Recipe Intelligence Bridge
  * Description: Connect Recipe Intelligence, choose your default recipe card, and receive articles as drafts or published posts.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Requires at least: 6.2
  * Requires PHP: 8.0
  * License: GPL-2.0-or-later
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Recipe_Intelligence_Bridge {
-    const VERSION = '1.2.0';
+    const VERSION = '1.3.0';
     const NS = 'recipe-intelligence/v1';
     const OPTION = 'ri_bridge_recipe_card';
     const TOKEN_OPTION = 'ri_bridge_site_token';
@@ -22,6 +22,35 @@ final class Recipe_Intelligence_Bridge {
         add_action('rest_api_init', [__CLASS__, 'routes']);
         add_shortcode('ri_recipe', [__CLASS__, 'card']);
         add_action('wp_head', [__CLASS__, 'schema']);
+        foreach (['save_post', 'deleted_post', 'set_object_terms', 'edited_term', 'delete_term'] as $hook) {
+            add_action($hook, [__CLASS__, 'catalogue_changed']);
+        }
+    }
+    public static function catalogue_changed() { update_option('ri_catalogue_revision', wp_generate_uuid4(), false); }
+    private static function catalogue_revision() {
+        // Bypass the per-request option cache so concurrent edits are detected too.
+        global $wpdb;
+        return $wpdb->get_var($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'ri_catalogue_revision'));
+    }
+    public static function articles($request) {
+        add_option('ri_catalogue_revision', wp_generate_uuid4(), '', false);
+        $revision = self::catalogue_revision();
+        $expected = $request->get_param('revision');
+        if ($expected && $expected !== $revision) { return new WP_Error('ri_catalogue_changed', 'Articles changed during sync. Retry Sync articles.', ['status' => 409]); }
+        $page = $request->get_param('page') ?? '1';
+        if (!preg_match('/^[1-9][0-9]{0,4}$/D', (string) $page)) { return new WP_Error('ri_page', 'Invalid page.', ['status' => 400]); }
+        $query = new WP_Query(['post_type' => 'post', 'post_status' => 'publish', 'has_password' => false,
+            'posts_per_page' => 100, 'paged' => (int) $page, 'orderby' => 'ID', 'order' => 'ASC', 'ignore_sticky_posts' => true]);
+        $rows = [];
+        foreach ($query->posts as $post) {
+            if ($post->post_status !== 'publish' || $post->post_password !== '') { continue; }
+            $plain = wp_strip_all_tags(strip_shortcodes($post->post_excerpt ?: $post->post_content), true);
+            $rows[] = ['id' => $post->ID, 'title' => html_entity_decode(wp_strip_all_tags(get_the_title($post)), ENT_QUOTES, 'UTF-8'),
+                'url' => get_permalink($post), 'categories' => wp_get_post_categories($post->ID, ['fields' => 'names']),
+                'summary' => wp_trim_words($plain, 250, ''), 'modified' => $post->post_modified_gmt];
+        }
+        if (self::catalogue_revision() !== $revision) { return new WP_Error('ri_catalogue_changed', 'Articles changed during sync. Retry Sync articles.', ['status' => 409]); }
+        return ['articles' => $rows, 'page' => (int) $page, 'pages' => max(1, (int) $query->max_num_pages), 'total' => (int) $query->found_posts, 'revision' => $revision];
     }
     public static function adapters() {
         return [
@@ -164,6 +193,7 @@ final class Recipe_Intelligence_Bridge {
                 return self::profile();
             }
             if ($route === '/' . self::NS . '/media') { return self::media($request); }
+            if ($route === '/' . self::NS . '/articles') { return self::articles($request); }
             return $request->get_method() === 'POST' ? self::receive($request) : self::lookup($request);
         } finally { if ($user instanceof WP_User) { wp_set_current_user($previous); } }
     }
@@ -193,6 +223,7 @@ final class Recipe_Intelligence_Bridge {
         return rest_do_request($native);
     }
     public static function routes() {
+        register_rest_route(self::NS, '/articles', ['methods' => 'GET', 'callback' => [__CLASS__, 'dispatch'], 'permission_callback' => [__CLASS__, 'permission']]);
         register_rest_route(self::NS, '/profile', ['methods' => 'GET', 'callback' => [__CLASS__, 'dispatch'], 'permission_callback' => [__CLASS__, 'permission']]);
         register_rest_route(self::NS, '/exports/(?P<id>[a-f0-9]{64})', ['methods' => 'GET', 'callback' => [__CLASS__, 'dispatch'], 'permission_callback' => [__CLASS__, 'permission']]);
         register_rest_route(self::NS, '/exports', ['methods' => 'POST', 'callback' => [__CLASS__, 'dispatch'], 'permission_callback' => [__CLASS__, 'permission']]);

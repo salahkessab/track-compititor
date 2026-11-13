@@ -1,0 +1,30 @@
+const test=require('node:test'),assert=require('node:assert/strict'),React=require('react');
+const {JSDOM}=require('jsdom');
+const load=require('./helpers/load-component.cjs');
+test('link controls require explicit application, preview links and reset on destination change',async t=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'});
+ const keys={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true};
+ const old=Object.fromEntries(Object.keys(keys).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
+ for(const [k,value]of Object.entries(keys))Object.defineProperty(globalThis,k,{value,configurable:true,writable:true});
+ const root=require('react-dom/client').createRoot(document.getElementById('root'));
+ t.after(async()=>{await React.act(async()=>root.unmount());dom.window.close();for(const k of Object.keys(keys)){if(old[k])Object.defineProperty(globalThis,k,old[k]);else delete globalThis[k];}});
+ const {WordPressCopy}=load('RecipeWordPress');const calls=[];
+ const connections=['one','two'].map((v,i)=>({id:String(i+1).repeat(32),siteUrl:`https://${v}.example/`,username:'owner'}));
+ const request=async(route,method='GET',body)=>{
+  calls.push({route,method,body});
+  if(body?.action==='destination')return {};
+  const suggestions=body?.action==='suggest'||body?.action==='apply'?[{id:3,title:'Carrot soup',url:'https://one.example/carrot',reason:'Shared topic: carrot',sentence:'Related recipes: Carrot soup',paragraph:null}]:[];
+  return {contentVersion:'v1',suggestions,selected:body?.action==='apply'?body.selected:[],applied:body?.action==='apply',count:2,syncedAt:'2026-11-13T00:00:00Z'};
+ };
+ await React.act(async()=>root.render(React.createElement(WordPressCopy,{itemId:'item',connections,request})));
+ const click=async label=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.startsWith(label));assert.ok(b,label);await React.act(async()=>b.click());};
+ const choose=async id=>React.act(async()=>{const s=document.querySelector('select');s.value=id;s.dispatchEvent(new window.Event('change',{bubbles:true}));});
+ await choose(connections[0].id);await click('Suggest internal links');
+ assert.equal(calls.filter(c=>c.body?.action==='apply').length,0);
+ await React.act(async()=>document.querySelector('input[type=checkbox]').click());await click('Apply selected');
+ assert.deepEqual(calls.find(c=>c.body?.action==='apply').body.selected,[3]);
+ assert.match(document.querySelector('iframe').src,/internal-link-preview/);
+ await choose(connections[1].id);assert.equal(document.querySelector('iframe'),null);assert.doesNotMatch(document.body.textContent,/Related recipes: Carrot soup/);
+ assert.equal(calls.filter(c=>c.body?.action==='destination').length,2);
+ assert.equal(calls.filter(c=>c.route.includes('wordpress-publish')).length,0);
+});

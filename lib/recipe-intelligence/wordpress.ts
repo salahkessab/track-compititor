@@ -11,6 +11,7 @@ import { credentialProtection, type SecretProtection } from "./local-secrets";
 import { mediaMultipart, wordpressRequest, wordpressSite, type WordPressTransport, type WordPressResponse } from "./wordpress-http";
 import { GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
 import { verifiedVariant, readVerifiedImage, METADATA_POLICY } from '../verifiedImages';
+import { linkedArtifact } from './internalLinkState';
 
 export type WordPressProfile = { version: string; protocol: 1; recipeCard: string; recipeCardLabel: string; revision: string; ready: boolean; canPublish: boolean; settingsUrl: string; scheduling?: boolean; timezone?: string };
 type Connection = { id: string; siteUrl: string; username: string; userId: number; displayName: string; protectedPassword: string; checkedAt: string; bridge?: WordPressProfile; authMethod?: "application_password" | "bridge_token"; userSlug?: string };
@@ -102,11 +103,21 @@ export class WordPressStore {
   disconnect(id: string) {
     this.connection(id);
     this.store.db.prepare("DELETE FROM settings WHERE key=?").run(CONNECTION_PREFIX + id);
+    this.store.db.prepare("DELETE FROM settings WHERE key=?").run('internal_catalogue:' + id);
     return this.status();
   }
   private async authentication(c: Connection) {
     const secret = await this.secrets.unprotect(c.protectedPassword);
     return c.authMethod === "bridge_token" ? { bridgeToken: secret, userSlug: c.userSlug } : { authorization: `Basic ${Buffer.from(`${c.username}:${secret}`).toString("base64")}` };
+  }
+  async publishedArticles(id: string, page: number, revision?: string) {
+    const c = this.connection(id);
+    const url = new URL('wp-json/recipe-intelligence/v1/articles', c.siteUrl);
+    url.searchParams.set('page', String(page));
+    if (revision) url.searchParams.set('revision', revision);
+    const response = await this.transport(url.href, { method: 'GET', ...await this.authentication(c) });
+    if (response.status === 404) throw new Error('Update Recipe Intelligence Bridge to 1.3 or newer using Download WordPress plugin, then Sync articles.');
+    return readJson(response);
   }
   async bridgeRequest(id: string, route: "profile" | "exports" | `exports/${string}`, payload?: unknown) {
     if (!/^(?:profile|exports(?:\/[a-f0-9]{64})?)$/.test(route)) throw new Error("Invalid WordPress bridge operation.");
@@ -135,13 +146,15 @@ export class WordPressStore {
       settingsUrl: new URL("wp-admin/options-general.php?page=recipe-intelligence", siteUrl).href };
     return bridge;
   }
-  private document(itemId: string) {
+  private document(itemId: string, connectionId: string) {
     if (!this.store.db.prepare("SELECT 1 FROM content_items WHERE id=? AND state NOT IN ('deleted','deleting','delete_failed')").get(itemId)) throw new Error("This recipe has been deleted or is waiting for deletion to finish.");
     const artifacts = new ArtifactStore(this.store);
     const articleRow = this.store.db.prepare("SELECT id,size_bytes FROM artifacts WHERE item_id=? AND name='article.html'").get(itemId) as any;
     if (!articleRow) throw new Error("Save the article before copying it to WordPress.");
     if (articleRow.size_bytes > MAX_ARTICLE_BYTES) throw new Error("This article is too large for clipboard export. Download its files instead.");
     const article = artifacts.read(articleRow.id);
+    article.data = linkedArtifact(this.store, itemId, 'article.html', article.data, connectionId);
+    article.sha256 = digest(article.data);
     const $ = cheerio.load(article.data.toString("utf8")); const root = $("article").first();
     if (!root.length) throw new Error("The saved article has no copyable content.");
     root.find("script,style,iframe,object,embed,form,input,button,svg,link,meta").remove();
@@ -191,7 +204,7 @@ export class WordPressStore {
     } catch { return false; }
   }
   plan(itemId: string, connectionId: string) {
-    const c = this.connection(connectionId), doc = this.document(itemId);
+    const c = this.connection(connectionId), doc = this.document(itemId, connectionId);
     const images = doc.images.map(image => {
       const row = this.row(c.siteUrl, image.sha256);
       const verified = this.verifiedReceipt(row);
@@ -212,7 +225,7 @@ export class WordPressStore {
   }
   async upload(itemId: string, input: Record<string, unknown>): Promise<Media> {
     const c = this.connection(String(input.connectionId || ""));
-    const doc = this.document(itemId);
+    const doc = this.document(itemId, c.id);
     if (input.documentHash !== doc.documentHash) throw new Error("The article changed while images were uploading. Click Upload images and copy again to use the latest saved article; existing uploads will be reused.");
     const image = doc.images.find(i => i.sha256 === input.sha256);
     if (!image) throw new Error("Select an edited image from this saved article.");

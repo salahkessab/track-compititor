@@ -13,7 +13,10 @@ async function setup(t) {
   const originals = Object.fromEntries(Object.keys(globals).map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
   for (const [k, value] of Object.entries(globals)) Object.defineProperty(globalThis, k, { value, configurable: true, writable: true });
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/components/RecipeWordPress.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const module = { exports: {} }; new Function('require','module','exports',code)(require,module,module.exports);
+  const module = { exports: {} }; new Function('require','module','exports',code)(id => id === './RecipeInternalLinks' ? { RecipeInternalLinks: () => null } : require(id),module,module.exports);
+  // These tests isolate publication/copy. Internal-link controls have their own integration tests.
+  const Copy = module.exports.WordPressCopy;
+  module.exports.WordPressCopy = props => React.createElement(Copy, { ...props, request: React.useCallback((route, ...args) => route.includes('/internal-links') ? Promise.resolve({}) : props.request(route, ...args), [props.request]) });
   const root = require('react-dom/client').createRoot(document.getElementById('root'));
   t.after(async () => { await React.act(async () => root.unmount()); dom.window.close(); for (const k of Object.keys(globals)) if (originals[k]) Object.defineProperty(globalThis,k,originals[k]); else delete globalThis[k]; });
   const control = text => [...document.querySelectorAll('button')].find(e => e.textContent === text);

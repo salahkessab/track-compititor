@@ -100,7 +100,7 @@ test('v5 migration backs up existing media receipts before adding publication re
   assert.deepEqual(upgraded.db.pragma('foreign_key_check'), []);
 });
 test('installable plugin package includes only the distributable PHP file', async () => {
-  const archive = await buildWordPressPackage(); assert.equal(archive.version, '1.2.0');
+  const archive = await buildWordPressPackage(); assert.equal(archive.version, '1.3.0');
   assert.match(archive.bytes.toString(), /Plugin Name: Recipe Intelligence Bridge/);
   assert.doesNotMatch(archive.bytes.toString(), /OPENAI_API_KEY|protectedPassword|\.env\.local/);
 });

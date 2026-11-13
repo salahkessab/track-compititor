@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { RecipeInternalLinks } from './RecipeInternalLinks';
 
 const button = "rounded-xl border border-gray-200 bg-purple-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40 ui-secondary";
 const input = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900";
@@ -38,7 +39,7 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked readOnly disabled />Clean metadata before upload</label><p className="text-xs text-gray-600">Automatic for every final image before preview, download and upload.</p>
     <p className="text-sm text-gray-600">Connect your WordPress websites and choose a destination per article. Install the bridge plugin to send drafts or publish live with the site's default recipe card.</p>
     <a className={`${button} inline-block`} href="/api/recipe-wordpress-plugin" download>Download WordPress plugin</a>
-    <p className="text-sm text-gray-600">Install or update Recipe Intelligence Bridge 1.2 using WordPress → Plugins → Add New → Upload Plugin. Open Recipe Intelligence in the WordPress sidebar, create a Site Token, copy a User Slug, and choose your default recipe card.</p>
+    <p className="text-sm text-gray-600">Install or update Recipe Intelligence Bridge 1.3 using WordPress → Plugins → Add New → Upload Plugin. Open Recipe Intelligence in the WordPress sidebar, create a Site Token, copy a User Slug, and choose your default recipe card.</p>
     {!!status?.connections.length && <ul className="space-y-3">{status.connections.map(c => <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 p-3"><div className="min-w-0 text-sm"><p className="break-all">{c.siteUrl}</p><p className="text-gray-600">Connected as {c.username}</p><p>Recipe card: {c.bridge?.recipeCardLabel || "Bridge not synced"}{c.bridge && !c.bridge.ready ? " — setup required" : ""}</p><div className="flex gap-3"><a className="text-blue-700 underline" href={c.mediaLibraryUrl} target="_blank" rel="noreferrer">Open Media Library</a>{c.bridge && <a className="text-blue-700 underline" href={c.bridge.settingsUrl} target="_blank" rel="noreferrer">Recipe-card settings</a>}</div></div><div className="flex gap-2"><button type="button" className={button} disabled={busy} onClick={() => void sync(c.id)}>Sync website settings</button><button type="button" className={button} disabled={busy} onClick={() => void disconnect(c.id)}>Disconnect</button></div></li>)}</ul>}
     <details open={!status?.connections.length}><summary className="cursor-pointer text-sm">{status?.connections.length ? "Connect another website or update credentials" : "Connect your WordPress website"}</summary>
       <form className="mt-4 space-y-4" onSubmit={connect} autoComplete="off">
@@ -55,12 +56,21 @@ export function WordPressConnections({ status, request, refresh }: { status?: St
 }
 
 export function WordPressCopy({ itemId, connections, request, publications = [] }: { itemId: string; connections: Connection[]; request: RequestFn; publications?: { siteUrl: string; state: string; result: any; checkedAt: string }[] }) {
+  const [linkBusy, setLinkBusy] = useState(false);
   const [target, setTarget] = useState(connections.length === 1 ? connections[0].id : "");
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   const [prepared, setPrepared] = useState<{ html: string; text: string; siteUrl: string; connectionId: string } | null>(null);
   const [review, setReview] = useState<any>(null); const [sent, setSent] = useState<any>(null);
   const [publishConfirmed, setPublishConfirmed] = useState(false);
   const lock = useRef(false);
+  async function changeDestination(id: string) {
+    setBusy(true); setError('');
+    try {
+      await request(`items/${itemId}/internal-links`, 'POST', { action: 'destination', connectionId: id });
+      setTarget(id); setPrepared(null); setReview(null); setSent(null); setPublishConfirmed(false); setMessage('Destination changed. Request internal-link suggestions for this website.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not change destination.'); }
+    finally { setBusy(false); }
+  }
   const publication = publications.find(p => p.siteUrl.replace(/\/$/, '') === connections.find(c => c.id === target)?.siteUrl.replace(/\/$/, ''));
   const publicationKey = JSON.stringify(publication || null);
   useEffect(() => {
@@ -136,11 +146,12 @@ export function WordPressCopy({ itemId, connections, request, publications = [] 
   }
   if (!connections.length) return null;
   return <div className="space-y-3 rounded-xl border border-gray-200 p-3" aria-label="Upload article images to WordPress">
-    <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">WordPress destination<select className={`${input} mt-1`} value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setPrepared(null); setReview(null); setSent(null); setPublishConfirmed(false); setMessage(""); setError(""); }}><option value="">Choose a website</option>{connections.map(c => <option key={c.id} value={c.id}>{c.siteUrl}</option>)}</select></label><button className={button} disabled={busy || !target} onClick={() => void prepareSend()}>Prepare WordPress post</button><button className={button} disabled={busy || !target} onClick={() => void uploadAndCopy()}>{busy ? "Working…" : "Upload images and copy"}</button></div>
+    <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">WordPress destination<select className={`${input} mt-1`} value={target} disabled={busy || linkBusy} onChange={e => void changeDestination(e.target.value)}><option value="">Choose a website</option>{connections.map(c => <option key={c.id} value={c.id}>{c.siteUrl}</option>)}</select></label><button className={button} disabled={busy || linkBusy || !target} onClick={() => void prepareSend()}>Prepare WordPress post</button><button className={button} disabled={busy || linkBusy || !target} onClick={() => void uploadAndCopy()}>{busy ? "Working…" : "Upload images and copy"}</button></div>
+    <RecipeInternalLinks itemId={itemId} target={target} request={request} disabled={busy || linkBusy} onBusy={setLinkBusy} onChanged={() => { setPrepared(null); setReview(null); setPublishConfirmed(false); }} />
     <p className="text-xs text-gray-600">Image metadata is cleaned and verified before preview, download and upload. WordPress reuses the verified WebP output. Previously unverified uploads need review.</p>
     {message && <p role="status" className="text-sm text-green-700">{message}</p>}{error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-    {review && <div className="space-y-3 rounded-xl border border-gray-200 p-3"><p className="text-sm">{review.title} → {review.siteUrl}</p><p className="text-sm">Recipe card: <strong>{review.profile.recipeCardLabel}</strong> · {review.images.length} hosted images</p><p className="text-xs text-gray-600">Uses saved recipe facts. No new AI request. Changing the default card in WordPress requires preparing again.</p><div className="flex flex-wrap gap-2">{!sent && <button className={button} disabled={busy} onClick={() => void send("draft")}>Save draft</button>}<button className={button} disabled={busy} onClick={() => void checkSent()}>Check saved post</button></div>{review.profile.canPublish && (!sent || sent.status === "draft") && <div className="space-y-2"><label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy} checked={publishConfirmed} onChange={e => setPublishConfirmed(e.target.checked)} />Publish this article publicly on {new URL(review.siteUrl).host} now.</label><button className={button} disabled={busy || !publishConfirmed} onClick={() => void send("publish")}>Publish live</button></div>}</div>}
+    {review && <div className="space-y-3 rounded-xl border border-gray-200 p-3"><p className="text-sm">{review.title} → {review.siteUrl}</p><p className="text-sm">Recipe card: <strong>{review.profile.recipeCardLabel}</strong> · {review.images.length} hosted images</p><p className="text-xs text-gray-600">Uses saved recipe facts. No new AI request. Changing the default card in WordPress requires preparing again.</p><div className="flex flex-wrap gap-2">{!sent && <button className={button} disabled={busy || linkBusy} onClick={() => void send("draft")}>Save draft</button>}<button className={button} disabled={busy || linkBusy} onClick={() => void checkSent()}>Check saved post</button></div>{review.profile.canPublish && (!sent || sent.status === "draft") && <div className="space-y-2"><label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy || linkBusy} checked={publishConfirmed} onChange={e => setPublishConfirmed(e.target.checked)} />Publish this article publicly on {new URL(review.siteUrl).host} now.</label><button className={button} disabled={busy || !publishConfirmed} onClick={() => void send("publish")}>Publish live</button></div>}</div>}
     {sent && <div className="flex flex-wrap gap-3 text-sm"><span>{sent.status === "publish" ? "Published" : sent.status === "future" ? "Scheduled" : "Saved draft"} · Post {sent.postId}</span><a className="text-blue-700 underline" href={sent.editUrl} target="_blank" rel="noreferrer">Open in WordPress</a>{sent.status === "publish" && <a className="text-blue-700 underline" href={sent.postUrl} target="_blank" rel="noreferrer">View live article</a>}</div>}
-    {prepared && <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => void copy(prepared).catch(e => setError(e.message))}>Copy uploaded article</button><button className={button} disabled={busy} onClick={download}>Download WordPress HTML</button></div>}
+    {prepared && <div className="flex flex-wrap gap-2"><button className={button} disabled={busy || linkBusy} onClick={() => void copy(prepared).catch(e => setError(e.message))}>Copy uploaded article</button><button className={button} disabled={busy || linkBusy} onClick={download}>Download WordPress HTML</button></div>}
   </div>;
 }

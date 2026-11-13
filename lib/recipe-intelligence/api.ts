@@ -11,6 +11,7 @@ import { atomicWrite } from "./artifacts";
 import { ImportStore, MAX_PHOTO_BYTES } from "./imports";
 import { prepareReferenceBatch, prepareImportEstimate, reviewPhoto, skipPhoto } from "./referenceWorkflow";
 import { WordPressStore } from "./wordpress";
+import { InternalLinks } from './internalLinks';
 import { preparationFailure } from '../imageFinalization';
 import { WordPressPublisher } from "./wordpress-publish";
 import { beginBrowserCapture, finishBrowserCapture, MAX_CAPTURE_BYTES } from "./browserCapture";
@@ -139,9 +140,17 @@ export async function handleIntelligence(request: Request): Promise<Response> {
       return json({ error: 'Unknown Home & Decor operation.' }, 404);
     }
     const wordpress = new WordPressStore(database);
+    const links = new InternalLinks(wordpress);
     const publisher = new WordPressPublisher(wordpress);
     const storage = objectStorage(database);
     const credentials = new ProviderCredentials(database);
+    if (area === 'items' && id && child === 'internal-link-preview' && request.method === 'GET') {
+      links.status(id, url.searchParams.get('connectionId') || '');
+      await storage.ensureItem(id);
+      const row = database.db.prepare("SELECT id FROM artifacts WHERE item_id=? AND name='article.html'").get(id) as any;
+      const file = await batches.artifacts.download(row.id, undefined, url.searchParams.get('connectionId') || '');
+      return new Response(new Uint8Array(file.data), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'" } });
+    }
     if (area === "snapshot" && request.method === "GET") return json({ ...database.snapshot(), readOnly: process.env.RECIPE_INTELLIGENCE_READ_ONLY === "1", runtime: serverMode() ? "server" : "local", serverBackup: serverBackupStatus(database), contentSettings: contentSettings(database), reports: reports.list(), batches: batches.list(), imports: imports.list(), providerConfigured: credentials.status().configured, providerConnection: credentials.status(), wordpress: wordpress.status(), objectStorage: storage.status() });
     if (area === "provider-key" && !id && request.method === "GET") return json(credentials.status());
     if (area === "provider-key" && !id && request.method === "POST") return json(await credentials.save((await body(request)).apiKey));
@@ -154,6 +163,18 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "wordpress" && id === "target" && request.method === "POST") return json(wordpress.suggest((await body(request)).siteUrl));
     if (area === "wordpress" && id === "connect" && request.method === "POST") return json(await wordpress.connect(await body(request)));
     if (area === "wordpress" && id && child === "sync" && request.method === "POST") { await body(request); return json(await wordpress.sync(id)); }
+    if (area === 'wordpress' && id && child === 'articles-sync' && request.method === 'POST') { await body(request); const c = await links.sync(id); return json({ count: c.posts.length, syncedAt: c.syncedAt }); }
+    if (area === 'items' && id && child === 'internal-links') {
+      if (request.method === 'GET') return json(links.status(id, url.searchParams.get('connectionId') || ''));
+      if (request.method === 'POST') {
+        await storage.ensureItem(id);
+        const input = await body(request), connectionId = String(input.connectionId || '');
+        if (input.action === 'destination') return json(links.destination(id, connectionId));
+        if (input.action === 'suggest') return json(await links.suggest(id, connectionId));
+        if (input.action === 'apply') return json(await links.apply(id, input));
+        throw new Error('Unknown internal-link action.');
+      }
+    }
     if (area === "items" && id && child === "wordpress-publish" && request.method === "GET") { const { payload, ...review } = await publisher.prepare(id, url.searchParams.get("connectionId") || ""); return json(review); }
     if (area === "items" && id && child === "wordpress-publish" && request.method === "POST") return json(await publisher.send(id, await body(request)));
     if (area === "items" && id && child === "wordpress-check" && request.method === "POST") return json(await publisher.check(id, String((await body(request)).connectionId || "")));
