@@ -82,11 +82,21 @@ test('a comment containing required attribution is reported as a conflict and is
   const dirs=fs.readdirSync(path.join(root,'verified-images','private'));
   assert.deepEqual(fs.readFileSync(path.join(root,'verified-images','private',dirs[0],'original')),bytes);
 });
-function c2paFixture() {
+function c2paFixture(claim = {test_claim:'fixture only, not a signed assertion'}) {
   const box=(type,payload)=>{ const b=Buffer.alloc(payload.length+8); b.writeUInt32BE(b.length); b.write(type,4); payload.copy(b,8); return b; };
   const descriptor=Buffer.concat([Buffer.from('6332706100110010800000aa00389b71','hex'),Buffer.from([3]),Buffer.from('c2pa\0')]);
-  return box('jumb',Buffer.concat([box('jumd',descriptor),box('json',Buffer.from('{"test_claim":"fixture only, not a signed assertion"}'))]));
+  return box('jumb',Buffer.concat([box('jumd',descriptor),box('json',Buffer.from(JSON.stringify(claim)))]));
 }
+test('generic provider claim filename is not attribution; real titles and credits remain protected', async t => {
+  const png=await sharp({create:{width:5,height:3,channels:3,background:'#123456'}}).png().toBuffer();
+  const bytes=pngChunk(png,'caBX',c2paFixture({title:'image.png'}));
+  const out=await cleanImageMetadata(bytes);
+  assert.equal(out.report.c2pa.action,'removed');
+  assert.equal(imagePayload(bytes,'png'),imagePayload(out.data,'png'));
+  for(const claim of [{title:'A photographer’s original work'},{copyright:'Copyright Example Studio'},{title:'image.png',credit:'Example Studio'}]) {
+    await assert.rejects(cleanImageMetadata(pngChunk(png,'caBX',c2paFixture(claim))),/attribution/);
+  }
+});
 for (const format of ['png','jpeg','webp']) test('C2PA is removed from '+format+' copies and independently verified', async t => {
   const manifest=c2paFixture();
   const original=await sharp({create:{width:5,height:3,channels:format==='jpeg'?3:4,background:'#12345688'}}).withIccProfile('p3').withMetadata({orientation:6})[format](format==='webp'?{lossless:true}:{}).toBuffer();

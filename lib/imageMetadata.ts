@@ -150,7 +150,13 @@ export async function inspectC2pa(file: string) {
 export async function checkProvenanceAttribution(file: string) {
   const tags = await inspect(file);
   // Deleting a manifest must not silently discard rights that exist only there.
-  if (Object.entries(tags).some(([key, value]) => isProvenance(key) && (protectedName.test(nameOf(key)) || creditValue.test(String(value))))) {
+  if (Object.entries(tags).some(([key, value]) => {
+    if (!isProvenance(key)) return false;
+    // Provider manifests use a generic output filename as the claim title.
+    // This is not a work title or a credit. Keep meaningful titles protected.
+    const outputFilename = nameOf(key) === 'Title' && typeof value === 'string' && /^image\.(?:png|jpe?g|webp)$/i.test(value);
+    return (!outputFilename && protectedName.test(nameOf(key))) || creditValue.test(String(value));
+  })) {
     throw new Error('C2PA contains possible copyright or required attribution. Preserve those rights in supported metadata before retrying; the original is unchanged.');
   }
 }
@@ -171,7 +177,8 @@ export async function cleanImageMetadata(original: Buffer): Promise<{ data: Buff
     const data = fs.readFileSync(file), afterTags = await inspect(file), c2paAfter = await inspectC2pa(file);
     const remaining = targets(afterTags);
     if (remaining.length) throw new Error(`Unsupported or remaining metadata: ${remaining.join(', ').slice(0, 200)}. No cleaned output was released.`);
-    if (stable(beforeTags, isProtected) !== stable(afterTags, isProtected)) throw new Error('Copyright, attribution or color-profile metadata changed.');
+    const protectedOutsideManifest = (key: string) => !isProvenance(key) && isProtected(key);
+    if (stable(beforeTags, protectedOutsideManifest) !== stable(afterTags, protectedOutsideManifest)) throw new Error('Copyright, attribution or color-profile metadata changed.');
     if (c2paAfter.present) throw new Error('C2PA removal did not pass verification. The original is preserved; output was blocked.');
     if (before.signature !== (await appearance(data)).signature) throw new Error('Pixels, compressed image data, transparency, orientation, dimensions or ICC profile changed.');
     return { data, report: { policy: METADATA_POLICY, toolVersion, state: 'verified', sourceSha256: imageHash(original), sha256: imageHash(data),
