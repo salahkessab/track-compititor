@@ -2,6 +2,16 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {temporary,IntelligenceStore}=require('./helpers/recipe-fixtures.cjs');
 const {StudioStorage}=require('../.intelligence-build/lib/recipe-intelligence/studioStorage.js');
 const {handleIntelligence}=require('../.intelligence-build/lib/recipe-intelligence/api.js');
+test('design initialization reads the real paid lock without opening arbitrary lock writes',async t=>{
+ const store=await IntelligenceStore.open(temporary(t));t.after(()=>store.close());const studio=new StudioStorage(store);
+ assert.equal(studio.get('recipe-designs','locks','active'),null);
+ studio.claim('recipe-designs','paid-job');
+ assert.equal(studio.get('recipe-designs','locks','active').id,'paid-job');
+ assert.equal(studio.get('layered-designs','locks','active'),null);
+ assert.throws(()=>studio.save('recipe-designs','locks','active',{id:'replacement'}),/Invalid/);
+ assert.throws(()=>studio.get('../private','locks','active'),/Invalid/);
+ studio.release('recipe-designs','paid-job');assert.equal(studio.get('recipe-designs','locks','active'),null);
+});
 test('personal studio history and blobs survive restart; browser imports cannot overwrite or resurrect cloud records',async t=>{
  const root=temporary(t);let store=await IntelligenceStore.open(root),studio=new StudioStorage(store);t.after(()=>{if(store.db.open)store.close();});
  const bytes=Buffer.from('original reference bytes'),value={id:'first',title:'Saved title',image:{$studioBlob:1,type:'image/png',base64:bytes.toString('base64')}};
@@ -28,6 +38,8 @@ test('studio API and blob access require owner authentication and reject cross-o
  const auth='Basic '+Buffer.from('owner:owner-test').toString('base64');
  const request=(suffix='',data,headers={})=>handleIntelligence(new Request('https://studio.example/api/recipe-intelligence/studio'+suffix,{method:data?'POST':'GET',headers:{host:'studio.example',origin:'https://studio.example','Content-Type':'application/json','X-Recipe-Intelligence':'1',authorization:auth,...headers},...(data?{body:JSON.stringify(data)}:{})}));
  const data={action:'save',namespace:'recipe-designs',store:'history',key:'id',value:{image:{$studioBlob:1,type:'image/png',base64:Buffer.from('private bytes').toString('base64')}}};
+ const lock=await request('',{action:'get',namespace:'recipe-designs',store:'locks',key:'active'});
+ assert.equal(lock.status,200);assert.deepEqual(await lock.json(),{value:null});
  assert.equal((await request('',data,{authorization:''})).status,401);assert.equal((await request('',data,{origin:'https://untrusted.example'})).status,403);assert.equal((await request('',data,{'X-Recipe-Intelligence':''})).status,403);
  assert.equal((await request('',data)).status,200);const loaded=await(await request('',{action:'get',namespace:'recipe-designs',store:'history',key:'id'})).json();
  const suffix='/blob/'+loaded.value.image.sha256;assert.equal((await request(suffix,undefined,{authorization:''})).status,401);assert.equal(await(await request(suffix)).text(),'private bytes');

@@ -40,7 +40,14 @@ export class StudioStorage {
   }
   list(namespace:string,store:string) {this.location(namespace,store);return this.database.db.prepare("SELECT record_key,value_json FROM studio_records WHERE namespace=? AND store=? AND value_json<>'null' ORDER BY updated_at DESC LIMIT 1000").all(namespace,store).map((row:any)=>({key:JSON.parse(row.record_key),value:JSON.parse(row.value_json)}));}
   keys(namespace:string,store:string){this.location(namespace,store);return (this.database.db.prepare('SELECT record_key FROM studio_records WHERE namespace=? AND store=?').all(namespace,store) as {record_key:string}[]).map(row=>JSON.parse(row.record_key));}
-  get(namespace:string,store:string,key:string|number) {this.location(namespace,store,key);const row=this.database.db.prepare('SELECT value_json FROM studio_records WHERE namespace=? AND store=? AND record_key=?').get(namespace,store,JSON.stringify(key)) as {value_json:string}|undefined;return row ? JSON.parse(row.value_json) : null;}
+  get(namespace:string,store:string,key:string|number) {
+    // Active paid jobs live in the lock table, not the design record stores.
+    if (store === 'locks' && key === 'active' && names.has(namespace)) {
+      const row = this.database.db.prepare('SELECT job_id,created_at FROM studio_locks WHERE namespace=?').get(namespace) as {job_id:string;created_at:string}|undefined;
+      return row ? {id:row.job_id,createdAt:row.created_at} : null;
+    }
+    this.location(namespace,store,key);const row=this.database.db.prepare('SELECT value_json FROM studio_records WHERE namespace=? AND store=? AND record_key=?').get(namespace,store,JSON.stringify(key)) as {value_json:string}|undefined;return row ? JSON.parse(row.value_json) : null;
+  }
   save(namespace:string,store:string,key:string|number,value:unknown,onlyIfMissing=false) {
     this.location(namespace,store,key);const recordKey=JSON.stringify(key);
     if(onlyIfMissing&&this.database.db.prepare('SELECT 1 FROM studio_records WHERE namespace=? AND store=? AND record_key=?').get(namespace,store,recordKey))return {saved:false};
