@@ -132,7 +132,7 @@ export function RecipeDesigns() {
       const sorted=oldHistory.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)); setHistory(current=>sorted.reduce(mergeHistory,current));
       if(savedCopies){const valid:Record<string,RecipePromptCopy>={};for(const style of RECIPE_STYLE_PRESETS){try{const copy=validateRecipePromptCopy(savedCopies[style.id],style.id);if(copy)valid[style.id]=copy;}catch{/* ignore invalid local copy */}}setPromptCopies(valid);}
       setJobs(current=>oldJobs.map(recoverJob).reduce(mergeJob,current)); setPreset(savedPreset || null);setPaidLock(activeLock || null);
-    } catch { if(active)setError("Private browser storage is unavailable. Enable site storage to use Recipe Designs."); }
+    } catch { if(active)setError("Workspace storage is unavailable. Check the connection and retry."); }
     finally {if(active)setReady(true);}
   })(); return ()=>{active=false;}; },[]);
   useEffect(()=>{
@@ -156,7 +156,7 @@ export function RecipeDesigns() {
     window.addEventListener("focus",refresh);
     return ()=>{active=false;window.removeEventListener("focus",refresh);if(updates.current===channel)updates.current=null;channel?.close();};
   },[]);
-  useEffect(()=>{ if(ready) void saveLocal("settings","current",settings).catch(()=>setError("Could not save settings in this browser.")); },[settings,ready]);
+  useEffect(()=>{ if(ready) void saveLocal("settings","current",settings).catch(()=>setError("Could not save settings in your workspace.")); },[settings,ready]);
   useEffect(()=>{ let active=true; setCache(null); setRefresh(false);
     if(settings.researchEnabled || settings.styleId==="auto") void loadLocal<Research>("research",researchKey(title,settings.styleId)).then(v=>{if(active)setCache(validateResearch(v));}).catch(()=>{});
     return ()=>{active=false;};
@@ -175,7 +175,7 @@ export function RecipeDesigns() {
   const pendingCount=jobs.filter(j=>j.status==="working").length;
   function announce(kind: "job" | "history", id: string) {try{updates.current?.postMessage({kind,id});}catch{/* Changes remain in local storage. */}}
   function update<K extends keyof DesignSettings>(key: K,value: DesignSettings[K]) {setSettings(s=>({...s,[key]:value}));}
-  async function savePromptCopy(){try{const copy=validateRecipePromptCopy({baseStyleId:previewStyleId,version:(activeCopy?.version || 1)+1,template:promptDraft},previewStyleId)!;const next={...promptCopies,[previewStyleId]:copy};await saveLocal("settings","prompt-copies",next);setPromptCopies(next);setEditingPrompt(false);setNotice(`Saved local ${previewStyle.name} prompt version ${copy.version}.`);}catch(e){setError(e instanceof Error?e.message:"Could not save prompt copy.");}}
+  async function savePromptCopy(){try{const copy=validateRecipePromptCopy({baseStyleId:previewStyleId,version:(activeCopy?.version || 1)+1,template:promptDraft},previewStyleId)!;const next={...promptCopies,[previewStyleId]:copy};await saveLocal("settings","prompt-copies",next);setPromptCopies(next);setEditingPrompt(false);setNotice(`Saved ${previewStyle.name} prompt version ${copy.version}.`);}catch(e){setError(e instanceof Error?e.message:"Could not save prompt copy.");}}
   async function restoreCanonicalPrompt(){try{const next={...promptCopies};delete next[previewStyleId];await saveLocal("settings","prompt-copies",next);setPromptCopies(next);setEditingPrompt(false);setNotice(`Restored the complete built-in ${previewStyle.name} prompt.`);}catch{setError("Could not restore the built-in prompt.");}}
   function changeMode(mode: DesignMode) {setSettings(s=>({...s,mode,researchEnabled:mode!=="reference"}));}
   function changeModel(model: string) {
@@ -211,7 +211,7 @@ export function RecipeDesigns() {
   }
   async function removeReference(id: string) {
     try { await removeLocal("assets",id); setRefs(r=>r.filter(x=>x.id!==id)); }
-    catch { setError("Could not remove that reference from this browser."); }
+    catch { setError("Could not remove that reference from your workspace."); }
   }
   function check() {
     if(photoUploading.current)throw new Error("Wait for the food photo to finish uploading.");
@@ -291,7 +291,7 @@ export function RecipeDesigns() {
     if(!selected)return;setError("");setStage("Reusing saved artwork locally…");
     try {
       validateTitle(title,noText);
-      const source=await loadLocal<LocalPhoto>("assets",selected.sourceId);if(!source)throw new Error("The original photo is no longer available in this browser.");
+      const source=await loadLocal<LocalPhoto>("assets",selected.sourceId);if(!source)throw new Error("The original photo is no longer available in your workspace.");
       const idx=CURATED_DESIGN_FAMILIES.indexOf(selected.plan.family);
       const family=selected.plan.styleId ? selected.plan.family : settings.direction==="auto"?CURATED_DESIGN_FAMILIES[(Math.max(0,idx)+1)%CURATED_DESIGN_FAMILIES.length]:settings.direction;
       const plan={...selected.plan,family,...(family!==selected.plan.family?{titlePlacement:undefined,typographyPair:undefined,template:undefined}:{})};const rendered=await renderProtectedDesign({source,artwork:selected.artwork,plan,title,noText,priority:settings.priority});
@@ -301,14 +301,14 @@ export function RecipeDesigns() {
   }
   async function applyTemplateEdit(){
     if(!selected)return;setError("");setStage("Applying template changes locally…");
-    try {const source=await loadLocal<LocalPhoto>("assets",selected.sourceId);if(!source)throw new Error("The original photo is no longer available in this browser.");
+    try {const source=await loadLocal<LocalPhoto>("assets",selected.sourceId);if(!source)throw new Error("The original photo is no longer available in your workspace.");
       const plan:DesignPlan={...selected.plan,titlePlacement:editPlacement,template:validateTemplateEdits(templateEdits)};
       const rendered=await renderProtectedDesign({source,artwork:selected.artwork,plan,title:selected.title,noText:selected.noText,priority:settings.priority});
       await record({...selected,id:crypto.randomUUID(),createdAt:new Date().toISOString(),plan,image:rendered.blob,qa:rendered.qa,status:selected.artwork?"Cached Artwork · local template edit":"Template Preview · local template edit",costs:[]});
       setNotice("Template updated locally. No OpenAI request was sent.");
     }catch(e){setError(e instanceof Error?e.message:"Could not update the template.");}finally{setStage("");}
   }
-  async function saveStyle(){const item:Preset={name:"Original Photo / Vintage Food Blog",version:(preset?.version || 0)+1,savedAt:new Date().toISOString(),settings};try{await saveLocal("settings","saved-preset",item);setPreset(item);setNotice(`Style version ${item.version} and model settings saved in this browser.`);}catch{setError("Could not save style in this browser.");}}
+  async function saveStyle(){const item:Preset={name:"Original Photo / Vintage Food Blog",version:(preset?.version || 0)+1,savedAt:new Date().toISOString(),settings};try{await saveLocal("settings","saved-preset",item);setPreset(item);setNotice(`Style version ${item.version} and model settings saved in your workspace.`);}catch{setError("Could not save style in your workspace.");}}
   async function clearPaidLock(){if(!paidLock || isBusy)return;try{await releasePaidJob(paidLock.id);setPaidLock(null);setNotice("Old reservation notice cleared. This does not cancel a request; check OpenAI billing for its final charge.");}catch{setError("Could not clear the old reservation notice.");}}
   async function ingredientCard(){try{validateTitle(title,noText);if(noText)throw new Error("Turn off NO TEXT to create an ingredients card.");const card=await renderIngredientsCard(title,ingredients);await download(card,"recipe-ingredients-card-1200x1500.png");setNotice("PNG ingredients card created locally with the text you supplied. No OpenAI request was sent.");}catch(e){setError(e instanceof Error?e.message:"Could not create the ingredients card.");}}
 
@@ -346,7 +346,7 @@ export function RecipeDesigns() {
           </div></details>
           <details className="rounded-xl border border-gray-200 p-4"><summary className="cursor-pointer text-sm font-medium">Advanced settings</summary><div className="mt-4 space-y-5">
           <div className="space-y-2"><p className="text-xs text-gray-600">Complete {previewStyle.name} prompt v{activeCopy?.version || previewStyle.version} goes directly to the image model.</p><details className="rounded-lg border border-gray-200 p-3 text-xs text-gray-600"><summary className="cursor-pointer">View the exact image prompt</summary><pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words">{recipeDirectPrompt(previewStyleId,title.trim() ? title : "{{TITLE}}",notes,activeCopy,ingredients,settings.image.size)}</pre></details></div>
-          <div className="rounded-xl border border-gray-200 p-3 text-sm text-gray-600"><p>Prompt version: {activeCopy?.version || previewStyle.version} · {activeCopy?"local edited copy":"complete built-in preset"}</p>{editingPrompt?<><label className="mt-3 grid gap-2">Edit local copy of {previewStyle.name}<textarea className={inputClass} rows={12} maxLength={16000} value={promptDraft} onChange={e=>setPromptDraft(e.target.value)}/></label><div className="mt-3 flex gap-2"><button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void savePromptCopy()}>Save local prompt version</button><button type="button" className={buttonClass} onClick={()=>setEditingPrompt(false)}>Cancel</button></div></>:<div className="mt-3 flex gap-2"><button type="button" className={buttonClass} disabled={isBusy} onClick={()=>{if(settings.styleId==="auto")update("styleId",previewStyleId);setPromptDraft(activeCopy?.template || previewStyle.template);setEditingPrompt(true);}}>Duplicate and edit prompt</button>{activeCopy && <button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void restoreCanonicalPrompt()}>Restore built-in</button>}</div>}</div>
+          <div className="rounded-xl border border-gray-200 p-3 text-sm text-gray-600"><p>Prompt version: {activeCopy?.version || previewStyle.version} · {activeCopy?"saved edited copy":"complete built-in preset"}</p>{editingPrompt?<><label className="mt-3 grid gap-2">Edit a copy of {previewStyle.name}<textarea className={inputClass} rows={12} maxLength={16000} value={promptDraft} onChange={e=>setPromptDraft(e.target.value)}/></label><div className="mt-3 flex gap-2"><button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void savePromptCopy()}>Save prompt version</button><button type="button" className={buttonClass} onClick={()=>setEditingPrompt(false)}>Cancel</button></div></>:<div className="mt-3 flex gap-2"><button type="button" className={buttonClass} disabled={isBusy} onClick={()=>{if(settings.styleId==="auto")update("styleId",previewStyleId);setPromptDraft(activeCopy?.template || previewStyle.template);setEditingPrompt(true);}}>Duplicate and edit prompt</button>{activeCopy && <button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void restoreCanonicalPrompt()}>Restore built-in</button>}</div>}</div>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_120px]"><label className="grid gap-2 text-sm text-gray-600">OpenAI image model<select className={inputClass} value={settings.model} disabled={isBusy} onChange={e=>changeModel(e.target.value)}>{OPENAI_IMAGE_MODEL_IDS.map(m=><option key={m} value={m}>{m}</option>)}</select></label><label className="grid gap-2 text-sm text-gray-600">Designs<input className={inputClass} type="number" min="1" max="3" value={settings.count} disabled={isBusy} onChange={e=>update("count",Number(e.target.value))}/></label></div>
           {settings.model==="gpt-image-2.5-sunburst" && <label className="grid gap-2 text-sm text-gray-600">Artwork request size<select className={inputClass} value={settings.artworkSize} disabled={isBusy} onChange={e=>update("artworkSize",e.target.value as DesignSettings["artworkSize"])}><option value="1280x1600">1280 × 1600 · 4:5 artwork</option><option value="selected">Use selected image size below</option></select></label>}
           <OpenAIImageControls recipePresets model={settings.model} value={settings.image} onChange={image=>setSettings(s=>({...s,image,artworkSize:"selected"}))} disabled={isBusy} hidePartialImages hideQuickSettings countDescription="WordPress exports at 1536 × 864. Other recipe designs retain the 1200 × 1500 layout. Pinterest and Facebook download as PNG; WordPress uses high-quality WebP."/>
@@ -371,7 +371,7 @@ export function RecipeDesigns() {
             <details className="mt-4 text-xs leading-relaxed text-gray-600"><summary className="cursor-pointer">Design and photo verification</summary><p className="mt-2">Exact title: {selected.noText?"NO TEXT":selected.qa.title}</p><p className="mt-1 break-all">Original SHA-256: {selected.qa.originalSha256}</p>{selected.qa.visual && <><p className="mt-1">Typeface: {selected.qa.visual.font} · artwork texture: {selected.qa.visual.artworkTexture}</p>{selected.qa.visual.notes.map(note=><p className="mt-1" key={note}>{note}</p>)}</>}{selected.artwork && <p className="mt-2">Review artwork for stray text and unwanted details before publishing; it is not automatically checked with OCR.</p>}{selected.evidence && <p className="mt-2">User-reported performance (unverified): {selected.evidence}</p>}</details>
           </>}
           {showHistory && <div className="mt-5 border-t border-gray-200 pt-4"><h3 className="text-sm font-medium">Saved on this device</h3>{history.length===0?<p className="mt-2 text-xs text-gray-600">No designs yet.</p>:<div className="mt-2 space-y-2">{history.map(h=><button key={h.id} type="button" onClick={()=>setSelected(h)} className="block w-full rounded-lg border border-gray-200 p-2 text-left text-xs"><span className="block truncate">{h.noText?"NO TEXT":h.title}</span><span className="text-gray-600">{h.status} · {new Date(h.createdAt).toLocaleString()}</span></button>)}</div>}</div>}
-          <details className="mt-5 border-t border-gray-200 pt-4 text-xs leading-relaxed text-gray-600"><summary className="cursor-pointer">Usage and local storage</summary><p className="mt-2">Device usage ledger: ${currentCost.toFixed(5)} reported/estimated · {pendingCount} reserved/in progress · {unknownCount} with incomplete or unknown cost.</p><p className="mt-1">This is not a shared monthly cap. Check OpenAI billing for authoritative totals.</p><p className="mt-2">Originals and designs are retained in this browser for history; clearing site storage removes them.</p></details>
+          <details className="mt-5 border-t border-gray-200 pt-4 text-xs leading-relaxed text-gray-600"><summary className="cursor-pointer">Usage and storage</summary><p className="mt-2">Workspace usage ledger: ${currentCost.toFixed(5)} reported/estimated · {pendingCount} reserved/in progress · {unknownCount} with incomplete or unknown cost.</p><p className="mt-1">This is not a shared monthly cap. Check OpenAI billing for authoritative totals.</p><p className="mt-2">Originals and designs are retained in your workspace for history.</p></details>
         </aside>
       </div>
     </section>

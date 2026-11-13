@@ -9,8 +9,11 @@ function backupFile(root,id){if(!/^deploy-[a-f0-9]{40}-\d{13}$/.test(id))throw E
 function inspect(root){
  const db=new Database(path.join(rootPath(root),'database/recipe-intelligence.sqlite'),{readonly:true,fileMustExist:true});
  try {
-   const counts={};for(const t of ['content_batches','content_items','api_calls','artifacts','recipe_imports','tracked_sites','recipe_records','reference_photos','wordpress_exports','wordpress_media'])counts[t]=db.prepare('SELECT count(*) n FROM '+t).get().n;
-   const active=db.prepare("SELECT count(*) n FROM content_stages WHERE state='running'").get().n+db.prepare("SELECT count(*) n FROM wordpress_exports WHERE state='sending'").get().n+db.prepare("SELECT count(*) n FROM wordpress_media WHERE state='uploading'").get().n;
+   const exists=t=>!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+   const counts={};for(const t of ['content_batches','content_items','api_calls','artifacts','recipe_imports','tracked_sites','recipe_records','reference_photos','wordpress_exports','wordpress_media','decor_jobs','decor_calls','studio_records','studio_locks'])if(exists(t))counts[t]=db.prepare('SELECT count(*) n FROM '+t).get().n;
+   let active=db.prepare("SELECT count(*) n FROM content_stages WHERE state='running'").get().n+db.prepare("SELECT count(*) n FROM wordpress_exports WHERE state='sending'").get().n+db.prepare("SELECT count(*) n FROM wordpress_media WHERE state='uploading'").get().n;
+   if(exists('decor_jobs'))active+=db.prepare("SELECT count(*) n FROM decor_jobs WHERE state IN ('running','importing')").get().n;
+   if(exists('decor_calls'))active+=db.prepare("SELECT count(*) n FROM decor_calls WHERE state='dispatched'").get().n;
    return {counts,active,workspaceId:db.prepare("SELECT value FROM settings WHERE key='workspace_id'").get()?.value,integrity:db.pragma('integrity_check',{simple:true})};
  }finally{db.close();}
 }

@@ -1,8 +1,10 @@
-# Isolated InstaBox trial
+# InstaBox personal deployment
 
-This is a deployment test, not the production cutover. The Windows workspace,
-production SQLite database, WordPress connections and private R2 bucket stay
-unchanged. No provider credentials or production data belong in the source archive.
+This configuration supports an isolated trial or the owner's personal workspace.
+No provider credentials or production data belong in the source archive. Keep them
+in the private persistent workspace and `runtime.env`. A personal cutover requires
+the verified backup and data checks in [server-deployment.md](../../docs/server-deployment.md).
+The Free plan remains subject to mandatory pauses and cooldowns.
 
 ## Account and billing
 
@@ -43,8 +45,13 @@ the Windows user. This key does not change billing or delete machines.
    docker compose --env-file /data/recipe-intelligence-trial/runtime.env -p recipe-intelligence-trial -f deploy/instabox/compose.yaml up -d --build
    ```
 
-The compose file explicitly clears AI keys and disables R2. Paid generation is
-unavailable in this trial. Existing saved production work is not copied here.
+The compose file defaults to empty AI keys and disabled R2. For a personal
+deployment, private `runtime.env` may supply `OPENAI_API_KEY`, `FAL_KEY` and
+`ANTHROPIC_API_KEY`; Compose forwards those values to the app. The saved encrypted
+OpenAI credential remains authoritative for Recipe Intelligence. After restoring
+a real workspace, set `RECIPE_INTELLIGENCE_ALLOW_EMPTY=0`. Keep `R2_ENABLED=0`
+when relying only on the included persistent disk. Free hosting does not make
+the owner's normal model-provider requests free; acceptance checks use no paid calls.
 The small Caddy gateway requires the exact forwarded hostname and restores the
 canonical upstream Host, because InstaBox rewrites Host to loopback. The app's
 origin and CSRF checks remain enabled; the app port is internal to Docker.

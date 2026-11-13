@@ -1,6 +1,8 @@
-// Private to this browser/profile. IndexedDB is not shared across devices.
+import { cloudStudioEnabled, cloudStudio, importBrowserStudio } from './cloudStudioStorage';
+// Cloud deployments use the owner's persistent server; local mode keeps IndexedDB.
 const DATABASE = "horse-studio-recipe-designs-v1";
 type Store = "settings" | "assets" | "research" | "jobs" | "history" | "locks";
+async function remote(){if(!await cloudStudioEnabled())return false;await importBrowserStudio('recipe-designs',database,['settings','assets','research','jobs','history']);return true;}
 function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE, 2);
@@ -12,6 +14,7 @@ function database(): Promise<IDBDatabase> {
   });
 }
 export async function claimPaidJob(id: string): Promise<boolean> {
+  if(await remote())return (await cloudStudio('claim','recipe-designs',undefined,id)).claimed;
   const db=await database();
   try {
     return await new Promise<boolean>((resolve,reject)=>{
@@ -22,6 +25,7 @@ export async function claimPaidJob(id: string): Promise<boolean> {
   } finally {db.close();}
 }
 export async function releasePaidJob(id: string): Promise<void> {
+  if(await remote()){await cloudStudio('release','recipe-designs',undefined,id);return;}
   const db=await database();
   try {
     await new Promise<void>((resolve,reject)=>{
@@ -32,6 +36,7 @@ export async function releasePaidJob(id: string): Promise<void> {
   } finally {db.close();}
 }
 export async function saveLocal(store: Store, key: IDBValidKey, value: unknown): Promise<void> {
+  if(await remote()){await cloudStudio('save','recipe-designs',store,key,value);return;}
   const db = await database();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -44,6 +49,7 @@ export async function saveLocal(store: Store, key: IDBValidKey, value: unknown):
   } finally { db.close(); }
 }
 export async function loadLocal<T>(store: Store, key: IDBValidKey): Promise<T | undefined> {
+  if(await remote())return (await cloudStudio('get','recipe-designs',store,key)).value??undefined;
   const db = await database();
   try {
     return await new Promise<T | undefined>((resolve, reject) => {
@@ -54,6 +60,7 @@ export async function loadLocal<T>(store: Store, key: IDBValidKey): Promise<T | 
   } finally { db.close(); }
 }
 export async function listLocal<T>(store: Store): Promise<T[]> {
+  if(await remote())return (await cloudStudio('list','recipe-designs',store)).entries.map((entry:any)=>entry.value);
   const db = await database();
   try {
     return await new Promise<T[]>((resolve, reject) => {
@@ -64,6 +71,7 @@ export async function listLocal<T>(store: Store): Promise<T[]> {
   } finally { db.close(); }
 }
 export async function removeLocal(store: Store, key: IDBValidKey): Promise<void> {
+  if(await remote()){await cloudStudio('remove','recipe-designs',store,key);return;}
   const db = await database();
   try {
     await new Promise<void>((resolve, reject) => {

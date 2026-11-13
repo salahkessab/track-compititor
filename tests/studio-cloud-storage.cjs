@@ -1,0 +1,34 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{randomBytes}=require('node:crypto');
+const {temporary,IntelligenceStore}=require('./helpers/recipe-fixtures.cjs');
+const {StudioStorage}=require('../.intelligence-build/lib/recipe-intelligence/studioStorage.js');
+const {handleIntelligence}=require('../.intelligence-build/lib/recipe-intelligence/api.js');
+test('personal studio history and blobs survive restart; browser imports cannot overwrite or resurrect cloud records',async t=>{
+ const root=temporary(t);let store=await IntelligenceStore.open(root),studio=new StudioStorage(store);t.after(()=>{if(store.db.open)store.close();});
+ const bytes=Buffer.from('original reference bytes'),value={id:'first',title:'Saved title',image:{$studioBlob:1,type:'image/png',base64:bytes.toString('base64')}};
+ assert.equal(studio.save('recipe-designs','history','first',value).saved,true);
+ const hash=studio.get('recipe-designs','history','first').image.sha256;assert.deepEqual(studio.blob(hash),bytes);
+ store.close();store=await IntelligenceStore.open(root);studio=new StudioStorage(store);
+ assert.equal(studio.list('recipe-designs','history')[0].value.title,'Saved title');assert.deepEqual(studio.blob(hash),bytes);
+ assert.equal(studio.save('recipe-designs','history','first',{title:'Old browser version'},true).saved,false);
+ studio.remove('recipe-designs','history','first');assert.equal(studio.list('recipe-designs','history').length,0);
+ assert.equal(studio.save('recipe-designs','history','first',value,true).saved,false);assert.equal(studio.get('recipe-designs','history','first'),null);
+ studio.save('layered-designs','history','first',{title:'Separate layered design'});assert.equal(studio.list('layered-designs','history').length,1);
+ const scene=JSON.stringify({objects:[{src:'data:image/png;base64,'+'a'.repeat(9_000_000)}]});
+ studio.save('layered-designs','history','large-design',{project:{scene}});
+ const savedScene=studio.get('layered-designs','history','large-design').project.scene;
+ assert.equal(savedScene.$studioText,1);assert.equal(studio.blob(savedScene.sha256).toString('utf8'),scene);
+ assert.throws(()=>studio.save('layered-designs','history','forged-text',{scene:savedScene}),/Upload the image/);
+ assert.equal(studio.claim('recipe-designs','job-one'),true);assert.equal(studio.claim('recipe-designs','job-two'),false);studio.release('recipe-designs','job-two');assert.equal(studio.claim('recipe-designs','job-two'),false);studio.release('recipe-designs','job-one');assert.equal(studio.claim('recipe-designs','job-two'),true);
+ assert.throws(()=>studio.get('../private','history','first'),/Invalid/);assert.throws(()=>studio.save('recipe-designs','history','forged',{$studioFile:1,sha256:hash}),/Upload the image/);
+ fs.writeFileSync(path.join(root,'studio-storage/blobs',hash),'tampered');assert.throws(()=>studio.blob(hash),/checksum/);
+});
+test('studio API and blob access require owner authentication and reject cross-origin mutations',async t=>{
+ const root=temporary(t),previous={...process.env};Object.assign(process.env,{RECIPE_INTELLIGENCE_MODE:'server',RECIPE_INTELLIGENCE_ROOT:root,RECIPE_INTELLIGENCE_ORIGIN:'https://studio.example',RECIPE_INTELLIGENCE_SECRET_KEY:randomBytes(32).toString('base64'),APP_PASSWORD:'owner-test',R2_ENABLED:'0'});delete process.env.VERCEL;delete process.env.RECIPE_INTELLIGENCE_LOCAL;
+ t.after(async()=>{for(const promise of globalThis.recipeIntelligenceStores?.values()||[])(await promise).close();globalThis.recipeIntelligenceStores?.clear();for(const key of Object.keys(process.env))if(!(key in previous))delete process.env[key];Object.assign(process.env,previous);});
+ const auth='Basic '+Buffer.from('owner:owner-test').toString('base64');
+ const request=(suffix='',data,headers={})=>handleIntelligence(new Request('https://studio.example/api/recipe-intelligence/studio'+suffix,{method:data?'POST':'GET',headers:{host:'studio.example',origin:'https://studio.example','Content-Type':'application/json','X-Recipe-Intelligence':'1',authorization:auth,...headers},...(data?{body:JSON.stringify(data)}:{})}));
+ const data={action:'save',namespace:'recipe-designs',store:'history',key:'id',value:{image:{$studioBlob:1,type:'image/png',base64:Buffer.from('private bytes').toString('base64')}}};
+ assert.equal((await request('',data,{authorization:''})).status,401);assert.equal((await request('',data,{origin:'https://untrusted.example'})).status,403);assert.equal((await request('',data,{'X-Recipe-Intelligence':''})).status,403);
+ assert.equal((await request('',data)).status,200);const loaded=await(await request('',{action:'get',namespace:'recipe-designs',store:'history',key:'id'})).json();
+ const suffix='/blob/'+loaded.value.image.sha256;assert.equal((await request(suffix,undefined,{authorization:''})).status,401);assert.equal(await(await request(suffix)).text(),'private bytes');
+});

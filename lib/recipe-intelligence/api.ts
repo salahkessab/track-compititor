@@ -21,6 +21,7 @@ import { intelligenceEnabled, serverAuthenticated, serverMode, serverOrigin } fr
 import { serverBackupStatus } from "./serverBackup";
 import { deploymentPause } from "./deployment";
 import { ProviderCredentials } from "./providerCredentials";
+import { StudioStorage } from './studioStorage';
 
 const state = globalThis as typeof globalThis & { recipeIntelligenceStores?: Map<string, Promise<IntelligenceStore>> };
 const enabled = intelligenceEnabled;
@@ -95,6 +96,21 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     const database = await store();
     const reports = new ReportStore(database); const batches = new BatchStore(database); const imports = new ImportStore(database);
     const [area, id, child] = segments;
+    if (area === 'studio' && serverMode()) {
+      const studio = new StudioStorage(database);
+      if (id === 'blob' && child && request.method === 'GET') return new Response(new Uint8Array(studio.blob(child)),{headers:{'Content-Type':'application/octet-stream','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+      if (!id && request.method === 'POST') {
+        const data = await body(request,85_000_000),{action,namespace,store:section,key,value}=data;
+        if(action==='list')return json({entries:studio.list(namespace,section)});
+        if(action==='keys')return json({keys:studio.keys(namespace,section)});
+        if(action==='get')return json({value:studio.get(namespace,section,key)});
+        if(action==='save')return json(studio.save(namespace,section,key,value,data.onlyIfMissing===true));
+        if(action==='remove'){studio.remove(namespace,section,key);return json({removed:true});}
+        if(action==='claim')return json({claimed:studio.claim(namespace,key)});
+        if(action==='release'){studio.release(namespace,key);return json({released:true});}
+        throw new Error('Unknown studio storage action.');
+      }
+    }
     if (area === 'decor') {
       const decor = new DecorStore(database);
       if (!id && request.method === 'GET') return json({ jobs: decor.list(), worker: database.snapshot().worker });

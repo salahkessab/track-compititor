@@ -1,5 +1,7 @@
-// Separate browser-local storage keeps the existing Recipe Designs history unchanged.
+import { cloudStudioEnabled, cloudStudio, importBrowserStudio } from './cloudStudioStorage';
+// Cloud history is shared across the owner's devices, with browser originals retained.
 const DATABASE = "horse-studio-layered-designs-v1";
+async function remote(){if(!await cloudStudioEnabled())return false;await importBrowserStudio('layered-designs',openDatabase,['history']);return true;}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -11,6 +13,7 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 export async function listLayeredDesigns<T>(): Promise<T[]> {
+  if(await remote())return (await cloudStudio('list','layered-designs','history')).entries.map((entry:any)=>entry.value);
   const db = await openDatabase();
   try {
     return await new Promise((resolve, reject) => {
@@ -22,6 +25,7 @@ export async function listLayeredDesigns<T>(): Promise<T[]> {
 }
 
 export async function saveLayeredDesign<T extends { id: string }>(record: T): Promise<void> {
+  if(await remote()){await cloudStudio('save','layered-designs','history',record.id,record);return;}
   const db = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {

@@ -1,18 +1,18 @@
 # Recipe Intelligence on a persistent server
 
 The server runs the complete Next.js app and its worker together. SQLite,
-receipts and files use a persistent disk; private R2 retains the file copies.
+receipts and files use a persistent disk; private R2 is an optional extra copy.
 Closing a browser or turning off the owner's computer does not stop server jobs.
 This is a single-owner deployment, not a multi-tenant SaaS.
 
 ## Deployment status
 
-The server runtime, migration tools and HTTPS extension connection are implemented.
-An [isolated InstaBox Free trial](../deploy/instabox/README.md) is provisioned with
-its own workspace and GitHub deployment workflow. Production cutover has not been
-performed: existing Windows data and the running local instance have not been
-moved or removed, and the trial has no AI provider credentials. R2 object storage
-alone cannot run this application.
+The server runtime, portable migration tools and HTTPS extension connection are
+implemented. The [InstaBox deployment](../deploy/instabox/README.md) supports a
+personal workspace with private runtime credentials. A deployment must verify its
+own data transfer and record counts before declaring cutover complete. R2 object
+storage alone cannot run this application. InstaBox Free has mandatory pauses and
+cooldowns; persistent storage does not mean uninterrupted availability.
 
 Use a persistent Linux Node 24 host, with at least 2 GB RAM initially for Next.js,
 the worker and image decoding. Check actual peak usage before reducing it. A Docker
@@ -117,6 +117,38 @@ Reference: [OpenAI API authentication](https://developers.openai.com/api/referen
 
 ## Safe cutover
 
+### Portable transfer without R2
+
+`scripts/migrate-portable-workspace.cjs` supports migration using only a private
+file transfer and the destination's persistent disk. Stop the source app and wait
+for paid requests, image preparation and WordPress sends to finish first. Keep a
+separate complete source backup, including its encrypted credentials.
+
+With `RECIPE_INTELLIGENCE_SECRET_KEY` configured privately, run:
+
+```sh
+node scripts/migrate-portable-workspace.cjs prepare /absolute/source /absolute/new-bundle
+node scripts/migrate-portable-workspace.cjs restore /absolute/bundle /absolute/new-workspace <manifest-sha256>
+```
+
+On Windows, preparation reads DPAPI credentials and re-encrypts them for the
+server in the backup only. Transfer the bundle and server key through private
+channels. Do not place the key in command arguments or source control. The sealed
+manifest pins file hashes and table counts. Restore authenticates the database,
+verifies every file and credential, and only creates a new workspace directory.
+It refuses an existing destination. Existing cloud work must be inspected and
+backed up before deciding which data is authoritative; this tool does not merge
+two workspaces. Originals remain unchanged. Older backups/logs are retained in
+the separate complete backup, not copied into the active runtime bundle.
+
+Set `R2_ENABLED=0`, `RECIPE_INTELLIGENCE_ALLOW_EMPTY=0` and initially
+`RECIPE_INTELLIGENCE_WORKER_PAUSED=1` for a disk-only cutover. Complete the
+authentication, counts, image, credential-unlock and restart checks below before
+enabling worker processing. Do not rotate an existing server encryption key
+without re-encrypting its saved credentials.
+
+### R2-assisted transfer
+
 1. Back up source code and SQLite. Wait for active generation and WordPress sends
    to settle, then finish the R2 sync. Verify that all current files are synced.
 2. Stop the local launcher. Do not restart it against the migrated data during
@@ -168,9 +200,15 @@ For rollback, stop the server first. Never run both the pre-migration Windows DB
 and the migrated server DB as active owners. If the server has accepted new work,
 do not simply revert to the old snapshot: migrate that newer data back first.
 
-Browser-local histories from unrelated tools are tied to their old browser origin.
-They are not SQLite records and are not automatically moved by this migration.
-Recipe Intelligence's persistent history is included.
+Recipe Designs and Layered Designs now save settings, assets, jobs and history in
+the authenticated server workspace in server mode. Image bytes and large editable
+scenes live in private, checksummed files under `studio-storage`; SQLite stores
+their references. Opening the tab imports missing browser records from that same
+origin without replacing newer server records or resurrecting deletions. Network
+failures are shown rather than silently switching to browser storage. Local mode
+retains IndexedDB. Histories on another device or an old localhost/Vercel origin
+are separate and require a deliberate transfer from that origin; the new server
+cannot read them automatically. Browser originals are retained.
 
 ## Verification
 

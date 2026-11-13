@@ -1,5 +1,5 @@
 # Run from an unpacked, secret-free source archive on the InstaBox machine.
-# The trial owns a NEW workspace under /data; it never restores production data.
+# Credentials remain empty unless the owner configures the private runtime.env.
 services:
   app:
     image: ${RI_APP_IMAGE:-recipe-intelligence-trial-app:latest}
@@ -15,11 +15,11 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       RECIPE_INTELLIGENCE_MODE: server
       RECIPE_INTELLIGENCE_ROOT: /var/lib/recipe-intelligence
-      RECIPE_INTELLIGENCE_ALLOW_EMPTY: "1"
-      R2_ENABLED: "0"
-      OPENAI_API_KEY: ""
-      FAL_KEY: ""
-      ANTHROPIC_API_KEY: ""
+      RECIPE_INTELLIGENCE_ALLOW_EMPTY: "${RECIPE_INTELLIGENCE_ALLOW_EMPTY:-1}"
+      R2_ENABLED: "${R2_ENABLED:-0}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      FAL_KEY: "${FAL_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       PORT: "3000"
     expose:
       - "3000"

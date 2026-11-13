@@ -26,26 +26,35 @@ export function unsealDatabase(bytes: Buffer) {
   try { return Buffer.concat([decipher.update(bytes.subarray(offset + 28)), decipher.final()]); }
   catch { throw new Error("Migration could not be authenticated with this server key."); }
 }
-function validateDatabase(db: Database.Database) {
+export function validateMigrationDatabase(db: Database.Database) {
   if (db.pragma("user_version", { simple: true }) !== CURRENT_SCHEMA || db.pragma("integrity_check", { simple: true }) !== "ok" || (db.pragma("foreign_key_check") as unknown[]).length) throw new Error("Migration database validation failed.");
+}
+
+export function assertMigrationIdle(db: Database.Database) {
+  if (db.prepare("SELECT 1 FROM worker_lease WHERE expires_at>?").get(Date.now())) throw new Error("Stop the local application before the final migration snapshot.");
+  for (const [table, condition] of [["content_stages", "state='running'"], ["api_calls", "state='dispatched'"], ["wordpress_exports", "state='sending'"], ["wordpress_media", "state='uploading'"], ["decor_jobs", "state IN ('running','importing')"], ["decor_calls", "state='dispatched'"]]) {
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table) && db.prepare(`SELECT 1 FROM ${table} WHERE ${condition}`).get()) throw new Error("Wait for active work to settle before migrating.");
+  }
 }
 
 // Call only after stopping the local launcher. The original database is never
 // rewritten; Windows credentials are re-encrypted in the disposable backup.
-export async function prepareServerMigration(sourceRoot: string, destination: string, secrets: SecretProtection = windowsSecrets) {
+export async function prepareServerMigration(sourceRoot: string, destination: string, secrets: SecretProtection = windowsSecrets, verifiedFiles?: ReadonlyMap<string, string>) {
   if (fs.existsSync(destination)) throw new Error("Choose a new migration filename.");
   const source = new Database(storagePath(sourceRoot, "database", "recipe-intelligence.sqlite"), { readonly: true, fileMustExist: true });
   const temp = `${destination}.${randomUUID()}.sqlite`;
   let backup: Database.Database | undefined;
   try {
-    validateDatabase(source);
-    if (source.prepare("SELECT 1 FROM worker_lease WHERE expires_at>?").get(Date.now())) throw new Error("Stop the local application before the final migration snapshot.");
-    if (source.prepare("SELECT 1 FROM content_stages WHERE state='running'").get() || source.prepare("SELECT 1 FROM wordpress_exports WHERE state='sending'").get() || source.prepare("SELECT 1 FROM wordpress_media WHERE state='uploading'").get()) throw new Error("Wait for active work to settle before migrating.");
+    validateMigrationDatabase(source);
+    assertMigrationIdle(source);
     const references = source.prepare("SELECT relative_path,sha256 FROM artifacts UNION SELECT relative_path,sha256 FROM reference_photos WHERE relative_path IS NOT NULL UNION SELECT relative_path,sha256 FROM r2_objects WHERE is_current=1 AND state<>'deleted'").all() as { relative_path: string; sha256: string }[];
     for (const row of references) {
       const file = storagePath(sourceRoot, row.relative_path);
       const hash = fs.existsSync(file) ? digest(fs.readFileSync(file)) : row.sha256;
-      if (!source.prepare("SELECT 1 FROM r2_objects WHERE relative_path=? AND sha256=? AND state='synced'").get(row.relative_path.replaceAll("\\", "/"), hash)) throw new Error("Finish private cloud sync before migration. At least one current file has no verified cloud copy.");
+      const portablePath = row.relative_path.replaceAll("\\", "/");
+      if (verifiedFiles) {
+        if (verifiedFiles.get(portablePath) !== hash) throw new Error("A referenced file is missing or changed in the portable workspace copy.");
+      } else if (!source.prepare("SELECT 1 FROM r2_objects WHERE relative_path=? AND sha256=? AND state='synced'").get(portablePath, hash)) throw new Error("Finish private cloud sync before migration. At least one current file has no verified cloud copy.");
     }
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     await source.backup(temp);
@@ -54,6 +63,14 @@ export async function prepareServerMigration(sourceRoot: string, destination: st
     // as literal filename characters, so normalize only path columns in the copy.
     for (const [table, column] of [["artifacts", "relative_path"], ["reference_photos", "relative_path"], ["content_photos", "relative_path"], ["api_calls", "response_path"], ["content_stages", "request_path"], ["wordpress_media", "receipt_path"], ["wordpress_exports", "receipt_path"]]) {
       backup.prepare(`UPDATE ${table} SET ${column}=replace(${column},char(92),'/') WHERE ${column} IS NOT NULL`).run();
+    }
+    if (backup.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='decor_calls'").get()) backup.prepare("UPDATE decor_calls SET receipt=replace(receipt,char(92),'/') WHERE receipt IS NOT NULL").run();
+    if (backup.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='decor_jobs'").get()) {
+      for (const row of backup.prepare("SELECT id,data_json FROM decor_jobs").all() as { id: string; data_json: string }[]) {
+        const job = JSON.parse(row.data_json);
+        for (const photo of job.photos || []) for (const field of ['path', 'output']) if (typeof photo[field] === 'string') photo[field] = photo[field].replaceAll('\\', '/');
+        backup.prepare("UPDATE decor_jobs SET data_json=? WHERE id=?").run(JSON.stringify(job), row.id);
+      }
     }
     const rows = backup.prepare("SELECT key,value FROM settings WHERE key LIKE 'wordpress_connection:%'").all() as { key: string; value: string }[];
     for (const row of rows) {
@@ -68,6 +85,8 @@ export async function prepareServerMigration(sourceRoot: string, destination: st
       backup.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(credential), OPENAI_CREDENTIAL_SETTING);
     }
     backup.prepare("DELETE FROM worker_lease").run();
+    // A migrated copy is pinned to its destination key on first server startup.
+    backup.prepare("DELETE FROM settings WHERE key IN ('server_key_id','server_database_backup','server_database_backup_error')").run();
     backup.close(); backup = undefined;
     const encrypted = sealDatabase(fs.readFileSync(temp));
     fs.writeFileSync(destination, encrypted, { flag: "wx", mode: 0o600 });
@@ -97,7 +116,7 @@ export async function restoreServerMigration(transport?: ObjectTransport) {
   let db: Database.Database | undefined;
   try {
     fs.writeFileSync(temp, unsealDatabase(encrypted), { flag: "wx", mode: 0o600 });
-    db = new Database(temp, { readonly: true }); validateDatabase(db);
+    db = new Database(temp, { readonly: true }); validateMigrationDatabase(db);
     const connections = db.prepare("SELECT value FROM settings WHERE key LIKE 'wordpress_connection:%'").all() as { value: string }[];
     for (const row of connections) await serverSecrets.unprotect(JSON.parse(row.value).protectedPassword);
     const provider = db.prepare("SELECT value FROM settings WHERE key=?").get(OPENAI_CREDENTIAL_SETTING) as { value: string } | undefined;
