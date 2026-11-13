@@ -25,6 +25,8 @@ export function middleware(req: NextRequest) {
       headers: { "Cache-Control": "private, no-store", "CDN-Cache-Control": "no-store", "Vercel-CDN-Cache-Control": "no-store", "x-vercel-enable-rewrite-caching": "0" },
     });
   }
+  // Outside the production proxy, retain the previous public static-asset behavior.
+  if (req.nextUrl.pathname.startsWith('/_next/static/') || req.nextUrl.pathname.startsWith('/_next/image') || req.nextUrl.pathname === '/favicon.ico') return NextResponse.next();
   const server = process.env.RECIPE_INTELLIGENCE_MODE === "server" && !process.env.VERCEL;
   if (server && req.nextUrl.pathname === "/api/server-health") return NextResponse.next();
   if (server && !process.env.APP_PASSWORD) return new NextResponse("Server authentication is not configured.", { status: 503 });
@@ -48,5 +50,7 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // HTML and chunks must come from the same build. Vercel's filesystem can
+  // otherwise intercept the fallback rewrite and serve different-build assets.
+  matcher: ["/:path*"],
 };

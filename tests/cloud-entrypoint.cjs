@@ -22,6 +22,14 @@ test('proxy checks the client origin before translating headers and preserves au
  assert.equal(run(new NextRequest(origin+'/api/recipe-intelligence/snapshot',{headers:{origin:'https://untrusted.example'}})).status,403);
 });
 test('proxy routes static assets and disables middleware body inspection and private caching',()=>{
+ const run=middleware({VERCEL:'1'});
+ for(const asset of ['/_next/static/chunks/main-app-server-build.js','/_next/static/chunks/app/page-server-build.js','/_next/static/chunks/webpack-server-build.js','/_next/static/css/server.css']) {
+   const response=run(new NextRequest('https://track-compititor.vercel.app'+asset));
+   assert.equal(response.headers.get('x-middleware-rewrite'),'https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech'+asset);
+ }
+ const module={exports:{}};new Function('module','exports','require','process',source)(module,module.exports,require,{env:{}});
+ assert.deepEqual(module.exports.config.matcher,['/:path*']);
+ assert.equal(middleware({APP_PASSWORD:'owner'})(new NextRequest('https://preview.example/_next/static/chunks/app.js')).status,200);
  const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../vercel.json'),'utf8'));
  assert.equal(config.skipMiddlewareRequestBody,true);assert.equal(config.redirects,undefined);
  assert.equal(config.rewrites[0].has[0].value,'track-compititor.vercel.app');
