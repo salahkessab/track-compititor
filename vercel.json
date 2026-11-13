@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "track-compititor.vercel.app" }],
+      "destination": "https://3000-agq44rg6nmhmxmq3i7xitgmpza.instabox.tech/:path*",
+      "permanent": false
+    }
+  ]
+}

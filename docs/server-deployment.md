@@ -14,6 +14,12 @@ own data transfer and record counts before declaring cutover complete. R2 object
 storage alone cannot run this application. InstaBox Free has mandatory pauses and
 cooldowns; persistent storage does not mean uninterrupted availability.
 
+The production `track-compititor.vercel.app` address redirects to the full
+personal InstaBox service using a temporary redirect in `vercel.json`. This
+avoids opening a second application that lacks the persistent worker. Preview
+deployments and local installations are unaffected. The redirect carries no
+credentials; the cloud service retains its own password authentication.
+
 Use a persistent Linux Node 24 host, with at least 2 GB RAM initially for Next.js,
 the worker and image decoding. Check actual peak usage before reducing it. A Docker
 host can run `docker compose --env-file .env.server -f compose.server.yaml up -d --build`. A managed Node
