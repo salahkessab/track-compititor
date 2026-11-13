@@ -30,7 +30,7 @@ test('recipe platform presets select PNG for social and high-quality WebP for Wo
     assert.equal(value.size, '1024x1536'); assert.equal(value.output_format, 'png');
   }
   const wordpress = recipePlatformPreset({ ...settings.DEFAULT_IMAGE_SETTINGS, quality: 'low' }, '1536x864');
-  assert.equal(wordpress.quality, 'high'); assert.equal(wordpress.output_format, 'webp');
+  assert.equal(wordpress.quality, 'low'); assert.equal(wordpress.output_format, 'webp');
   for (const size of ['1024x1536', '1152x1440']) {
     const social = recipePlatformPreset(wordpress, size);
     assert.equal(social.size, size); assert.equal(social.output_format, 'png');
@@ -120,7 +120,7 @@ test('WordPress and logos are opt-in and horse defaults stay PNG', () => {
   assert.match(recipe, /1536 × 864/);
   const { RECIPE_IMAGE_TO_IMAGE_SETTINGS } = load(path.resolve(__dirname, '../lib/recipeImageToImageSettings.ts'));
   assert.equal(RECIPE_IMAGE_TO_IMAGE_SETTINGS.output_format, 'png');
-  assert.equal(RECIPE_IMAGE_TO_IMAGE_SETTINGS.quality, 'high');
+  assert.equal(RECIPE_IMAGE_TO_IMAGE_SETTINGS.quality, 'medium');
   assert.throws(() => settings.validateImageSettings('gpt-image-1.5', { size: '1536x864' }), /Unsupported image size/);
 });
 

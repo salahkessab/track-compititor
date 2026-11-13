@@ -48,7 +48,7 @@ test('all screenshot models are available in every workspace; Sunburst defaults'
     assert.equal(new Set(ids).size, ids.length);
   }
 });
-test('high quality defaults for every OpenAI model and explicit choices remain available', async () => {
+test('medium quality defaults for every OpenAI model and explicit choices remain available', async () => {
   process.env.OPENAI_API_KEY = 'unit-test-placeholder';
   const requests = [];
   global.fetch = async (_, init) => {
@@ -56,10 +56,10 @@ test('high quality defaults for every OpenAI model and explicit choices remain a
     return Response.json({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg=='}]});
   };
   for (const model of OPENAI_IMAGE_MODEL_IDS) {
-    assert.equal(validateImageSettings(model, undefined).quality, 'high');
+    assert.equal(validateImageSettings(model, undefined).quality, 'medium');
     assert.equal(validateImageSettings(model, {quality:'auto'}).quality, 'auto');
     await generateOpenAIImage({model, prompt:'A horse'});
-    assert.equal(requests.at(-1).quality, 'high');
+    assert.equal(requests.at(-1).quality, 'medium');
   }
 });
 
@@ -113,7 +113,7 @@ test('recipe image-to-image sends the reference and fixed prompt directly to edi
       assert.equal('prompt' in result, false);
     }
     const form = requests[0];
-    for (const [key,value] of Object.entries({model:'gpt-image-2.6-sunburst', n:'1',size:'1024x1536', quality:'high',output_format:'png',background:'opaque',moderation:'auto'})) assert.equal(form.get(key), value);
+    for (const [key,value] of Object.entries({model:'gpt-image-2.6-sunburst', n:'1',size:'1024x1536', quality:'medium',output_format:'png',background:'opaque',moderation:'auto'})) assert.equal(form.get(key), value);
     assert.equal(form.has('complexity'), false);
     assert.equal(form.has('stream'), false);
     assert.equal(form.has('partial_images'), false);

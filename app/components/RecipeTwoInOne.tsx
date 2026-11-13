@@ -63,7 +63,7 @@ export function RecipeTwoInOne() {
 
   function changeModel(next: string) {
     setModel(next);
-    setSettings(current => ({ ...current, quality: imageQualitiesFor(next).includes(current.quality) ? current.quality : "high", complexity: supportsImageComplexity(next) ? current.complexity : "default" }));
+    setSettings(current => ({ ...current, quality: imageQualitiesFor(next).includes(current.quality) ? current.quality : "medium", complexity: supportsImageComplexity(next) ? current.complexity : "default" }));
   }
 
   async function addPhotos(index: number, files: File[]) {

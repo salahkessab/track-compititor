@@ -5,7 +5,7 @@ export const RECIPE_IMAGE_TO_IMAGE_SETTINGS: OpenAIImageSettings = {
   ...DEFAULT_IMAGE_SETTINGS, size: "1024x1536", output_format: "png", complexity: "default",
 };
 export function recipePlatformPreset(value: OpenAIImageSettings, size: OpenAIImageSettings["size"]): OpenAIImageSettings {
-  if (size === "1536x864") return { ...value, size, quality: "high", output_format: "webp" };
+  if (size === "1536x864") return { ...value, size, output_format: "webp" };
   if (size === "1024x1536" || size === "1152x1440") return { ...value, size, output_format: "png" };
   return { ...value, size };
 }

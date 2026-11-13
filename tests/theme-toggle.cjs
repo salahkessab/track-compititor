@@ -1,0 +1,20 @@
+const test=require('node:test'),assert=require('node:assert/strict'),{JSDOM}=require('jsdom'),React=require('react');
+test('theme toggle preserves light default, persists dark, syncs tabs and works with storage blocked',async t=>{
+ const dom=new JSDOM('<html><head><meta name="theme-color" content="#F9FAFB"></head><body><div id="root"></div></body></html>',{url:'http://localhost'});
+ const globals={window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true};
+ const before=Object.fromEntries(Object.keys(globals).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
+ for(const [k,v] of Object.entries(globals))Object.defineProperty(globalThis,k,{value:v,writable:true,configurable:true});
+ const root=require('react-dom/client').createRoot(document.getElementById('root'));
+ t.after(async()=>{await React.act(async()=>root.unmount());dom.window.close();for(const k of Object.keys(globals)){if(before[k])Object.defineProperty(globalThis,k,before[k]);else delete globalThis[k];}});
+ const {ThemeToggle}=require('./helpers/load-component.cjs')('ThemeToggle');
+ await React.act(async()=>root.render(React.createElement(ThemeToggle)));
+ const button=document.querySelector('button');
+ assert.equal(button.getAttribute('aria-pressed'),'false');
+ await React.act(async()=>button.click());
+ assert.equal(document.documentElement.dataset.theme,'dark');assert.equal(localStorage.getItem('studio-theme'),'dark');
+ assert.equal(document.querySelector('meta').content,'#0B1120');
+ await React.act(async()=>window.dispatchEvent(new window.StorageEvent('storage',{key:'studio-theme',newValue:'light'})));
+ assert.equal(button.getAttribute('aria-pressed'),'false');
+ Object.defineProperty(globalThis,'localStorage',{value:{setItem(){throw Error('blocked')}},configurable:true});
+ await React.act(async()=>button.click());assert.equal(document.documentElement.dataset.theme,'dark');
+});

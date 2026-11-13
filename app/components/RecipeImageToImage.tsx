@@ -55,7 +55,7 @@ export function RecipeImageToImage() {
     setModel(next);
     setSettings((current) => ({
       ...current,
-      quality: imageQualitiesFor(next).includes(current.quality) ? current.quality : "high",
+      quality: imageQualitiesFor(next).includes(current.quality) ? current.quality : "medium",
       complexity: supportsImageComplexity(next) ? current.complexity : "default",
     }));
   }

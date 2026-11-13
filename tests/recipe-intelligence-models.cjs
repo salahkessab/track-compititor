@@ -82,7 +82,7 @@ test('reference edits send actual photo bytes to images/edits with one output an
     assert.equal(init.body.get('model'), 'gpt-image-2.6-sunburst');
     assert.equal(init.body.get('size'), '1536x864');
     assert.equal(init.body.get('n'), '1');
-    assert.equal(init.body.get('quality'), 'high');
+    assert.equal(init.body.get('quality'), 'medium');
     assert.equal(init.body.get('complexity'), null);
     assert.equal(init.body.get('partial_images'), null);
     assert.equal(init.body.get('references'), null);

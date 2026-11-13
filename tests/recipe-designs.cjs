@@ -101,7 +101,7 @@ test('Recipe Designs sends each full style prompt and original photo to one dire
     const form=init.body;calls.push(form);
     assert.equal(form.get('model'),'gpt-image-2.6-sunburst');
     assert.equal(form.get('size'),'1024x1536');
-    assert.equal(form.get('quality'),'high');
+    assert.equal(form.get('quality'),'medium');
     assert.equal(form.get('output_format'),'png');
     assert.equal(form.getAll('image[]').length,2);
     assert.equal(Buffer.from(await form.getAll('image[]')[0].arrayBuffer()).toString(),'abc');
@@ -203,7 +203,7 @@ test('each full preset reaches decorative artwork with selected model, size and 
       const styledPlan={...plan,family:preset.family,styleId:preset.id,stylePromptVersion:1};
       const res=await artRoute.POST(request({approved:true,settings:settings({styleId:preset.id,artworkSize:'1280x1600'}),plan:styledPlan,title:'Loaded Baked Potato Soup',noText:false,notes:'warm ink',photo:image}));
       assert.equal(res.status,200);const sent=seen.at(-1);
-      assert.equal(sent.model,'gpt-image-2.5-sunburst');assert.equal(sent.size,'1280x1600');assert.equal(sent.quality,'high');
+      assert.equal(sent.model,'gpt-image-2.5-sunburst');assert.equal(sent.size,'1280x1600');assert.equal(sent.quality,'medium');
       assert.ok(sent.prompt.includes(preset.template.replaceAll('{{TITLE}}','Loaded Baked Potato Soup')));
       assert.match(sent.prompt,/DECORATIVE ARTWORK ADAPTATION/);assert.match(sent.prompt,/Do not render any food/);
       assert.ok(!JSON.stringify(sent).includes(image));
@@ -474,7 +474,7 @@ test('fresh research without real images reports a knowledge-based fallback',asy
 });
 test('artwork uses text-to-image only, honors settings, and never receives food or reference pixels',async()=>{
   const original=global.fetch;let calls=0;
-  global.fetch=async(url,init)=>{calls++;assert.equal(url,'https://api.openai.com/v1/images/generations');const sent=JSON.parse(init.body);assert.equal(sent.model,'gpt-image-2.5-sunburst');assert.equal(sent.quality,'high');assert.equal(sent.size,'1024x1536');assert.equal(sent.image,undefined);assert.ok(!JSON.stringify(sent).includes(image));assert.match(sent.prompt,/Do not render any food/);return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
+  global.fetch=async(url,init)=>{calls++;assert.equal(url,'https://api.openai.com/v1/images/generations');const sent=JSON.parse(init.body);assert.equal(sent.model,'gpt-image-2.5-sunburst');assert.equal(sent.quality,'medium');assert.equal(sent.size,'1024x1536');assert.equal(sent.image,undefined);assert.ok(!JSON.stringify(sent).includes(image));assert.match(sent.prompt,/Do not render any food/);return Response.json({data:[{b64_json:generatedPng}],usage:{input_tokens:10,output_tokens:100,input_tokens_details:{text_tokens:10,image_tokens:0}}});};
   try {const res=await artRoute.POST(request({approved:true,settings:settings(),plan:{...plan,styleId:'notebook_comfort_food',stylePromptVersion:1},title:'Loaded Baked Potato Soup',noText:false,photo:image,references:[image]}));assert.equal(res.status,200);const data=await res.json();assert.match(data.artwork,/^\/api\/image-assets\/[a-f0-9]{64}$/);assert.equal(data.metadata.state,'verified');assert.equal(calls,1);}finally{global.fetch=original;}
 });
 test('provider failure is surfaced as uncertain and is not retried',async()=>{

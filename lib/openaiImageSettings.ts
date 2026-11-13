@@ -20,7 +20,7 @@ export type OpenAIImageSettings = {
   complexity?: "default" | "low" | "medium" | "high";
 };
 export const DEFAULT_IMAGE_SETTINGS: OpenAIImageSettings = {
-  size: "1024x1536", quality: "high", output_format: "png",
+  size: "1024x1536", quality: "medium", output_format: "png",
   background: "opaque", moderation: "auto", partial_images: 0,
 };
 export function isOpenAIImageModel(model: string): boolean {

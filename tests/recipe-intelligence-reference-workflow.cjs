@@ -37,7 +37,7 @@ async function referenceFixture(t, options={}) {
  return {...f,imports,upload,settings};
 }
 test('reference defaults retain the approved model controls and vessel/cooking context',()=>{
- assert.equal(DEFAULT_CONTENT_SETTINGS.textModel,'gpt-5.5'); assert.equal(DEFAULT_CONTENT_SETTINGS.imageModel,'gpt-image-2.6-sunburst'); assert.equal(DEFAULT_CONTENT_SETTINGS.imageSettings.size,'1536x864'); assert.equal(DEFAULT_CONTENT_SETTINGS.imageSettings.quality,'high');
+ assert.equal(DEFAULT_CONTENT_SETTINGS.textModel,'gpt-5.5'); assert.equal(DEFAULT_CONTENT_SETTINGS.imageModel,'gpt-image-2.6-sunburst'); assert.equal(DEFAULT_CONTENT_SETTINGS.imageSettings.size,'1536x864'); assert.equal(DEFAULT_CONTENT_SETTINGS.imageSettings.quality,'medium');
  assert.match(PHOTO_INSTRUCTIONS,/camera angle/);assert.match(PHOTO_INSTRUCTIONS,/skillet stays a skillet/);assert.match(PHOTO_INSTRUCTIONS,/clear glass transparent/);
  assert.throws(()=>analysisPayload(Array(11).fill({}),null),/ten/);
 });

@@ -183,7 +183,7 @@ export function RecipeDesigns() {
     const qualityChanged=!imageQualitiesFor(model).includes(settings.image.quality);
     const complexityChanged=!supportsImageComplexity(model) && !!settings.image.complexity && settings.image.complexity!=="default";
     if(qualityChanged || complexityChanged) setNotice(`${model} does not support the previous ${[qualityChanged?"quality":"",complexityChanged?"complexity":""].filter(Boolean).join(" and ")} selection. ${qualityChanged?"Quality changed to High. ":""}${complexityChanged?"Complexity changed to Default.":""}`);
-    setSettings(s=>({...s,model,artworkSize:model==="gpt-image-2.5-sunburst"?s.artworkSize:"selected",image:{...s.image,quality:imageQualitiesFor(model).includes(s.image.quality)?s.image.quality:"high",complexity:supportsImageComplexity(model)?s.image.complexity:"default"}}));
+    setSettings(s=>({...s,model,artworkSize:model==="gpt-image-2.5-sunburst"?s.artworkSize:"selected",image:{...s.image,quality:imageQualitiesFor(model).includes(s.image.quality)?s.image.quality:"medium",complexity:supportsImageComplexity(model)?s.image.complexity:"default"}}));
   }
   function clearRecipeInputs() {
     referenceVersion.current++;setTitle("");setIngredients("");setNotes("");setEvidence("");setRefs([]);setNoText(false);setSelected(null);setNotice("");

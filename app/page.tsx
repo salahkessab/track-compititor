@@ -8,6 +8,7 @@ import { RecipeImageToImage } from "./components/RecipeImageToImage";
 import { RecipeTwoInOne } from "./components/RecipeTwoInOne";
 import { RecipeDesigns } from "./components/RecipeDesigns";
 import { HomeDecor } from "./components/HomeDecor";
+import { ThemeToggle } from './components/ThemeToggle';
 import { prepareClientImage } from "@/lib/preparedImageClient";
 import { VerifiedImage, ImagePreparationNotifications } from './components/VerifiedImage';
 import { RecipeIntelligence } from "./components/RecipeIntelligence";
@@ -885,6 +886,7 @@ export default function Page() {
             </a>
           );
         })}
+        <ThemeToggle />
       </nav>
 
       {/* â”€â”€ Settings panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}

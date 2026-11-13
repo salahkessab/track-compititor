@@ -18,7 +18,7 @@ export type ContentSettings = {
 };
 export const DEFAULT_CONTENT_SETTINGS: ContentSettings = {
   basis: "original", mode: "full", textModel: "gpt-5.5", imageModel: "gpt-image-2.6-sunburst",
-  images: true, imageSettings: { ...DEFAULT_IMAGE_SETTINGS, size: "1536x864", quality: "high", background: "opaque", output_format: "png", moderation: "auto", partial_images: 0, complexity: "default" }, pinterestTitle: false, correction: true,
+  images: true, imageSettings: { ...DEFAULT_IMAGE_SETTINGS, size: "1536x864", quality: "medium", background: "opaque", output_format: "png", moderation: "auto", partial_images: 0, complexity: "default" }, pinterestTitle: false, correction: true,
   articleFormat: "master_recipe_v1",
   imageWorkflow: "reference", output: "article_images", palette: DEFAULT_PHOTO_PALETTE,
 };
