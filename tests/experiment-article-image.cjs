@@ -38,6 +38,24 @@ test('the wording guide asks for a second-person guide voice and forbids invente
   assert.match(MASTER_STYLE_ADDENDUM, /add no quantity, time, temperature, ingredient, substitution or doneness cue/);
 });
 
+test('article reasoning stays off by default and is only raised by the experiment switch', () => {
+  const { writingPayload, articleReasoningEffort } = require('../.intelligence-build/lib/recipe-intelligence/prompts.js');
+  const { DEFAULT_CONTENT_SETTINGS } = require('../.intelligence-build/lib/recipe-intelligence/settings.js');
+  const recipe = { title: 'Soup', ingredients: ['1 carrot'], instructions: ['Boil.'], tips: [], storage: [] };
+  const saved = process.env.EXPERIMENT_ARTICLE_REASONING;
+  try {
+    delete process.env.EXPERIMENT_ARTICLE_REASONING;
+    assert.equal(articleReasoningEffort(), 'none');
+    assert.equal(writingPayload(recipe, DEFAULT_CONTENT_SETTINGS).reasoning.effort, 'none');
+    assert.equal(writingPayload(recipe, DEFAULT_CONTENT_SETTINGS).max_output_tokens, 6500);
+    process.env.EXPERIMENT_ARTICLE_REASONING = 'medium';
+    assert.equal(writingPayload(recipe, DEFAULT_CONTENT_SETTINGS).reasoning.effort, 'medium');
+    assert.equal(writingPayload(recipe, DEFAULT_CONTENT_SETTINGS).max_output_tokens, 14000);
+    process.env.EXPERIMENT_ARTICLE_REASONING = 'bogus';
+    assert.equal(articleReasoningEffort(), 'none');
+  } finally { if (saved === undefined) delete process.env.EXPERIMENT_ARTICLE_REASONING; else process.env.EXPERIMENT_ARTICLE_REASONING = saved; }
+});
+
 test('without presets the default dishware and surface changes remain', () => {
   const prompt = foodVariationPrompt('a cream bowl on a wooden table');
   assert.match(prompt, /always change the plate/);
