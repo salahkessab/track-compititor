@@ -1,4 +1,5 @@
 "use client";
+import { quickInstructions } from "@/lib/photoQuickInstructions";
 import { VerifiedImage } from './VerifiedImage';
 
 import { useEffect, useRef, useState } from "react";
@@ -20,6 +21,7 @@ type Variation = {
 
 const inputClass = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 disabled:opacity-50";
 const secondaryClass = "rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50";
+
 
 export function RecipeImageToImage() {
   const [photo, setPhoto] = useState<FoodPhoto | null>(null);
@@ -58,6 +60,17 @@ export function RecipeImageToImage() {
       quality: imageQualitiesFor(next).includes(current.quality) ? current.quality : "medium",
       complexity: supportsImageComplexity(next) ? current.complexity : "default",
     }));
+  }
+
+  function addQuickInstruction(text: string) {
+    if (loading || uploading || extraInstructions.includes(text)) return;
+    const next = extraInstructions.trimEnd() + (extraInstructions.trim() ? "\n\n" : "") + text;
+    if (next.length > MAX_EXTRA_INSTRUCTIONS) {
+      setError("Make some room in Extra instructions before adding this preset.");
+      return;
+    }
+    setExtraInstructions(next);
+    setError(null);
   }
 
   async function addPhoto(file?: File) {
@@ -226,6 +239,25 @@ export function RecipeImageToImage() {
             </div>
           </div>
           <div className="flex flex-col">
+            <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Quick instructions">
+              {quickInstructions.map((preset) => (
+                <button key={preset.label} type="button" title={preset.label} aria-label={preset.label}
+                  disabled={loading || uploading || extraInstructions.includes(preset.text)}
+                  onClick={() => addQuickInstruction(preset.text)}
+                  className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-lg text-gray-900 transition hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-50">
+                  <span aria-hidden="true">{preset.icon}</span>
+                  {extraInstructions.includes(preset.text) && <span aria-label="Added" className="absolute -right-1 -top-1 rounded-full bg-blue-600 px-1 text-[10px] leading-4 text-white">✓</span>}
+                </button>
+              ))}
+              <button type="button" title="Clear extra instructions" aria-label="Clear extra instructions"
+                disabled={loading || uploading || !extraInstructions}
+                onClick={() => setExtraInstructions("")}
+                className="ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-400/40 text-red-500 transition hover:bg-red-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-40">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" />
+                </svg>
+              </button>
+            </div>
             <label className="grid gap-2 text-sm text-gray-600">
               Extra instructions <span className="sr-only">(optional)</span>
               <textarea className={inputClass + " min-h-[152px] resize-y"} rows={5} value={extraInstructions}
@@ -258,9 +290,9 @@ export function RecipeImageToImage() {
           <aside aria-label="Food photo variations" className="self-start rounded-[22px] border border-gray-200 bg-white/60 p-4">
             <p className="text-xs uppercase tracking-[.18em] text-blue-700">Output preview</p>
             <h2 className="studio-title mt-1 text-xl">{selectedResult ? `Variation ${selectedIndex + 1}` : "Your variation"}</h2>
-            <div className="mt-4 flex aspect-[4/5] items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white">
-              {selectedResult ? <VerifiedImage source={selectedResult.imageUrl} alt={`Realistic variation ${selectedIndex + 1} of the uploaded dish`} className="h-full w-full object-contain"
-                action={{ className: 'block h-full w-full', onClick: () => setPreview(selectedResult), 'aria-label': `Open variation ${selectedIndex + 1}` }} /> : partial ?
+            <div className={selectedResult ? "mt-4" : "mt-4 flex aspect-[4/5] items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white"}>
+              {selectedResult ? <VerifiedImage source={selectedResult.imageUrl} alt={`Realistic variation ${selectedIndex + 1} of the uploaded dish`} className="w-full rounded-xl border border-gray-200 object-contain"
+                action={{ className: 'block w-full', onClick: () => setPreview(selectedResult), 'aria-label': `Open variation ${selectedIndex + 1}` }} /> : partial ?
                 // eslint-disable-next-line @next/next/no-img-element
                 <p role="status">{partial}</p> :
                 <p className="px-6 text-center text-sm text-gray-600">Your generated image will appear here.</p>}

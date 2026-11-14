@@ -481,3 +481,19 @@ test('provider failure is surfaced as uncertain and is not retried',async()=>{
   const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw new Error('network lost');};
   try {const res=await artRoute.POST(request({approved:true,settings:settings(),plan:{...plan,styleId:'notebook_comfort_food',stylePromptVersion:1},title:'Loaded Baked Potato Soup',noText:false}));const data=await res.json();assert.equal(res.status,502);assert.equal(data.dispatched,true);assert.match(data.costStatus,/unknown/);assert.equal(calls,1);}finally{global.fetch=original;}
 });
+
+test('photo presets preserve all style specifications and stay scoped to the photo', () => {
+  const {quickInstructions} = load(path.resolve(__dirname,'../lib/photoQuickInstructions.ts'));
+  const instructions = quickInstructions.map(p=>p.text).join('\n\n');
+  assert.ok(instructions.length <= 4000);
+  for (const style of RECIPE_STYLE_PRESETS) {
+    const base=recipeDirectPrompt(style.id,'Exact title','Owner style notes',undefined,'Butter (1 cup)','1024x1536');
+    const edited=recipeDirectPrompt(style.id,'Exact title','Owner style notes',undefined,'Butter (1 cup)','1024x1536',instructions);
+    assert.ok(edited.startsWith(base));
+    assert.ok(edited.includes('DESIGN PRESERVATION:'));
+    assert.ok(edited.includes('not the design background'));
+    assert.ok(edited.includes('Move EVERY ingredient'));
+  }
+  assert.throws(()=>recipeDirectPrompt(RECIPE_STYLE_PRESETS[0].id,'Title','',undefined,undefined,undefined,{}),/Photo instructions/);
+  assert.throws(()=>recipeDirectPrompt(RECIPE_STYLE_PRESETS[0].id,'Title','',undefined,undefined,undefined,'x'.repeat(4001)),/Photo instructions/);
+});

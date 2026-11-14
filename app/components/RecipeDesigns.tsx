@@ -1,5 +1,6 @@
 "use client";
 import { VerifiedImage } from "./VerifiedImage";
+import { quickInstructions } from "@/lib/photoQuickInstructions";
 import { prepareClientImage, resolveImageResponse } from "@/lib/preparedImageClient";
 import { readGenerationPayload } from "@/lib/generationResponse";
 
@@ -185,7 +186,9 @@ export function RecipeDesigns() {
     if(qualityChanged || complexityChanged) setNotice(`${model} does not support the previous ${[qualityChanged?"quality":"",complexityChanged?"complexity":""].filter(Boolean).join(" and ")} selection. ${qualityChanged?"Quality changed to High. ":""}${complexityChanged?"Complexity changed to Default.":""}`);
     setSettings(s=>({...s,model,artworkSize:model==="gpt-image-2.5-sunburst"?s.artworkSize:"selected",image:{...s.image,quality:imageQualitiesFor(model).includes(s.image.quality)?s.image.quality:"medium",complexity:supportsImageComplexity(model)?s.image.complexity:"default"}}));
   }
+  const [photoInstructions,setPhotoInstructions]=useState("");
   function clearRecipeInputs() {
+    setPhotoInstructions("");
     referenceVersion.current++;setTitle("");setIngredients("");setNotes("");setEvidence("");setRefs([]);setNoText(false);setSelected(null);setNotice("");
   }
   async function uploadPhoto(file?: File) {
@@ -259,10 +262,10 @@ export function RecipeDesigns() {
         const refImages=await Promise.all(refs.map(ref=>recipeEditImage(ref,true)));
         const promptCopy=promptCopies[previewStyleId];
         const ingredientText=previewStyleId===INGREDIENT_CARD_STYLE_ID?validateRecipeIngredients(ingredients):undefined;
-        const promptSnapshot=recipeDirectPrompt(previewStyleId,title,notes,promptCopy,ingredientText,settings.image.size);
+        const promptSnapshot=recipeDirectPrompt(previewStyleId,title,notes,promptCopy,ingredientText,settings.image.size,photoInstructions);
         for(let i=0;i<settings.count;i++) {
           await checkpoint(`image edit ${i+1} dispatched`);setStage(`OpenAI is designing image ${i+1} of ${settings.count}…`);sent=true;
-          const art=await post("/api/recipe-designs/generate",{approved:true,settings,title,ingredients:ingredientText,notes,promptCopy,photo:sourceImage,references:refImages},controller.signal);
+          const art=await post("/api/recipe-designs/generate",{approved:true,settings,title,ingredients:ingredientText,notes,photoInstructions,promptCopy,photo:sourceImage,references:refImages},controller.signal);
           job.costs.push(art);sent=false;await checkpoint(`artwork ${i+1} complete`);
           const artworkResponse=await fetch(art.image);
           if(!artworkResponse.ok) throw new Error("The generated image is saved, but could not be downloaded for export. Please retry preparation.");
@@ -342,6 +345,20 @@ export function RecipeDesigns() {
           </div>
           <div className="grid gap-2"><label htmlFor="recipe-design-style" className="text-sm font-medium text-gray-900">Professional design style</label><select id="recipe-design-style" className={inputClass} value={settings.styleId} disabled={isBusy} onChange={e=>{update("styleId",e.target.value as DesignSettings["styleId"]);setError("");}}>{RECIPE_STYLE_PRESETS.map(style=><option key={style.id} value={style.id}>{style.name}</option>)}</select></div>
           {previewStyleId===INGREDIENT_CARD_STYLE_ID && <div className="grid gap-2"><label htmlFor="recipe-design-ingredients" className="text-sm font-medium text-gray-900">Ingredients <span className="text-blue-700">· required</span></label><textarea id="recipe-design-ingredients" className={inputClass} rows={7} maxLength={2000} disabled={isBusy} value={ingredients} onChange={e=>setIngredients(e.target.value)} placeholder={'Chicken breast (1 lb)\nBroccoli (2 cups)\nGarlic (3 cloves)'}/><p className="text-xs leading-relaxed text-gray-600">Enter one ingredient per line, including its amount. Up to 20 lines. Check the finished image for spelling and quantities.</p></div>}
+          <div className="grid gap-2">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Food photo quick instructions">
+              {quickInstructions.map(preset=><button key={preset.label} type="button" title={preset.label+" — food photo only"} aria-label={preset.label+" — food photo only"} disabled={isBusy || photoInstructions.includes(preset.text)}
+                className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-lg text-gray-900 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-50"
+                onClick={()=>{const next=photoInstructions.trimEnd()+(photoInstructions.trim()?"\n\n":"")+preset.text;if(next.length>4000){setError("Make some room in Photo instructions before adding this preset.");return;}setPhotoInstructions(next);setError("");}}>
+                <span aria-hidden="true">{preset.icon}</span>{photoInstructions.includes(preset.text)&&<span aria-label="Added" className="absolute -right-1 -top-1 rounded-full bg-blue-600 px-1 text-[10px] leading-4 text-white">✓</span>}
+              </button>)}
+              <button type="button" title="Clear photo instructions" aria-label="Clear photo instructions" disabled={isBusy || !photoInstructions} onClick={()=>setPhotoInstructions("")} className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-400/40 text-red-500 hover:bg-red-500/10 disabled:opacity-40">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg>
+              </button>
+            </div>
+            <label className="grid gap-2 text-sm text-gray-600">Photo instructions<textarea className={inputClass} rows={3} maxLength={4000} value={photoInstructions} disabled={isBusy} onChange={e=>setPhotoInstructions(e.target.value)} placeholder="Optional changes to the food photo only"/></label>
+            <p className="text-xs text-gray-600">Applies inside the food photo. Your selected design style, title, typography and frame stay unchanged.</p>
+          </div>
           <button type="button" className={accentClass+" w-full"} disabled={!ready || isBusy} onClick={()=>{try{check();void runGeneration();}catch(e){setError(e instanceof Error?e.message:"Check your inputs.");}}}>Generate Design</button>
           <p className="text-xs leading-relaxed text-gray-600">Generate Design starts {settings.count} paid OpenAI image {settings.count===1?"edit":"edits"} without another confirmation. Image output estimate: {imageEstimate===null?"unavailable for these settings":`$${(imageEstimate*settings.count).toFixed(4)}`} · image input and prompt costs are additional.</p>
           {!!stage && <div role="status" aria-live="polite" className="rounded-xl border border-gray-200 p-3 text-sm">{stage} {abort.current && <><button type="button" className="ml-3 underline" onClick={()=>abort.current?.abort()}>Stop waiting</button><p className="mt-1 text-xs text-gray-600">Stopping cannot guarantee an already dispatched provider request is canceled or free.</p></>}</div>}

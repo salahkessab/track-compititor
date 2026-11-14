@@ -37,7 +37,7 @@ const FOOD_VARIATION_PROMPT = [
   "- no oversized ingredients",
   "- no plastic-looking surfaces",
   "- no studio-advertising look",
-  "- no text or watermark",
+  "- no added text unless the user explicitly requests ingredient labels; do not add watermarks",
   "",
   "The final result must look like an authentic homemade food photograph from a phone camera roll.",
 ].join("\n");
@@ -48,7 +48,7 @@ export function foodVariationPrompt(extraInstructions: unknown): string {
   }
   const extra = (extraInstructions as string | undefined)?.trim() || "";
   if (extra.length > MAX_EXTRA_INSTRUCTIONS) throw new Error("Extra instructions must be 4000 characters or fewer.");
-  return FOOD_VARIATION_PROMPT + (extra ? "\nAdditional user instructions: " + extra : "");
+  return FOOD_VARIATION_PROMPT + (extra ? "\nUser-requested edits take priority over default styling, camera, dishware and layout choices, while food identity and ingredient amounts remain protected. Preserving ingredients does not mean preserving their coordinates. When rearrangement is requested, visibly relocate the individual ingredients and their containers, not just their labels or background. Do not interpret a lighting or background-only edit as a request to rearrange.\nAdditional user instructions: " + extra : "");
 }
 
 export function foodReference(references: unknown): string {

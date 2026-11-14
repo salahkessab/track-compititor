@@ -26,7 +26,7 @@ async function run(req: Request, phase: (value: 'generating' | 'preparing') => v
     if (photo.length + references.reduce((total: number, ref: string) => total + ref.length, 0) > MAX_RECIPE_EDIT_REQUEST_CHARS) {
       throw new Error("The images are too large for one request. Use smaller style references.");
     }
-    const prompt = recipeDirectPrompt(styleId, title, b.notes ?? "", b.promptCopy, ingredients, settings.image.size);
+    const prompt = recipeDirectPrompt(styleId, title, b.notes ?? "", b.promptCopy, ingredients, settings.image.size, b.photoInstructions ?? "");
     if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY. Configure it on the server.");
     await checkImageProcessing();
     dispatched = true;

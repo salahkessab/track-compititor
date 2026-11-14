@@ -23,5 +23,11 @@ node_modules
 *.key
 *.ribak
 
+# Files belonging to this independent Windows installation
+/data/
+/.launcher/
+/.npm-cache/
+/runtime/
+
 .vercel
 .env*

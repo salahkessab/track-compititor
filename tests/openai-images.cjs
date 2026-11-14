@@ -118,8 +118,11 @@ test('recipe image-to-image sends the reference and fixed prompt directly to edi
     assert.equal(form.has('stream'), false);
     assert.equal(form.has('partial_images'), false);
     const prompt = form.get('prompt');
-    for (const requirement of ['same ingredient proportions', 'natural imperfections', 'iPhone 17 Pro Max', 'always change the plate', 'always change the table', 'change its color or finish', 'no fake steam', 'no studio-advertising look', 'no text or watermark']) assert.ok(prompt.includes(requirement), requirement);
-    assert.equal(requests[1].get('prompt'), prompt + '\nAdditional user instructions: Use a blue ceramic bowl and a silver spoon.');
+    for (const requirement of ['same ingredient proportions', 'natural imperfections', 'iPhone 17 Pro Max', 'always change the plate', 'always change the table', 'change its color or finish', 'no fake steam', 'no studio-advertising look', 'no added text unless the user explicitly requests ingredient labels']) assert.ok(prompt.includes(requirement), requirement);
+    const editedPrompt = requests[1].get('prompt');
+    assert.ok(editedPrompt.startsWith(prompt));
+    assert.ok(editedPrompt.includes('Preserving ingredients does not mean preserving their coordinates'));
+    assert.ok(editedPrompt.endsWith('Additional user instructions: Use a blue ceramic bowl and a silver spoon.'));
     assert.equal(calls(), 0, 'The recipe planner must never rewrite a reference transformation.');
   } finally { if (oldFal === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = oldFal; }
 });
