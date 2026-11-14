@@ -82,10 +82,10 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
       for (const [field, value] of Object.entries({ introduction: article.introduction, articleTitle: article.articleTitle || '', seoTitle: article.seoTitle, metaDescription: article.metaDescription })) if (privateSourceLanguage(value)) warnings.push(`${field}: remove first-person source experience and attribution; write independently.`);
     }
     if (format === "master_recipe_v1" && recipe.cookTime && !publicationTimes(recipe).cookTime) article.editorialNotes!.push("The source lists zero cook time despite heated cooking steps. That inconsistent duration was omitted from the published card; no replacement time was invented.");
-    const anecdote = /\b(?:my (?:family|grandmother|grandma|mother)|I (?:tested|grew up|remember|always make))\b/i;
     for (const key of ["introduction", "conclusion"] as const) {
       const value = key === "introduction" ? article.introduction : article.blog.conclusion;
-      if (anecdote.test(value)) { warnings.push("An unsupported personal anecdote was omitted."); if (key === "introduction") article.introduction = ""; else article.blog.conclusion = ""; }
+      const scrubbed = scrubAnecdotes(value);
+      if (scrubbed.changed) { warnings.push(`${key}: a first-person anecdote sentence was rewritten as a general scene or removed. Write any family or occasion scene as a general scene addressed to "you", never as the author's own experience.`); if (key === "introduction") article.introduction = scrubbed.text; else article.blog.conclusion = scrubbed.text; }
     }
     const focus = andText(recipe.title).toLowerCase();
     if (format === "blog_1000_1200_v1" && !article.seoTitle.toLowerCase().includes(focus)) warnings.push("The SEO title should naturally include the recipe title as the focus keyword.");
@@ -95,6 +95,18 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
     if (format === "master_recipe_v1" && storyLayout()) { const target = storyWordTarget(recipe); if (article.wordCount < target.min * 0.75 || article.wordCount > target.max * 1.4) warnings.push(`Article is ${article.wordCount} words; aim for about ${target.min}–${target.max} with useful description, tips, serving ideas and answers, never filler.`); }
   } else article.wordCount = articleDocument(article, recipe).wordCount;
   return { article, warnings: [...new Set(warnings)] };
+}
+// Sentence-level clean-up of invented personal anecdotes: "my grandmother/family/mother" becomes "your …" when nothing else in the
+// sentence is first person; sentences that claim the author's own experience ("I tested", "I grew up"…) are dropped. The rest stays.
+const ANECDOTE = /\b(?:my (?:family|grandmother|grandma|mother|mom|grandparents)|I (?:tested|grew up|remember|always make))\b/i;
+export function scrubAnecdotes(text: string): { text: string; changed: boolean } {
+  if (!ANECDOTE.test(text)) return { text, changed: false };
+  const paragraphs = text.split(/\n\s*\n/).map(paragraph => (paragraph.match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g) || [paragraph]).flatMap(sentence => {
+    if (!ANECDOTE.test(sentence)) return [sentence];
+    const swapped = sentence.replace(/\b([Mm])y (family|grandmother|grandma|mother|mom|grandparents)\b/g, (_m, m, who) => `${m === "M" ? "Your" : "your"} ${who}`);
+    return /\b(?:I|me|my|mine|we|our|us)\b/i.test(swapped) ? [] : [swapped];
+  }).join("").trim()).filter(Boolean);
+  return { text: paragraphs.join("\n\n"), changed: true };
 }
 export class ArtifactStore {
   constructor(public store: IntelligenceStore) {}

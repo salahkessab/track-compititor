@@ -62,12 +62,19 @@ test('the length target follows the source article, with a default when it is sh
   assert.deepEqual(storyWordTarget(words(5000)), { min: 2000, max: 2300 });
 });
 
-test('first-person grandmother stories are still removed from the introduction', () => story(() => {
+test('a first-person anecdote changes only its own sentence; the rest of the introduction stays', () => story(() => {
   const recipe = source();
-  const raw = { ...draft(), introduction: 'My grandmother made this every Sunday.' };
+  const raw = { ...draft(), introduction: 'Sunday lunch calls for something warm. My grandmother made this every Sunday. I grew up eating it.\n\nThe soup turns silky once blended.' };
   const checked = validateArticle(raw, recipe, format);
-  assert.equal(checked.article.introduction, '');
+  assert.equal(checked.article.introduction, 'Sunday lunch calls for something warm. Your grandmother made this every Sunday.\n\nThe soup turns silky once blended.');
+  assert.ok(checked.warnings.some(w => /anecdote sentence was rewritten/.test(w)));
 }));
+
+test('anecdote clean-up leaves text without anecdotes untouched', () => {
+  const { scrubAnecdotes } = require('../.intelligence-build/lib/recipe-intelligence/artifacts.js');
+  assert.deepEqual(scrubAnecdotes('It reminds you of a grandmother\'s table.'), { text: 'It reminds you of a grandmother\'s table.', changed: false });
+  assert.equal(scrubAnecdotes('My family and I love it. Serve it hot.').text, 'Serve it hot.');
+});
 
 test('default layout and prompt are unchanged when the switch is off', () => off(() => {
   const recipe = source();
