@@ -58,4 +58,6 @@ Set these in the environment before `node scripts/run-experiment.cjs --allow-pai
 | `EXPERIMENT_ARTICLE_REASONING=low` or `medium` | The article writer plans before drafting. More detail, higher cost (about $0.24 per article in our test instead of $0.17). |
 | `EXPERIMENT_LEAN_ARTICLE=1` | Lean layout: introduction, then ingredients and instructions (the recipe card), then tips. The prompt asks for a short introduction in the reference style and leaves the long optional sections empty. Step photographs are not placed in this layout. |
 
-Both keep every fact rule: the writer cannot invent ingredients, quantities, times, temperatures, experience, testing or reader reviews, and the style guidance is described in our own words, never copied from any website.
+| `EXPERIMENT_STORY_ARTICLE=1` | Story layout, close to the source article's length (its word count, up to +15%; 1,300–1,500 when unknown). Introduction opens on the recipe's occasion, adds a general scene written to "you" (never a claim about a real person or the author), then describes the dish. Then: what makes it special, ingredients and instructions, tips, what to serve with it, FAQ, storage. Takes precedence over the lean layout. |
+
+All keep every fact rule: the writer cannot invent ingredients, quantities, times, temperatures, experience, testing or reader reviews, and the style guidance is described in our own words, never copied from any website.

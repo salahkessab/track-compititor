@@ -7,7 +7,8 @@ import { storagePath } from "./paths";
 import { IntelligenceStore } from "./database";
 import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
-import { andText, articleDocument, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
+import { storyWordTarget } from "./prompts";
+import { andText, articleDocument, storyLayout, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
 import { linkedArtifact } from './internalLinkState';
 import { IMAGE_STORAGE_VERSION, GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
@@ -91,6 +92,7 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
     if (format === "blog_1000_1200_v1" && !article.introduction.split(/\s+/).slice(0, 100).join(" ").toLowerCase().includes(focus)) warnings.push("Include the focus keyword naturally within the first 100 words.");
     article.wordCount = articleDocument(article, recipe).wordCount;
     if (format === "blog_1000_1200_v1" && (article.wordCount < 1000 || article.wordCount > 1200)) warnings.push(`Article is ${article.wordCount} words; aim for 1,000–1,200 with useful supported content, never filler.`);
+    if (format === "master_recipe_v1" && storyLayout()) { const target = storyWordTarget(recipe); if (article.wordCount < target.min * 0.75 || article.wordCount > target.max * 1.4) warnings.push(`Article is ${article.wordCount} words; aim for about ${target.min}–${target.max} with useful description, tips, serving ideas and answers, never filler.`); }
   } else article.wordCount = articleDocument(article, recipe).wordCount;
   return { article, warnings: [...new Set(warnings)] };
 }

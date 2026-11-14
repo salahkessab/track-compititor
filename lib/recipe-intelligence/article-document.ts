@@ -60,8 +60,8 @@ export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[
     const row = claim(v, "Ingredient notes"); const index = v?.ingredientIndex;
     return row && Number.isInteger(index) && index >= 0 && index < recipe.ingredients.length ? [{ ...row, ingredientIndex: index }] : [];
   });
-  const faqs = (Array.isArray(raw?.faqs) ? raw.faqs : []).slice(0, 5).flatMap((v: any) => { const row = claim(v, "FAQs"); const question = prose(v?.question, 250); if (!row || !question) return []; const answer = row.text.startsWith(question) ? row.text.slice(question.length).trim() : row.text; return answer ? [{ ...row, text: answer, question }] : []; });
-  const blog = { whyMake: claims("whyMake"), ingredientNotes, timeNote: master ? [] : claims("timeNote", 2), variations: claims("variations"), serving: claims("serving", 3), storage: claims("storage", 4), proTips: claims("proTips"), faqs, conclusion: master ? "" : prose(raw?.conclusion, 2500) };
+  const faqs = (Array.isArray(raw?.faqs) ? raw.faqs : []).slice(0, master && storyLayout() ? 6 : 5).flatMap((v: any) => { const row = claim(v, "FAQs"); const question = prose(v?.question, 250); if (!row || !question) return []; const answer = row.text.startsWith(question) ? row.text.slice(question.length).trim() : row.text; return answer ? [{ ...row, text: answer, question }] : []; });
+  const blog = { whyMake: claims("whyMake"), ingredientNotes, timeNote: master ? [] : claims("timeNote", 2), variations: claims("variations"), serving: claims("serving", master && storyLayout() ? 6 : 3), storage: claims("storage", 4), proTips: claims("proTips"), faqs, conclusion: master ? "" : prose(raw?.conclusion, 2500) };
   if (!master) {
     if (!blog.whyMake.length) warnings.push("Why make this recipe needs supported benefits.");
     if (blog.proTips.length < 3) warnings.push("Fewer than three supported pro tips are available.");
@@ -73,6 +73,8 @@ export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[
 
 // Experiment switch: EXPERIMENT_LEAN_ARTICLE=1 renders introduction, ingredients, instructions, tips. Unset keeps the current layout.
 export const leanLayout = () => process.env.EXPERIMENT_LEAN_ARTICLE === "1";
+// Experiment switch: EXPERIMENT_STORY_ARTICLE=1 renders a longer article (occasion intro, why it's special, recipe, tips, serving, FAQ, storage). Takes precedence over the lean layout.
+export const storyLayout = () => process.env.EXPERIMENT_STORY_ARTICLE === "1";
 export type ArticleImage ={ kind: "featured" | "alternate" | "pinterest" | "reference"; placement?: string; stepIndex?: number | null; caption?: string; dataUri: string; fileName: string; width: number; height: number };
 export function articleDocument(article: Article, recipe: RecipeSnapshot, images: ArticleImage[] = []) {
   const html: string[] = []; const text: string[] = []; const markdown: string[] = [];
@@ -102,7 +104,20 @@ export function articleDocument(article: Article, recipe: RecipeSnapshot, images
   };
   const section = (title: string, claims: SupportedText[], bullets = false) => { if (claims.length) { heading(title); if (bullets) list(claims.map(v => v.text)); else claims.forEach(v => paragraphs(v.text)); } };
   const facts = () => { const rows = recipeFacts(recipe, !!blog); html.push(`<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(prose(v))}</dd>`).join("")}</dl>`); text.push(rows.map(([k,v]) => `${k}: ${prose(v)}`).join("\n")); markdown.push(rows.map(([k,v]) => `${k}: ${prose(v)}`).join("\n\n")); };
-  if (master && blog && leanLayout()) {
+  if (master && blog && storyLayout()) {
+    // Experimental story layout: occasion-led introduction, why it's special, the recipe card, then tips, serving ideas, FAQ and storage.
+    heading(title, 1); photograph("featured"); references("hero"); paragraphs(article.introduction);
+    section(`What Makes This ${title} Special`, blog.whyMake, true);
+    html.push('<section data-ri-recipe-card="1">');
+    facts(); heading("Ingredients"); list(recipe.ingredients.map(publicationIngredient)); references("ingredients");
+    heading("Instructions"); list(article.instructions, true);
+    html.push('</section>');
+    photograph("alternate");
+    section("Tips for the Best Results", blog.proTips, true);
+    section(`What to Serve With ${title}`, blog.serving);
+    if (blog.faqs.length) { heading("Frequently Asked Questions"); for (const faq of blog.faqs) { heading(faq.question, 3); paragraphs(faq.text); } }
+    section("Storage", blog.storage);
+  } else if (master && blog && leanLayout()) {
     // Experimental lean layout: introduction, then ingredients and method inside the recipe card, then tips.
     // Optional sections the writer was told to leave empty are skipped; step photographs are not placed in this layout.
     heading(title, 1); photograph("featured"); references("hero"); paragraphs(article.introduction);
