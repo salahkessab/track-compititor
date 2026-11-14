@@ -32,6 +32,12 @@ test('the master prompt carries the wording guide and still contains the recipe 
   assert.ok(prompt.includes('1 carrot'));
 });
 
+test('the wording guide asks for a second-person guide voice and forbids invented experience or new facts', () => {
+  assert.match(MASTER_STYLE_ADDENDUM, /speaking to the reader as "you"/);
+  assert.match(MASTER_STYLE_ADDENDUM, /never claim to have tested, tasted or made the dish/);
+  assert.match(MASTER_STYLE_ADDENDUM, /add no quantity, time, temperature, ingredient, substitution or doneness cue/);
+});
+
 test('without presets the default dishware and surface changes remain', () => {
   const prompt = foodVariationPrompt('a cream bowl on a wooden table');
   assert.match(prompt, /always change the plate/);

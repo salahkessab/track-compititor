@@ -34,6 +34,16 @@ function isolatedEnvironment(allowPaid) {
   for (const key of Object.keys(env)) if (/^(R2_|WORDPRESS|WP_)/i.test(key)) delete env[key];
   env.R2_ENABLED = '0';
   if (!allowPaid) { env.OPENAI_API_KEY = ''; env.FAL_KEY = ''; env.ANTHROPIC_API_KEY = ''; } // blank values also win over any .env.local file
+  else {
+    // The background worker is a plain Node process and does not read .env.local itself, so pass only the OpenAI key to it.
+    // Other providers stay blank. The value is never printed.
+    env.FAL_KEY = ''; env.ANTHROPIC_API_KEY = '';
+    try {
+      const line = fs.readFileSync(path.join(repo, '.env.local'), 'utf8').split(/\r?\n/).find((entry) => /^OPENAI_API_KEY\s*=/.test(entry));
+      const value = line && line.slice(line.indexOf('=') + 1).trim().replace(/^["']|["']$/g, '');
+      if (value) env.OPENAI_API_KEY = value;
+    } catch { /* no .env.local: the provider will report a missing key */ }
+  }
   return env;
 }
 

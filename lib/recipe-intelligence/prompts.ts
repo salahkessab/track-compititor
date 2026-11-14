@@ -64,6 +64,9 @@ export const MASTER_STYLE_ADDENDUM = `WORDING GUIDE (wording only; never overrid
 - Avoid words models overuse: actually, additionally, crucial, delve, elevate, enhance, enduring, highlight (verb), intricate, key (adjective), meticulous, pivotal, robust, showcase, tapestry, testament, underscore (verb), vibrant.
 - Avoid "not just X, but Y" contrasts and groups of three added for rhythm. Use plain verbs.
 - Explain a step only when the explanation helps the cook; do not repeat quantities or times outside the method.
+- Voice: write as a warm, unhurried guide speaking to the reader as "you", so they can picture standing at the counter. Where the recipe or its evidence gives a cue (golden edges, a glossy top, a dough that just comes together), describe what the cook will see, smell or feel in plain, specific words. Do not use "I", "my" or "we" for experience, and never claim to have tested, tasted or made the dish.
+- Sensory description must not change the recipe: add no quantity, time, temperature, ingredient, substitution or doneness cue that is not in the source or evidence, and never describe a cue that implies a different timing.
+- Vary how each article is built: choose an opening that fits this dish (a decision the cook faces, a texture, a moment in the method), vary paragraph length, and do not reuse a stock phrase across sections. Keep the voice natural and a little playful, never gushing or salesy.
 - Write each method step as one clear instruction. A temperature may carry its other-unit conversion in parentheses, for example 375°F (190°C). Durations may stay as the source's numerals.`;
 export function articlePrompt(recipe: RecipeSnapshot, correction?: { draft: unknown; warnings: string[] }, format: ArticleFormat = "compact_v1") {
   const { supportingEvidence: _supportingEvidence, sourceReading: _sourceReading, ...recipeFacts } = recipe;
