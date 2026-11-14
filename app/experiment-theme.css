@@ -1,0 +1,76 @@
+/* Experimental "Kitchen Studio" look. Pure CSS on top of globals.css: no layout or logic changes.
+   Remove the import in app/layout.tsx to return to the current design. */
+:root {
+  --studio-bg: #FBF7F0;
+  --studio-bg-2: #F5EEE2;
+  --studio-ink: #1F1A17;
+  --studio-muted: #6B5E55;
+  --studio-line: #E6DCCD;
+  --studio-panel-top: #FFFDF9;
+  --studio-panel-bottom: #FFFDF9;
+  --studio-accent: #B4472B;
+  --studio-accent-hover: #963820;
+  --studio-accent-2: #4F6B4A;
+  --studio-secondary-hover: #3F5A3B;
+  --studio-nav: #2B211C;
+  --studio-radius: 16px;
+}
+html[data-theme="dark"] {
+  --studio-bg: #15110F;
+  --studio-bg-2: #1B1613;
+  --studio-ink: #F4EDE4;
+  --studio-muted: #CDBFB2;
+  --studio-line: #3A2F29;
+  --studio-panel-top: #1E1815;
+  --studio-panel-bottom: #1E1815;
+  --studio-nav: #0F0B09;
+}
+html, body { background: var(--studio-bg); }
+::selection { background: #F3D3C7; color: #1F1A17; }
+
+/* Typography: Fraunces (already bundled) for headings, system sans for the interface. */
+.studio-title, h1, h2 { font-family: "Fraunces Variable", Georgia, Cambria, serif; letter-spacing: -.02em; }
+
+/* Surfaces */
+.studio-panel, .studio-hero {
+  border-radius: var(--studio-radius);
+  box-shadow: 0 1px 2px rgb(43 33 28 / 6%), 0 8px 24px rgb(43 33 28 / 5%);
+}
+html[data-theme="dark"] .studio-panel, html[data-theme="dark"] .studio-hero { box-shadow: 0 1px 2px rgb(0 0 0 / 40%); }
+details > summary { border-radius: 10px; }
+input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), textarea, select { border-radius: 10px; }
+
+/* Navigation: espresso pill bar, terracotta active tab */
+nav[aria-label="Main navigation"] { border-radius: 999px !important; padding: 6px !important; }
+nav[aria-label="Main navigation"] a, nav[aria-label="Main navigation"] button { border-radius: 999px; }
+nav[aria-label="Main navigation"] a:hover { background: #3D2F28; }
+
+/* Re-map the app's hard-coded blue and purple utilities to the new palette */
+.bg-blue-600, .bg-blue-700 { background-color: var(--studio-accent); }
+.from-blue-600 { --tw-gradient-from: #B4472B var(--tw-gradient-from-position); --tw-gradient-to: rgb(180 71 43 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.to-purple-600, .to-purple-700 { --tw-gradient-to: #4F6B4A var(--tw-gradient-to-position); }
+.bg-purple-600, .bg-purple-700 { background-color: var(--studio-accent-2); }
+.text-blue-600, .text-blue-700, .text-blue-800 { color: var(--studio-accent); }
+.text-purple-600, .text-purple-700 { color: var(--studio-accent-2); }
+.border-blue-200, .border-blue-300, .border-blue-400, .border-blue-600 { border-color: #E3B8A9; }
+.bg-blue-50, .bg-blue-100 { background-color: #FBEDE7; }
+.bg-purple-50, .bg-purple-100 { background-color: #EAF0E7; }
+html[data-theme="dark"] :is(.bg-blue-50, .bg-blue-100) { background-color: #3A1D14 !important; }
+html[data-theme="dark"] :is(.text-blue-600, .text-blue-700, .text-blue-800) { color: #F0B7A4 !important; }
+html[data-theme="dark"] :is(.bg-purple-50, .bg-purple-100) { background-color: #1F2B1D !important; }
+html[data-theme="dark"] :is(.text-purple-600, .text-purple-700) { color: #B7D2B1 !important; }
+html[data-theme="dark"] :is(.border-blue-200, .border-blue-300, .border-blue-400) { border-color: #6B3626 !important; }
+nav[aria-label="Main navigation"] a:focus-visible { outline-color: #F0B7A4; }
+input:focus-visible, textarea:focus-visible, select:focus-visible,
+button:focus-visible, a:focus-visible, summary:focus-visible, [role="button"]:focus-visible { outline-color: var(--studio-accent); }
+.theme-toggle { background: #2B211C; border-color: #5A4A40; }
+.theme-toggle:hover { background: #3D2F28; }
+
+/* Side-by-side safety: this ribbon marks the experimental build so it is never mistaken for production. */
+body::after {
+  content: "EXPERIMENT BUILD · test data only";
+  position: fixed; left: 12px; bottom: 12px; z-index: 60; pointer-events: none;
+  padding: 4px 10px; border-radius: 999px;
+  background: #4F6B4A; color: #fff; font: 600 11px/1.4 system-ui, sans-serif; letter-spacing: .04em;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}

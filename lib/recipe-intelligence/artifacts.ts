@@ -23,6 +23,21 @@ export function atomicWrite(root: string, relative: string, value: Buffer | stri
   try { fs.writeFileSync(handle, value); fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
   fs.renameSync(temp, target); return target;
 }
+
+const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, sixty: 60 };
+const CONVERSION = /(\d+(?:\.\d+)?)\s*°\s*([FC])\s*\(\s*(\d+(?:\.\d+)?)\s*°\s*([FC])\s*\)/gi;
+// A written step may add a correct °F/°C conversion or spell a duration as a word ("five minutes").
+// Both are normalised only for comparison; the writer's text is kept when the comparison then matches the source.
+export function canonicalStep(step: string, source: string): string {
+  let text = step.replace(CONVERSION, (whole, a, unitA, b, unitB) => {
+    if (unitA.toUpperCase() === unitB.toUpperCase()) return whole;
+    const [f, c] = unitA.toUpperCase() === "F" ? [Number(a), Number(b)] : [Number(b), Number(a)];
+    if (Math.abs((f - 32) * 5 / 9 - c) > 6) return whole; // wrong conversion: leave it to fail the number check
+    return source.includes(whole) ? whole : `${a}°${unitA.toUpperCase()}`;
+  });
+  text = text.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|sixty)\s+(seconds?|minutes?|hours?)\b/gi, (_m, word, unit) => `${NUMBER_WORDS[word.toLowerCase()]} ${unit}`);
+  return text;
+}
 export function validateArticle(raw: any, recipe: RecipeSnapshot, format: ArticleFormat = "compact_v1"): { article: Article; warnings: string[] } {
   const warnings: string[] = [];
   const text = (v: any, max: number) => typeof v === "string" ? v.replace(/<[^>]*>/g, "").trim().slice(0, max) : "";
@@ -45,8 +60,10 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
   if (article.instructions.length !== recipe.instructions.length) {
     warnings.push("Instruction count differed; supported source steps were retained."); article.instructions = [...recipe.instructions];
   } else article.instructions = article.instructions.map((step, i) => {
-    const expected = facts(recipe.instructions[i]), actual = facts(step);
-    if (numbers(step) !== numbers(recipe.instructions[i]) || expected.units !== actual.units || expected.methods.some(m => !actual.methods.includes(m)) || actual.methods.some(m => !expected.methods.includes(m))) {
+    // Experimental: compare against a canonical form so verified temperature conversions and spelled-out durations do not revert a rewritten step.
+    const comparable = canonicalStep(step, recipe.instructions[i]);
+    const expected = facts(recipe.instructions[i]), actual = facts(comparable);
+    if (numbers(comparable) !== numbers(recipe.instructions[i]) || expected.units !== actual.units || expected.methods.some(m => !actual.methods.includes(m)) || actual.methods.some(m => !expected.methods.includes(m))) {
       warnings.push(`Step ${i + 1} changed a numerical fact, unit or essential method; the supported source step was retained.`); return recipe.instructions[i];
     }
     return step;
