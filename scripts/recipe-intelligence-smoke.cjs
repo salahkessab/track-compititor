@@ -106,7 +106,7 @@ async function main() {
     await api(`reports/${report.jobId}/action`, 'POST', { action: 'pause' });
     const defaults = (await api('snapshot')).contentSettings;
     assert.equal(defaults.basis, 'original'); assert.equal(defaults.mode, 'full');
-    assert.equal(defaults.articleFormat, 'blog_1000_1200_v1');
+    assert.equal(defaults.articleFormat, 'master_recipe_v1');
     await api('content-settings', 'PATCH', { ...defaults, images: false, mode: 'before_articles' });
     assert.equal((await api('model-check')).configured, true);
     const checkDb = await IntelligenceStore.open(root);
@@ -116,7 +116,7 @@ async function main() {
     instance = await ready(start());
     assert.equal((await api(`reports/${report.jobId}`)).status, 'paused');
     assert.equal((await api('snapshot')).contentSettings.mode, 'before_articles');
-    assert.equal((await api('snapshot')).contentSettings.articleFormat, 'blog_1000_1200_v1');
+    assert.equal((await api('snapshot')).contentSettings.articleFormat, 'master_recipe_v1');
     console.log('PASS: historical reports and content defaults survive another launcher restart.');
     await stop();
     console.log('All Windows launcher smoke checks passed. No paid requests were made.');

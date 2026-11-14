@@ -10,10 +10,11 @@ test('packaged Chrome icons decode as PNG at their declared dimensions',async()=
   }
 });
 async function until(predicate) { for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('Extension UI did not settle'); }
-async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,windowState='normal',offline=false,sourceIsApp=false}={}) {
+async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,pageRecovery=false,windowState='normal',offline=false,sourceIsApp=false}={}) {
   const dom=new JSDOM(fs.readFileSync(path.join(directory,'capture.html'),'utf8'),{url:'https://extension.example/capture.html?sourceTab=11',runScripts:'outside-only'});
   const w=dom.window, calls=[],navigations=[],windowUpdates=[]; let uploads=0,stage='capturing',photos=[];
   const capture={url:'https://food.example/soup/',title:'Carrot soup',html:'<article><h1>Carrot soup</h1><p>The captured article.</p></article>',text:'Carrot soup\nA warm soup made from carrots, water and salt.',words:12,images:[{url:'https://cdn.example/soup.jpg',caption:'Carrot soup',alternatives:[]}],truncated:false};
+  if(pageRecovery) capture.images[0].url='https://food.example/soup.jpg';
   const appTab={id:22,url:'http://127.0.0.1:55543/?tab=recipe-intelligence',windowId:77};
   w.chrome={
     runtime:{getManifest:()=>JSON.parse(fs.readFileSync(path.join(directory,'manifest.json'),'utf8'))},
@@ -22,6 +23,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,wind
     storage:{local:{get:async()=>JSON.parse(JSON.stringify(storage)),set:async data=>Object.assign(storage,JSON.parse(JSON.stringify(data)))}},
     scripting:{executeScript:async options=>{
       if(options.files)return [{result:JSON.parse(JSON.stringify(capture))}];
+      if(options.func.name==='pagePhoto')return [{result:pageRecovery?{base64:'AQID',mime:'image/jpeg'}:null}];
       if(options.func.name==='renderedPhoto')return [{result:null}];
       assert.equal(options.world,'ISOLATED');const m=options.args[0];calls.push(m);
       if(m.op==='probe')return [{result:{ready:true,root:'E:\\Recipes'}}];
@@ -50,9 +52,9 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,wind
   const run=async()=>{button('import').click();await until(()=>!button('import').disabled&&(button('status').textContent.startsWith('Imported.')||button('status').textContent.startsWith('Import needs')));};
   return {w,calls,navigations,windowUpdates,storage,run,button,setOnline:()=>{offline=false;}};
 }
-test('extension preview imports image bytes, finishes before estimating, and opens the exact unpaid draft',async t=>{
+test('extension preview imports image bytes, finishes before estimating, and waits for manual library review',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.3\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.4\.1/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
@@ -60,11 +62,24 @@ test('extension preview imports image bytes, finishes before estimating, and ope
   const operations=screen.calls.map(m=>m.op).filter(op=>op!=='probe');
   assert.deepEqual(operations,['begin','photo','finish','estimate']);
   assert.equal(screen.calls.find(m=>m.op==='photo').base64,'AQID');
-  assert.match(screen.navigations[0].details.url,new RegExp(`view=batches&batchId=${batchId}`));
+  assert.equal(screen.navigations.length,0);
+  assert.equal(screen.windowUpdates.length,0);
+  screen.button('open').click();await until(()=>screen.navigations.length===1);
+  assert.match(screen.navigations[0].details.url,/view=batches$/);
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
-  assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/\$0.7100/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.3.0');
+  assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/No generation has started/);
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.4.1');
+  assert.ok(!screen.calls.some(c=>c.op==='approve'));
+});
+
+test('a direct 403 can recover from the source tab and uses those same bytes for preview and import',async t=>{
+  const screen=await ui(t,{downloadFailure:true,pageRecovery:true});
+  await until(()=>screen.button('photos').querySelector('img').hidden===false);
+  assert.equal(screen.button('photos').querySelector('img').src,'data:image/jpeg;base64,AQID');
+  await screen.run();
+  assert.equal(screen.calls.find(c=>c.op==='photo').base64,'AQID');
+  assert.equal(screen.storage.lastCapture.failed.length,0);
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 test('resuming an older capture explains that its original photo selection is preserved',async t=>{
@@ -78,14 +93,16 @@ test('resuming an older capture explains that its original photo selection is pr
 });
 test('opening generation restores a minimized app window and manual reopen does not approve or re-import',async t=>{
   const screen=await ui(t,{windowState:'minimized'});await screen.run();
+  assert.equal(screen.windowUpdates.length,0);
+  screen.button('open').click();await until(()=>screen.windowUpdates.length===1);
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true,state:'normal'}}]);
-  screen.button('open').click();await until(()=>screen.windowUpdates.length===2);
   assert.equal(screen.calls.filter(c=>c.op==='begin').length,1);
   assert.equal(screen.calls.filter(c=>c.op==='estimate').length,1);
   assert.equal(screen.calls.some(c=>c.op==='approve'),false);
 });
 test('opening generation preserves a maximized app window',async t=>{
   const screen=await ui(t,{windowState:'maximized'});await screen.run();
+  assert.equal(screen.windowUpdates.length,0);screen.button('open').click();await until(()=>screen.windowUpdates.length===1);
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
 });
 test('lost local connection keeps the capture ID and resumes without finalizing or quoting partial data',async t=>{

@@ -249,6 +249,35 @@ test('library approvals isolate one recipe and never start or charge the other r
  assert.equal(articleLibrary(f.batches,0,'no-such-title').total,0);
 });
 
+test('Generate uses a server cap, gates $2.50 and larger quotes, and keeps other articles unpaid',async t=>{
+ const {generateLibraryItem}=require('../.intelligence-build/lib/recipe-intelligence/library.js');
+ const f=await referenceFixture(t);const first=await f.upload(1),second=await f.upload(1,1);
+ const b=f.batches.create([{importId:first.id},{importId:second.id}],f.settings);
+ for(const model of [b.settings.textModel,b.settings.imageModel])f.store.db.prepare('INSERT OR REPLACE INTO model_checks(model,checked_at,metadata_json) VALUES(?,?,?)').run(model,new Date().toISOString(),JSON.stringify({documented:true,pricingMatches:true,account:'listed'}));
+ const quote={...b.quote,lines:b.items.map((item,index)=>({itemId:item.id,estimated:index?2.5:.5,reservation:index?3:1}))};
+ f.store.db.prepare('UPDATE content_batches SET quote_json=? WHERE id=?').run(JSON.stringify(quote),b.id);
+ const id=b.items[1].id;
+ const warning=generateLibraryItem(f.batches,id,quote.createdAt);
+ assert.equal(warning.confirmationRequired,true);assert.equal(warning.estimated,2.5);assert.equal(warning.limit,3);
+ assert.equal(f.batches.get(b.id).approved_at,null);assert.equal(f.providerCalls.length,0);
+ assert.throws(()=>generateLibraryItem(f.batches,id,'stale',true),/estimate changed/);
+ const low=generateLibraryItem(f.batches,b.items[0].id,quote.createdAt);
+ assert.equal(low.confirmationRequired,false);assert.equal(f.batches.get(low.batchId).limit_usd,1);
+ assert.equal(f.batches.get(b.id).approved_at,null);
+ const high=generateLibraryItem(f.batches,id,quote.createdAt,true);
+ assert.equal(high.confirmationRequired,false);assert.equal(f.batches.get(high.batchId).limit_usd,3);
+ assert.throws(()=>generateLibraryItem(f.batches,id,quote.createdAt,true),/already started/);
+});
+
+test('a low estimate with reservations reaching $2.50 still needs confirmation',async t=>{
+ const {generateLibraryItem}=require('../.intelligence-build/lib/recipe-intelligence/library.js');
+ const f=await referenceFixture(t),imported=await f.upload(1),b=f.batches.create([{importId:imported.id}],f.settings);
+ const quote={...b.quote,lines:[{itemId:b.items[0].id,estimated:1,reservation:2.5}]};
+ f.store.db.prepare('UPDATE content_batches SET quote_json=? WHERE id=?').run(JSON.stringify(quote),b.id);
+ assert.equal(generateLibraryItem(f.batches,b.items[0].id,quote.createdAt).confirmationRequired,true);
+ assert.equal(f.batches.get(b.id).approved_at,null);assert.equal(f.providerCalls.length,0);
+});
+
 test('library approval rejects changed photos without moving a recipe out of its batch',async t=>{
  const f=await referenceFixture(t);const first=await f.upload(2),second=await f.upload(1,3);const b=f.batches.create([{importId:first.id},{importId:second.id}],f.settings);
  f.imports.select(first.id,[first.photos[0].id]);

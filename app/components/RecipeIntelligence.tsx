@@ -1,5 +1,6 @@
 "use client";
 import { IntelligenceContent } from "./IntelligenceContent";
+import { WorkspaceError } from "./WorkspaceError";
 import { ArticleStorage } from './ArticleStorage';
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -144,12 +145,12 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><h1 className="studio-title text-2xl">Recipe Intelligence</h1><p className="mt-2 max-w-2xl text-sm text-gray-600">Paste a recipe URL, review the cost, and generate an article with images.</p></div>
       </div>
-      {enabled && snapshot && <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
+      {enabled && snapshot && (view === "settings" || ["websites", "reports"].includes(view) || snapshot.readOnly || !snapshot.worker.online) && <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
         {["websites", "reports"].includes(view) && <><span>{snapshot.sites.length} / 10 websites</span><span>{snapshot.sites.reduce((sum, site) => sum + site.urls, 0).toLocaleString()} discovered URLs</span></>}
         <span className={snapshot.worker.online ? "text-green-700" : "text-amber-700"}>{snapshot.readOnly ? "Recovery view · saved recipes available · generation paused" : snapshot.worker.online ? (snapshot.runtime === "server" ? "Cloud workspace ready · works while your computer is off" : "Ready · updates automatically") : snapshot.runtime === "server" ? "Server worker starting or offline" : "Worker starting or offline · use the Windows launcher"}</span>
       </div>}
     </div>
-    {error && <div role="alert" className="rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-700">{error}{snapshot && <button className={`${button} ml-3`} disabled={busy} onClick={() => void act(reload)}>Reconnect</button>}</div>}
+    {error && <div role="alert" className="rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-700"><WorkspaceError message={error} />{snapshot && <button className={`${button} ml-3`} disabled={busy} onClick={() => void act(reload)}>Reconnect</button>}</div>}
     {notice && <div role="status" className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 p-4 text-sm text-green-700">{notice}</div>}
     {enabled === null && !error && <p className="text-sm text-gray-600">Connecting to your workspace…</p>}
     {enabled === false && <><div className="studio-panel rounded-2xl border p-6"><h2 className="text-lg">Open the local application</h2><p className="mt-2 text-sm text-gray-600">Double-click Start Recipe Intelligence on your Windows PC. The launcher lets you choose a storage folder and opens this workspace. Your hosted recipe tools remain available here.</p></div><CaptureSetup /></>}
@@ -163,7 +164,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
       </nav>
       {["start", "settings"].includes(view) && <CaptureSetup local server={snapshot.runtime === "server"} />}
       {snapshot.readOnly && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Recovery view: you can open and download saved recipes. Generation and changes are paused while the local worker is being reviewed.</p>}
-      <ArticleStorage readOnly={!!snapshot.readOnly} />
+      <ArticleStorage readOnly={!!snapshot.readOnly} compact={view !== "settings"} />
       <IntelligenceContent key={contentEpoch} view={view} snapshot={snapshot} request={request} refresh={reload} navigate={navigate} active={active} />
       {view === "websites" && <>
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg">Your websites</h2><p className="mt-1 text-sm text-gray-600">Scan when you want, then use Find recipes to choose a publication date. Both steps are free.</p></div><button className={primary} disabled={busy || !snapshot.worker.online || !snapshot.sites.some(site => site.status === "active")} onClick={() => void scan()}>Scan all active websites</button></div>

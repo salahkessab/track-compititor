@@ -6,6 +6,25 @@ const ts = require('typescript');
 const { JSDOM } = require('jsdom');
 const React = require('react');
 
+test('Generate shows the server cost warning, cancellation is free, and confirmation is explicit', async t => {
+ const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
+ const row={id:'costly',batchId:'b',title:'Holiday menu',state:'queued',createdAt:'2026-11-12',canApprove:true,approved:false,estimated:2.5,suggestedLimit:3,quoteVersion:'v1',actual:0,held:0,photos:[],files:[]};
+ const calls=[];
+ const fetcher=async(url,init={})=>{
+  if(url.endsWith('/capabilities'))return Response.json({enabled:true});
+  if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,batches:[]});
+  if(url.includes('/library?'))return Response.json({rows:[row],total:1,pageSize:20});
+  if(url.endsWith('/items/costly/generate')){const body=JSON.parse(init.body);calls.push(body);if(body.confirmedHighCost){row.canApprove=false;row.approved=true;return Response.json({confirmationRequired:false});}return Response.json({confirmationRequired:true,estimated:2.5,limit:3,quoteVersion:'v1'});}
+  throw Error(url);
+ };fetcher.library=true;
+ const {root,Component,click}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
+ await React.act(async()=>root.render(React.createElement(Component,{active:true})));
+ assert.equal(calls.length,0);await click('Generate');assert.match(document.querySelector('[role=dialog]').textContent,/Maximum spend: \$3.00/);
+ await click('Keep for later');assert.equal(document.querySelector('[role=dialog]'),null);assert.equal(row.approved,false);
+ await click('Generate');await click('Generate — maximum $3.00');
+ assert.deepEqual(calls.map(c=>c.confirmedHighCost),[false,false,true]);assert.equal(row.approved,true);
+});
+
 test('article library shows reference/output previews and approves only the chosen row with its displayed cap', async t => {
   const settings=require('../.intelligence-build/lib/recipe-intelligence/settings.js').DEFAULT_CONTENT_SETTINGS;
   const calls=[];
@@ -17,21 +36,21 @@ test('article library shows reference/output previews and approves only the chos
     if(url.endsWith('/capabilities'))return Response.json({enabled:true});
     if(url.endsWith('/snapshot'))return Response.json({sites:[],runs:[],worker:{online:true},settings:{timezone:'Africa/Casablanca'},contentSettings:settings,batches:[]});
     if(url.includes('/library?'))return Response.json({rows,total:rows.length,page:0,pageSize:20});
-    if(url.endsWith('/items/one/approve-generation')){assert.deepEqual(JSON.parse(init.body),{limit:2.2,quoteVersion:'quote-v1'});rows[0].approved=true;rows[0].canApprove=false;rows[0].state='running';return Response.json({batchId:'isolated'});}
+    if(url.endsWith('/items/one/generate')){assert.deepEqual(JSON.parse(init.body),{quoteVersion:'quote-v1',confirmedHighCost:false});rows[0].approved=true;rows[0].canApprove=false;rows[0].state='running';return Response.json({batchId:'isolated'});}
     throw Error('Unexpected '+url);
   };fetcher.library=true;
   const {root,Component}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
   await React.act(async()=>root.render(React.createElement(Component,{active:true})));
   const first=document.querySelector('article[aria-label="Article: Corn orzo"]');
-  assert.ok(first);assert.match(first.textContent,/\$0\.90/);assert.match(first.textContent,/Maximum \$2\.20/);
+  assert.ok(first);assert.match(first.textContent,/\$0\.90/);assert.match(first.textContent,/\$2\.50/);
   assert.ok(first.querySelector('img[src$="one-ref"]'));
   assert.ok(document.querySelector('img[src*="/api/image-assets/"]'));
   assert.equal(first.querySelector('details').open,false);
   assert.equal(calls.filter(c=>c.init.method==='POST').length,0);
-  await React.act(async()=>[...first.querySelectorAll('button')].find(b=>b.textContent==='Approve & Generate').click());
+  await React.act(async()=>[...first.querySelectorAll('button')].find(b=>b.textContent==='Generate').click());
   assert.equal(calls.filter(c=>c.init.method==='POST').length,1);
   assert.equal(rows[1].approved,false);
-  assert.match(document.querySelector('article[aria-label="Article: Chicken soup"]').textContent,/Approve & Generate/);
+  assert.match(document.querySelector('article[aria-label="Article: Chicken soup"]').textContent,/Generate/);
 });
 
 test('library archives, restores and confirms deletion from the row while showing publication badges',async t=>{
@@ -88,6 +107,8 @@ test('library opens single and bulk scheduling controls without publishing on se
   const {root,Component,click}=await ui(t,fetcher,'http://127.0.0.1:34567/?tab=recipe-intelligence&view=batches');
   await React.act(async()=>root.render(React.createElement(Component,{active:true})));
   await click('Publish / schedule');assert.match(document.querySelector('[role=dialog]').textContent,/1 article/);await click('Close');
+  assert.equal(document.querySelector('[aria-label="Bulk publication actions"]'),null);
+  await React.act(async()=>document.querySelector('input[type=checkbox]').click());
   await click('Select saved articles on this page');await click('Schedule selected');
   assert.match(document.querySelector('[role=dialog]').textContent,/2 articles/);
   assert.equal(document.querySelectorAll('input[type=datetime-local]').length,2);
@@ -447,7 +468,7 @@ for (const lossless of [false,true]) test(`results prioritize article actions, e
   const repair = [...document.querySelectorAll('summary')].find(e => e.textContent === 'Processing details and repair').parentElement;
   assert.equal(repair.open, false);
   const retry = [...document.querySelectorAll('button')].find(e => e.textContent === 'Retry Edit photo 2');
-  assert.ok(retry); assert.equal(retry.closest('details').querySelector('summary').textContent, 'Article details and advanced actions');
+  assert.ok(retry); assert.equal(retry.closest('details').querySelector('summary').textContent, 'Article and images');
   assert.ok(![...document.querySelectorAll('button')].some(e => e.textContent === 'Retry Edit photo 3'));
   assert.match(document.body.textContent, /This request will not repeat automatically/);
   await click('Retry Edit photo 2');

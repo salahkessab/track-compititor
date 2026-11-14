@@ -1,10 +1,10 @@
-# Recipe Intelligence Capture 2.1.0
+# Recipe Intelligence Capture 2.4.1
 
 Capture a recipe article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
 
-Version 2.1.0 remembers the connected app address and storage folder, shows connection status before importing, and can reopen a closed app tab. A changed launcher port is detected from an open app tab for the same workspace. Captures are saved before connecting, so an offline app does not lose the pending import. The recipe photo filters and saved generation history are unchanged.
+Version 2.4.1 saves captures for review without switching you to the app. It remembers the connected app address and storage folder, shows connection status before importing, and can reopen a closed app tab. A changed launcher port is detected from an open app tab for the same workspace. Captures are saved before connecting, so an offline app does not lose the pending import. The recipe photo filters and saved generation history are unchanged.
 
-**Open generation screen** brings the local app's Chrome window to the front and restores it if minimized. The Generate button is in that local app, where the estimate is approved.
+**Review My articles** brings the local app's Chrome window to the front and restores it if minimized. The Generate button is in that local app, where each article starts only when you click Generate.
 
 ## Install once
 
@@ -17,19 +17,20 @@ Download the ZIP from **Recipe Intelligence → Use a recipe URL → Capture rec
 
 After updating files in this folder, click **Reload** on the extension's card and close old capture tabs before starting a new capture.
 
-Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.1.0** at the top. Old capture tabs and resumed imports keep their previously captured photos. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
+Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.4.1** at the top. Old capture tabs and resumed imports keep their previously captured photos. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
 
 ## Use
 
 1. Open the recipe in Chrome and wait for its article and images to appear. Scrolling through the recipe can load lazy photographs.
 2. Click **Recipe Intelligence Capture** in the toolbar. A capture preview opens in a separate tab.
-3. Click **Import and see estimate**. All discovered photos are selected; optionally uncheck any you do not want.
-4. Keep the capture tab open until it finishes. Your local app opens the estimate for this exact recipe.
-5. Review the cost and click **Generate article + images** in the app when ready.
+3. Click **Save to My articles**. All discovered photos are selected; optionally uncheck any you do not want.
+4. Keep the capture tab open until it finishes. The article is saved without starting generation or switching tabs. Continue collecting more recipes.
+5. When you finish collecting, click **Review My articles**. Review each article and its photos, then click **Generate**.
+6. Below $2.50 maximum expected spend, Generate starts that article directly. If the estimate or reserved maximum reaches $2.50, the app shows the cost and asks before starting. Existing budget enforcement remains active; a changed or expired quote must be reviewed again.
 
 No AI requests or charges occur during capture or import. The extension never approves a generation job.
 
-If the app disconnects, reopen it with the desktop shortcut and click **Reconnect**, then **Resume import and see estimate**. After closing a capture tab, open the extension again and choose **Resume previous import**. Only the last submitted capture is stored for recovery, including an import submitted while offline. Repeating an interrupted import uses the same capture ID, reuses its saved article, and skips photos already acknowledged by the app. A completed capture keeps its estimate ID; **Open generation screen** does not create another job or approve spending.
+If the app disconnects, reopen it with the desktop shortcut and click **Reconnect**, then **Resume saving**. After closing a capture tab, open the extension again and choose **Resume previous import**. Only the last submitted capture is stored for recovery, including an import submitted while offline. Repeating an interrupted import uses the same capture ID, reuses its saved article, and skips photos already acknowledged by the app. A completed capture keeps its estimate ID; **Review My articles** does not create another job or approve spending.
 
 ## What is captured
 
@@ -50,7 +51,7 @@ The extension connects to authenticated Recipe Intelligence tabs on HTTPS or `ht
 
 The Vercel studio can supply the extension download and setup instructions, but does not run the persistent worker. A configured HTTPS server workspace (including the InstaBox deployment) supports capture imports directly and works without the Windows worker. Open the intended workspace before connecting the extension.
 
-HTTP/HTTPS host access allows photographs to be fetched from the page's image CDN and lets the extension find the local app. There are no automatically running content scripts, remote executable scripts, analytics, third-party upload services, cookie permissions or externally callable extension endpoints. Direct photo downloads omit credentials and reject redirects. A fallback may copy an already rendered image only when Chrome permits canvas access.
+HTTP/HTTPS host access allows photographs to be fetched from the page's image CDN and lets the extension find the local app. There are no automatically running content scripts, remote executable scripts, analytics, third-party upload services, cookie permissions or externally callable extension endpoints. Direct photo downloads omit credentials and reject redirects. If a same-origin photo fails, version 2.4.1 can retry its listed URL from the unchanged recipe tab using normal same-origin browser credentials. Cookies are never read or transferred to the app. Access denials, redirects, cross-origin page requests and oversized responses remain blocked. A fallback may copy an already rendered image only when Chrome permits canvas access.
 
 The local connection uses an isolated script in the app tab and its existing HttpOnly session. The app's exact-origin and CSRF checks remain enabled; no permissive CORS rule is added. Browser captures stay outside the URL-fetch queue and cannot be estimated before the import finishes.
 

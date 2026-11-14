@@ -4,6 +4,23 @@ import type { BatchStore } from "./batches";
 function itemLines(batch: any, item: any) {
   return batch.quote.lines.filter((line: any) => line.itemId ? line.itemId === item.id : line.recipeId === item.recipe_id);
 }
+
+// A click starts only this article. Expensive quotes need a second, explicit
+// confirmation; the server computes the cap rather than trusting browser totals.
+export function generateLibraryItem(b: BatchStore, itemId: string, quoteVersion: string, confirmedHighCost = false) {
+  return b.store.db.transaction(() => {
+    const item = b.item(itemId), batch = b.detail(item.batch_id);
+    if (batch.approved_at) throw new Error('This article has already started. Open it to view progress.');
+    if (quoteVersion !== batch.quote.createdAt || item.state !== 'queued') throw new Error('The estimate changed. Refresh this article before generating.');
+    const lines = itemLines(batch, item);
+    if (!lines.length) throw new Error('Review the photos and prepare the estimate first.');
+    const estimated = lines.reduce((sum: number, line: any) => sum + line.estimated, 0);
+    const limit = Math.ceil(Math.max(estimated, lines.reduce((sum: number, line: any) => sum + line.reservation, 0)) * 100) / 100;
+    if (!Number.isFinite(limit) || limit <= 0 || limit > 1000) throw new Error('This estimate is unavailable. Refresh it before generating.');
+    if (Math.max(estimated, limit) >= 2.5 && confirmedHighCost !== true) return { confirmationRequired: true as const, estimated, limit, quoteVersion };
+    return { ...approveLibraryItem(b, itemId, limit, quoteVersion), confirmationRequired: false as const };
+  }).immediate();
+}
 export function archiveLibraryItem(b: BatchStore, id: string, archived: unknown) {
   if (typeof archived !== 'boolean') throw new Error('Choose Archive or Restore.');
   return b.store.db.transaction(() => {

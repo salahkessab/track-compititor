@@ -63,6 +63,43 @@
     return null;
   }
 
+  // Serialized into the original tab: use its ordinary same-origin request
+  // context, without transferring cookies or bypassing CORS/access challenges.
+  async function pagePhoto(url, pageUrl) {
+    const current = new URL(location.href), captured = new URL(pageUrl);
+    current.hash = ''; captured.hash = '';
+    if (current.href !== captured.href) return null;
+    const target = new URL(url);
+    if (target.origin !== current.origin || target.username || target.password || !/^https?:$/.test(target.protocol)) return null;
+    const present = [...document.images].some(img =>
+      [img.currentSrc, img.src, img.getAttribute('data-src'), img.getAttribute('data-lazy-src'),
+        ...(img.getAttribute('srcset') || '').split(',').map(part => part.trim().split(/\s+/)[0])]
+        .filter(Boolean).some(value => { try { return new URL(value, location.href).href === target.href; } catch { return false; } }));
+    if (!present) return null;
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(target.href, {credentials:'same-origin', mode:'same-origin', redirect:'error', signal:controller.signal});
+      if (!response.ok) return null;
+      const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (!mime.startsWith('image/') || Number(response.headers.get('content-length')) > 10485760) return null;
+      const reader = response.body?.getReader(); if (!reader) return null;
+      const chunks = []; let size = 0;
+      try {
+        while (true) {
+          const {done,value} = await reader.read(); if (done) break;
+          size += value.length; if (size > 10485760) return null;
+          chunks.push(value);
+        }
+      } finally { await reader.cancel().catch(() => {}); }
+      if (!size) return null;
+      const bytes = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 32768) binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+      return {base64:btoa(binary), mime};
+    } catch { return null; } finally { clearTimeout(timer); }
+  }
+
   async function fetchPhoto(url, fetcher = fetch) {
     publicImageUrl(url);
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
@@ -80,7 +117,7 @@
       return new Blob(chunks, {type:response.headers.get('content-type')?.split(';')[0] || 'application/octet-stream'});
     } finally { clearTimeout(timer); }
   }
-  const helpers = {publicImageUrl,appBridge,renderedPhoto,fetchPhoto};
+  const helpers = {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto};
   root.CaptureHelpers = helpers;
   if (typeof module !== 'undefined') module.exports = helpers;
 })(globalThis);

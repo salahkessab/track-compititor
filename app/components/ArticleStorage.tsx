@@ -10,7 +10,7 @@ async function request(route = '', method = 'GET', body?: unknown) {
   const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Could not update article storage.'); return data;
 }
 const button = 'rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed';
-export function ArticleStorage({ readOnly = false }: { readOnly?: boolean }) {
+export function ArticleStorage({ readOnly = false, compact = false }: { readOnly?: boolean; compact?: boolean }) {
   const [summary, setSummary] = useState<Summary | null>(null), [preview, setPreview] = useState<Preview | null>(null);
   const [storage, setStorage] = useState<DiskStorage | null>(null);
   const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
@@ -45,6 +45,7 @@ export function ArticleStorage({ readOnly = false }: { readOnly?: boolean }) {
     } catch (e) { setError((e as Error).message); setConfirmed(false); setPreview(null); }
     finally { setBusy(false); }
   }
+  if (compact) return storage?.status === 'available' && storage.usedPercent >= 80 ? <aside role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">Storage is {Math.floor(storage.usedPercent)}% full. <a className="underline" href="/?tab=recipe-intelligence&view=settings">Manage storage in Settings</a></aside> : null;
   return <section aria-label="Article storage" className="rounded-2xl border border-gray-200 bg-white p-5 text-gray-900 space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-4"><div>
       <h2 className="text-lg font-semibold">Stored articles <span className="ml-2 rounded-lg bg-blue-50 px-3 py-1 text-blue-700" aria-live="polite">{summary?.total ?? '…'}</span></h2>

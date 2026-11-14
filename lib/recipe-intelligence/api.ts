@@ -1,4 +1,4 @@
-import { articleLibrary, approveLibraryItem, archiveLibraryItem } from "./library";
+import { articleLibrary, approveLibraryItem, archiveLibraryItem, generateLibraryItem } from "./library";
 import { DecorStore } from './decor';
 import { timingSafeEqual } from "node:crypto";
 import { IntelligenceStore } from "./database";
@@ -227,6 +227,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     if (area === "model-check" && request.method === "GET") return json({ configured: credentials.status().configured, checks: (database.db.prepare("SELECT * FROM model_checks").all() as any[]).map(r => ({ ...JSON.parse(r.metadata_json), productionConfirmedAt: r.production_confirmed_at })) });
     if (area === "library" && request.method === "GET") return json(articleLibrary(batches, Number(url.searchParams.get("page") || 0), url.searchParams.get("search") || "", url.searchParams.get("archived") === "1"));
     if (area === "items" && id && child === "archive" && request.method === "PATCH") { const data = await body(request); return json(archiveLibraryItem(batches, id, data.archived)); }
+    if (area === "items" && id && child === "generate" && request.method === "POST") { const data = await body(request); const item = batches.item(id); await checkModels(database, JSON.parse(batches.get(item.batch_id).settings_json)); return json(generateLibraryItem(batches, id, data.quoteVersion, data.confirmedHighCost === true)); }
     if (area === "items" && id && child === "approve-generation" && request.method === "POST") { const data = await body(request); const item = batches.item(id); await checkModels(database, JSON.parse(batches.get(item.batch_id).settings_json)); return json(approveLibraryItem(batches, id, data.limit, data.quoteVersion)); }
     if (area === "batches" && !id && request.method === "POST") { const data = await body(request); return json(batches.create(data.selections, data.settings || {}), 201); }
     if (area === "batches" && id && !child && request.method === "GET") return json(batches.detail(id));

@@ -13,62 +13,57 @@ export function WordPressPublishDialog({ items, connections, timezone, initialSt
   const [reviews, setReviews] = useState<Record<string, any>>({});
   const [results, setResults] = useState<Record<string, any>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false), [progress, setProgress] = useState('');
+  const [busy, setBusy] = useState(false), [progress, setProgress] = useState('');
   const lock = useRef(false);
-  const destination = connections.find(c => c.id === target)?.siteUrl || '';
-  const ready = items.filter(i => reviews[i.id] && !results[i.id]);
-  const publicAction = ready.some(i => choices[i.id].status !== 'draft');
+  const pending = items.filter(i => !results[i.id]);
   function change(id: string, patch: Partial<{ status: Mode; local: string }>) {
-    setChoices(old => ({ ...old, [id]: { ...old[id], ...patch } })); setConfirmed(false);
+    setChoices(old => ({ ...old, [id]: { ...old[id], ...patch } }));
+    setErrors(old => { const next = { ...old }; delete next[id]; return next; });
   }
-  function validation(id: string): string {
-    const choice = choices[id], review = reviews[id];
+  function validation(id: string, review = reviews[id]): string {
+    const choice = choices[id];
     if (choice.status !== 'draft' && review && !review.profile.canPublish) return 'This WordPress account can save drafts only.';
     if (choice.status !== 'future') return '';
     if (review && !review.profile.scheduling) return 'Update Recipe Intelligence Bridge to 1.2 or newer on this website to schedule.';
     try { validateSchedule(scheduleFromLocal(choice.local, timezone)); return ''; } catch (e) { return (e as Error).message; }
   }
-  async function prepare() {
-    if (!target || lock.current) return; lock.current = true; setBusy(true); setConfirmed(false); setErrors({});
-    const prepared: Record<string, any> = {};
+  async function send() {
+    if (!target || lock.current || !pending.length) return;
+    lock.current = true; setBusy(true); setErrors({});
     try {
-      for (const [index, item] of items.entries()) {
-        if (results[item.id]) continue;
+      for (const [index, item] of pending.entries()) {
         try {
-          setProgress(`Preparing ${index + 1}/${items.length}: ${item.title}`);
+          const problem = validation(item.id);
+          if (problem) throw new Error(problem);
+          setProgress(`Preparing ${index + 1}/${pending.length}: ${item.title}`);
           const route = `items/${item.id}/wordpress-publish?connectionId=${encodeURIComponent(target)}`;
           const plan = await request(route);
           if (!plan.profile.ready) throw new Error('Choose a supported recipe card in this website’s WordPress settings.');
+          const permissionProblem = validation(item.id, plan);
+          if (permissionProblem) throw new Error(permissionProblem);
           for (const [n, image] of plan.images.entries()) {
             if (image.state === 'ready') continue;
             setProgress(`${item.title}: uploading image ${n + 1}/${plan.images.length}`);
             await request(`items/${item.id}/wordpress`, 'POST', { connectionId: target, documentHash: plan.documentHash, sha256: image.sha256 });
           }
           const review = await request(route);
-          if (!review.ready || review.documentHash !== plan.documentHash) throw new Error('Article changed during preparation. Prepare again to review the latest version.');
-          prepared[item.id] = review;
-        } catch (e) { setErrors(old => ({ ...old, [item.id]: e instanceof Error ? e.message : 'Preparation failed.' })); }
-      }
-      setReviews(prepared); setProgress('Preparation finished. Review each article, destination and publication time before sending.');
-    } finally { lock.current = false; setBusy(false); }
-  }
-  async function send() {
-    if (lock.current || !ready.length || publicAction && !confirmed || ready.some(i => validation(i.id))) return;
-    lock.current = true; setBusy(true);
-    try {
-      for (const [index, item] of ready.entries()) {
-        setProgress(`Sending ${index + 1}/${ready.length}: ${item.title}`);
-        try {
+          setReviews(old => ({ ...old, [item.id]: review }));
+          if (!review.ready || review.documentHash !== plan.documentHash) throw new Error('Article changed during preparation. Retry to send the latest version.');
+          const finalProblem = validation(item.id, review);
+          if (finalProblem) throw new Error(finalProblem);
+          setProgress(`Sending ${index + 1}/${pending.length}: ${item.title}`);
           const choice = choices[item.id];
           const scheduledAt = choice.status === 'future' ? validateSchedule(scheduleFromLocal(choice.local, timezone)) : undefined;
-          const saved = await request(`items/${item.id}/wordpress-publish`, 'POST', { connectionId: target, reviewHash: reviews[item.id].reviewHash, status: choice.status, confirmPublish: choice.status === 'publish' && confirmed, ...(scheduledAt ? { scheduledAt, confirmSchedule: confirmed } : {}) });
+          // The explicit Send click authorizes the selected actions. Keep the
+          // server's fresh review hash and idempotency checks intact.
+          const saved = await request(`items/${item.id}/wordpress-publish`, 'POST', { connectionId: target, reviewHash: review.reviewHash, status: choice.status, confirmPublish: choice.status === 'publish', ...(scheduledAt ? { scheduledAt, confirmSchedule: true } : {}) });
           setResults(old => ({ ...old, [item.id]: saved }));
           setErrors(old => { const next = { ...old }; delete next[item.id]; return next; });
         } catch (e) { setErrors(old => ({ ...old, [item.id]: e instanceof Error ? e.message : 'Send could not be confirmed. Check the saved post before retrying.' })); }
       }
       setProgress('Sending finished. Each article’s confirmed result is shown below. Failed or unconfirmed rows were not marked as published.');
       try { await refresh(); } catch { setProgress('Sends finished. Results below are retained; refresh the library when its connection returns.'); }
-    } finally { lock.current = false; setBusy(false); setConfirmed(false); }
+    } finally { lock.current = false; setBusy(false); }
   }
   async function check(id: string) {
     if (lock.current) return; lock.current = true; setBusy(true);
@@ -82,10 +77,10 @@ export function WordPressPublishDialog({ items, connections, timezone, initialSt
   }
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><section role="dialog" aria-modal="true" aria-label="Publish articles to WordPress" className="max-h-[90vh] w-full max-w-4xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6 text-gray-900 shadow-xl">
     <div className="flex items-center justify-between gap-4"><h2 className="text-xl font-semibold">Publish or schedule · {items.length} article{items.length === 1 ? '' : 's'}</h2><button className={button} disabled={busy} onClick={close}>Close</button></div>
-    <label className="block text-sm">WordPress destination<select className={`${input} mt-1 w-full`} value={target} disabled={busy || Object.keys(results).length > 0} onChange={e => { setTarget(e.target.value); setReviews({}); setErrors({}); setConfirmed(false); setProgress(''); }}><option value="">Choose a website</option>{connections.map(c => <option value={c.id} key={c.id}>{c.siteUrl}</option>)}</select></label>
+    <label className="block text-sm">WordPress destination<select className={`${input} mt-1 w-full`} value={target} disabled={busy || Object.keys(results).length > 0} onChange={e => { setTarget(e.target.value); setReviews({}); setErrors({}); setProgress(''); }}><option value="">Choose a website</option>{connections.map(c => <option value={c.id} key={c.id}>{c.siteUrl}</option>)}</select></label>
     {!connections.length && <p role="alert">Connect a WordPress website in Settings first.</p>}
     <p className="text-sm text-gray-600">Publication times use <strong>{timezone}</strong>. WordPress stores the schedule, so your computer can be off after the scheduled post is confirmed. Publishing on time depends on your website’s WP-Cron or hosting cron.</p>
-    <p className="text-sm text-gray-600">Preparation uploads saved generated images. It does not create posts or generate new content. Keep this window open until every send is confirmed.</p>
+    <p className="text-sm text-gray-600">Choose each action, then click Send. Images upload automatically before publishing or scheduling. Keep this window open until sending finishes. A row with an invalid time is skipped; other articles can still send.</p>
     {items.map(item => {
       const choice = choices[item.id], review = reviews[item.id], saved = results[item.id], problem = validation(item.id);
       return <article key={item.id} aria-label={`Publish ${item.title}`} className="space-y-3 rounded-xl border border-gray-200 p-4"><h3 className="font-semibold">{review?.title || item.title}</h3>
@@ -97,7 +92,6 @@ export function WordPressPublishDialog({ items, connections, timezone, initialSt
       </article>;
     })}
     {progress && <p role="status" className="text-sm text-blue-700">{progress}</p>}
-    <div className="flex flex-wrap gap-3"><button className={button} disabled={busy || !target || items.every(i => results[i.id])} onClick={() => void prepare()}>Prepare articles and upload images</button></div>
-    {!!ready.length && <div className="space-y-3 border-t border-gray-200 pt-4">{publicAction && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)} />I confirm the actions and individual publication times above for {destination}.</label>}<button className={`${button} !bg-blue-600 font-semibold`} disabled={busy || publicAction && !confirmed || ready.some(i => validation(i.id))} onClick={() => void send()}>Send {ready.length} ready article{ready.length === 1 ? '' : 's'}</button></div>}
+    {!!pending.length && <button className={`${button} !bg-blue-600 font-semibold`} disabled={busy || !target} onClick={() => void send()}>{busy ? 'Sending…' : `Send ${pending.length} article${pending.length === 1 ? '' : 's'}`}</button>}
   </section></div>;
 }

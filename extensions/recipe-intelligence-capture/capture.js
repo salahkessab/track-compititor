@@ -1,4 +1,4 @@
-const {publicImageUrl,appBridge,renderedPhoto,fetchPhoto} = CaptureHelpers;
+const {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto} = CaptureHelpers;
 const connection = CaptureConnection.createConnection(chrome,appBridge);
 const $ = id => document.getElementById(id);
 const extensionVersion = chrome.runtime.getManifest().version;
@@ -77,7 +77,7 @@ function render() {
   for (const failed of job.failed || []) warn(`Photo ${failed.index+1}: ${failed.message}`);
   $('import').disabled = false;
   $('import').hidden = !!job.done; $('open').hidden = !job.done; $('next').hidden = !job.done;
-  $('import').textContent = job.started ? 'Resume import and see estimate' : 'Import and see estimate';
+  $('import').textContent = job.started ? 'Resume saving' : 'Save to My articles';
 }
 function warn(message) { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); }
 async function capturePage() {
@@ -130,6 +130,15 @@ async function getPhoto(photo, captureJob = job) {
     const source = await chrome.tabs.get(captureJob.sourceTab);
     const current = new URL(source.url), captured = new URL(captureJob.capture.url); current.hash = ''; captured.hash = '';
     if (current.href !== captured.href) throw new Error('The source tab has navigated away from this recipe.');
+    for (const url of [...new Set([photo.url,...photo.alternatives])]) {
+      if (new URL(url).origin !== captured.origin) continue;
+      const [pageResult] = await chrome.scripting.executeScript({target:{tabId:captureJob.sourceTab},func:pagePhoto,args:[url,captureJob.capture.url]});
+      const data = pageResult?.result;
+      if (data?.base64 && data.base64.length <= 14000000) {
+        try { return await normalizedPhoto(new Blob([Uint8Array.from(atob(data.base64), c => c.charCodeAt(0))], {type:data.mime})); }
+        catch { /* Try another actual image URL or decoded source pixels. */ }
+      }
+    }
     const [result] = await chrome.scripting.executeScript({target:{tabId:captureJob.sourceTab},func:renderedPhoto,args:[[photo.url,...photo.alternatives]]});
     if (result?.result && result.result.length <= 14000000) return {base64:result.result,mime:'image/jpeg'};
   } catch { /* Source tab closed or pixels are unavailable. */ }
@@ -143,7 +152,7 @@ async function importRecipe() {
       if (!lock) throw new Error('Another capture tab is importing. Let it finish first.');
       // Persist even when the app is offline, before trying any connection.
       job.pending = true; await save();
-      status('Connecting to your local workspace…'); await findApp();
+      status('Connecting to your workspace…'); await findApp();
       if (job.workspaceRoot && job.workspaceRoot !== app.root) throw new Error('This capture belongs to another storage folder. Open the original workspace to resume it.');
       // Save before the first request, so any interrupted import can be resumed.
       job.started = true; job.workspaceRoot = app.root; await save(); render(); $('import').disabled = true;
@@ -167,9 +176,9 @@ async function importRecipe() {
       const batch = await bridge(app,{op:'estimate',id:job.id});
       if (!/^[a-f0-9-]{36}$/i.test(batch.id)) throw new Error('The app returned an invalid estimate.');
       job.batchId = batch.id; job.appOrigin = app.origin; job.done = true; job.pending = false; await save(); render();
-      $('result').textContent = `Saved the recipe and ${imported.photos.filter(p=>p.state==='ready').length} photos. Estimated cost: $${Number(batch.quote.estimated).toFixed(4)}. No generation has started.`;
-      status('Imported. Your estimate is ready.'); $('open').hidden = false; $('next').hidden = false; $('import').hidden = true;
-      await openEstimate();
+      $('result').textContent = `Saved the recipe and ${imported.photos.filter(p=>p.state==='ready').length} photos. Finish collecting recipes, then review them in My articles. No generation has started.`;
+      status('Imported. Saved for your review.'); $('open').hidden = false; $('next').hidden = false; $('import').hidden = true;
+      // Stay here so the user can finish collecting recipes before review.
     });
   } catch (e) { status('Import needs your attention. Your saved progress is kept.'); showError(e); }
   finally { busy = false; $('import').disabled = false; $('resume').disabled = false; connectionControls(false); }
@@ -178,7 +187,7 @@ async function openEstimate() {
   if (!job?.batchId) return;
   await findApp();
   if (app.root !== job.workspaceRoot) throw new Error('Open the workspace that received this capture.');
-  await connection.focus(app,`${app.origin}/?tab=recipe-intelligence&view=batches&batchId=${encodeURIComponent(job.batchId)}`);
+  await connection.focus(app,`${app.origin}/?tab=recipe-intelligence&view=batches`);
 }
 $('connect').onclick = () => void findApp().catch(()=>{});
 $('save-connection').onclick = () => void findApp({origin:$('app-url').value}).catch(()=>{});

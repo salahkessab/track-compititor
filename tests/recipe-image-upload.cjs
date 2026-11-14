@@ -44,6 +44,13 @@ test('Image to Image accepts and replaces a dropped photo, validates files, and 
   const { RecipeImageToImage } = loadComponent(path.resolve(__dirname, '../app/components/RecipeImageToImage.tsx'));
   const root = createRoot(document.getElementById('root'));
   const settle = () => new Promise(resolve => setTimeout(resolve, 25));
+  async function waitForPreparation() {
+    const deadline = Date.now() + 5000;
+    while (document.body.textContent.includes('Preparing photo') && Date.now() < deadline) {
+      await React.act(async () => { await settle(); });
+    }
+    assert.doesNotMatch(document.body.textContent, /Preparing photo/, 'photo preparation completes');
+  }
   const dragEvent = (type, files = []) => {
     const event = new dom.window.Event(type, { bubbles: true, cancelable: true });
     Object.defineProperty(event, 'dataTransfer', { value: { files, dropEffect: 'none' } });
@@ -69,6 +76,7 @@ test('Image to Image accepts and replaces a dropped photo, validates files, and 
     const first = new dom.window.File(['image data'], 'soup.png', { type: 'image/png' });
     const drop = dragEvent('drop', [first]);
     await React.act(async () => { zone.dispatchEvent(drop); await settle(); });
+    await waitForPreparation();
     assert.equal(drop.defaultPrevented, true);
     assert.ok(document.querySelector('img[alt="Original uploaded food"]'));
     assert.match(document.body.textContent, /soup\.png/);
@@ -77,6 +85,7 @@ test('Image to Image accepts and replaces a dropped photo, validates files, and 
 
     const second = new dom.window.File(['another image'], 'salad.jpg', { type: 'image/jpeg' });
     await React.act(async () => { zone.dispatchEvent(dragEvent('drop', [second])); await settle(); });
+    await waitForPreparation();
     assert.match(document.body.textContent, /salad\.jpg/);
     assert.doesNotMatch(document.body.textContent, /soup\.png/);
     assert.equal(document.querySelector('textarea').value, '');
@@ -100,12 +109,14 @@ test('Image to Image accepts and replaces a dropped photo, validates files, and 
     assert.equal(pickerClicks, 2);
     Object.defineProperty(picker, 'files', { configurable: true, value: [first] });
     await React.act(async () => { picker.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await settle(); });
+    await waitForPreparation();
     assert.equal(document.querySelector('textarea').value, '', 'Browse Files also resets instructions after a successful replacement');
     await React.act(async () => setInstructions('Remove the photo'));
     await React.act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'Remove photo').click());
     assert.equal(document.querySelector('textarea').value, '');
     await React.act(async () => setInstructions('Instructions before uploading again'));
     await React.act(async () => { zone.dispatchEvent(dragEvent('drop', [first])); await settle(); });
+    await waitForPreparation();
     assert.equal(document.querySelector('textarea').value, 'Instructions before uploading again');
   } finally {
     await React.act(async () => root.unmount());
