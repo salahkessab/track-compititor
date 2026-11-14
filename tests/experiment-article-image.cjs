@@ -38,6 +38,12 @@ test('the wording guide asks for a second-person guide voice and forbids invente
   assert.match(MASTER_STYLE_ADDENDUM, /add no quantity, time, temperature, ingredient, substitution or doneness cue/);
 });
 
+test('the reference style is described without copyable text and excludes unverifiable claims', () => {
+  assert.match(MASTER_STYLE_ADDENDUM, /described, never to be copied or quoted/);
+  assert.match(MASTER_STYLE_ADDENDUM, /reader reviews or quotes, ratings and personal anecdotes/);
+  assert.doesNotMatch(MASTER_STYLE_ADDENDUM, /holiday table|mashed potatoes|Delish/i);
+});
+
 test('article reasoning stays off by default and is only raised by the experiment switch', () => {
   const { writingPayload, articleReasoningEffort } = require('../.intelligence-build/lib/recipe-intelligence/prompts.js');
   const { DEFAULT_CONTENT_SETTINGS } = require('../.intelligence-build/lib/recipe-intelligence/settings.js');

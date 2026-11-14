@@ -48,3 +48,14 @@ node --test tests/experiment-article-image.cjs
 3. 2-in-1 with two photos: both photos' foods present, base scene from photo 1.
 4. One recipe article: how many steps are original wording vs copied source wording; sentence rhythm and openings.
 5. The look of every tab in light and dark mode.
+
+## Experimental switches for article writing (off by default)
+
+Set these in the environment before `node scripts/run-experiment.cjs --allow-paid`. They only affect this experiment.
+
+| Switch | Effect |
+|---|---|
+| `EXPERIMENT_ARTICLE_REASONING=low` or `medium` | The article writer plans before drafting. More detail, higher cost (about $0.24 per article in our test instead of $0.17). |
+| `EXPERIMENT_LEAN_ARTICLE=1` | Lean layout: introduction, then ingredients and instructions (the recipe card), then tips. The prompt asks for a short introduction in the reference style and leaves the long optional sections empty. Step photographs are not placed in this layout. |
+
+Both keep every fact rule: the writer cannot invent ingredients, quantities, times, temperatures, experience, testing or reader reviews, and the style guidance is described in our own words, never copied from any website.

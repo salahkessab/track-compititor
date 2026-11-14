@@ -71,7 +71,9 @@ export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[
   return blog;
 }
 
-export type ArticleImage = { kind: "featured" | "alternate" | "pinterest" | "reference"; placement?: string; stepIndex?: number | null; caption?: string; dataUri: string; fileName: string; width: number; height: number };
+// Experiment switch: EXPERIMENT_LEAN_ARTICLE=1 renders introduction, ingredients, instructions, tips. Unset keeps the current layout.
+export const leanLayout = () => process.env.EXPERIMENT_LEAN_ARTICLE === "1";
+export type ArticleImage ={ kind: "featured" | "alternate" | "pinterest" | "reference"; placement?: string; stepIndex?: number | null; caption?: string; dataUri: string; fileName: string; width: number; height: number };
 export function articleDocument(article: Article, recipe: RecipeSnapshot, images: ArticleImage[] = []) {
   const html: string[] = []; const text: string[] = []; const markdown: string[] = [];
   const master = article.format === "master_recipe_v1";
@@ -100,7 +102,18 @@ export function articleDocument(article: Article, recipe: RecipeSnapshot, images
   };
   const section = (title: string, claims: SupportedText[], bullets = false) => { if (claims.length) { heading(title); if (bullets) list(claims.map(v => v.text)); else claims.forEach(v => paragraphs(v.text)); } };
   const facts = () => { const rows = recipeFacts(recipe, !!blog); html.push(`<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(prose(v))}</dd>`).join("")}</dl>`); text.push(rows.map(([k,v]) => `${k}: ${prose(v)}`).join("\n")); markdown.push(rows.map(([k,v]) => `${k}: ${prose(v)}`).join("\n\n")); };
-  if (master && blog) {
+  if (master && blog && leanLayout()) {
+    // Experimental lean layout: introduction, then ingredients and method inside the recipe card, then tips.
+    // Optional sections the writer was told to leave empty are skipped; step photographs are not placed in this layout.
+    heading(title, 1); photograph("featured"); references("hero"); paragraphs(article.introduction);
+    html.push('<section data-ri-recipe-card="1">');
+    facts(); heading("Ingredients"); list(recipe.ingredients.map(publicationIngredient)); references("ingredients");
+    heading("Instructions"); list(article.instructions, true);
+    html.push('</section>');
+    photograph("alternate");
+    section("Tips for the Best Results", blog.proTips, true);
+    section("Storage", blog.storage);
+  } else if (master && blog) {
     heading(title, 1); photograph("featured"); references("hero"); paragraphs(article.introduction);
     section("What Makes This Recipe Special", blog.whyMake);
     heading("Ingredients and Why They Work");
