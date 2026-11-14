@@ -61,4 +61,6 @@ test('the prompt gains the lean layout rules only when the switch is on, and fac
   assert.match(on, /every fact rule still applies/);
   assert.match(on, /Leave these empty: whyMake, ingredientNotes, timeNote, variations, serving and faqs/);
   assert.match(on, /UNTRUSTED REFERENCE DATA/);
+  assert.match(on, /FIRST tie the recipe to its occasion/);
+  assert.match(on, /Do not invent traditions, history, family memories or statistics/);
 });
