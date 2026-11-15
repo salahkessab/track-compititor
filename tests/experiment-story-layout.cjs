@@ -82,3 +82,10 @@ test('default layout and prompt are unchanged when the switch is off', () => off
   assert.match(rendered.html, /Complete Recipe Card/);
   assert.ok(!articlePrompt(recipe, undefined, format).includes('STORY LAYOUT'));
 }));
+
+test('story prompt requires the scene paragraph and a self-check; correction may add length', () => story(() => {
+  const recipe = source();
+  assert.match(articlePrompt(recipe, undefined, format), /scene paragraph is REQUIRED/);
+  assert.match(articlePrompt(recipe, undefined, format), /Before returning, check the introduction/);
+  assert.match(articlePrompt(recipe, { draft: {}, warnings: ['short'] }, format), /reach the story length target/);
+}));
