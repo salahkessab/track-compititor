@@ -7,7 +7,8 @@ import { storagePath } from "./paths";
 import { IntelligenceStore } from "./database";
 import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
-import { andText, articleDocument, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
+import { storyWordTarget } from "./prompts";
+import { andText, articleDocument, storyLayout, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
 import { linkedArtifact } from './internalLinkState';
 import { IMAGE_STORAGE_VERSION, GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
@@ -22,6 +23,21 @@ export function atomicWrite(root: string, relative: string, value: Buffer | stri
   const temp = `${target}.${randomUUID()}.tmp`; const handle = fs.openSync(temp, "wx");
   try { fs.writeFileSync(handle, value); fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
   fs.renameSync(temp, target); return target;
+}
+
+const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, sixty: 60 };
+const CONVERSION = /(\d+(?:\.\d+)?)\s*°\s*([FC])\s*\(\s*(\d+(?:\.\d+)?)\s*°\s*([FC])\s*\)/gi;
+// A written step may add a correct °F/°C conversion or spell a duration as a word ("five minutes").
+// Both are normalised only for comparison; the writer's text is kept when the comparison then matches the source.
+export function canonicalStep(step: string, source: string): string {
+  let text = step.replace(CONVERSION, (whole, a, unitA, b, unitB) => {
+    if (unitA.toUpperCase() === unitB.toUpperCase()) return whole;
+    const [f, c] = unitA.toUpperCase() === "F" ? [Number(a), Number(b)] : [Number(b), Number(a)];
+    if (Math.abs((f - 32) * 5 / 9 - c) > 6) return whole; // wrong conversion: leave it to fail the number check
+    return source.includes(whole) ? whole : `${a}°${unitA.toUpperCase()}`;
+  });
+  text = text.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|sixty)\s+(seconds?|minutes?|hours?)\b/gi, (_m, word, unit) => `${NUMBER_WORDS[word.toLowerCase()]} ${unit}`);
+  return text;
 }
 export function validateArticle(raw: any, recipe: RecipeSnapshot, format: ArticleFormat = "compact_v1"): { article: Article; warnings: string[] } {
   const warnings: string[] = [];
@@ -45,8 +61,10 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
   if (article.instructions.length !== recipe.instructions.length) {
     warnings.push("Instruction count differed; supported source steps were retained."); article.instructions = [...recipe.instructions];
   } else article.instructions = article.instructions.map((step, i) => {
-    const expected = facts(recipe.instructions[i]), actual = facts(step);
-    if (numbers(step) !== numbers(recipe.instructions[i]) || expected.units !== actual.units || expected.methods.some(m => !actual.methods.includes(m)) || actual.methods.some(m => !expected.methods.includes(m))) {
+    // Experimental: compare against a canonical form so verified temperature conversions and spelled-out durations do not revert a rewritten step.
+    const comparable = canonicalStep(step, recipe.instructions[i]);
+    const expected = facts(recipe.instructions[i]), actual = facts(comparable);
+    if (numbers(comparable) !== numbers(recipe.instructions[i]) || expected.units !== actual.units || expected.methods.some(m => !actual.methods.includes(m)) || actual.methods.some(m => !expected.methods.includes(m))) {
       warnings.push(`Step ${i + 1} changed a numerical fact, unit or essential method; the supported source step was retained.`); return recipe.instructions[i];
     }
     return step;
@@ -64,18 +82,31 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
       for (const [field, value] of Object.entries({ introduction: article.introduction, articleTitle: article.articleTitle || '', seoTitle: article.seoTitle, metaDescription: article.metaDescription })) if (privateSourceLanguage(value)) warnings.push(`${field}: remove first-person source experience and attribution; write independently.`);
     }
     if (format === "master_recipe_v1" && recipe.cookTime && !publicationTimes(recipe).cookTime) article.editorialNotes!.push("The source lists zero cook time despite heated cooking steps. That inconsistent duration was omitted from the published card; no replacement time was invented.");
-    const anecdote = /\b(?:my (?:family|grandmother|grandma|mother)|I (?:tested|grew up|remember|always make))\b/i;
     for (const key of ["introduction", "conclusion"] as const) {
       const value = key === "introduction" ? article.introduction : article.blog.conclusion;
-      if (anecdote.test(value)) { warnings.push("An unsupported personal anecdote was omitted."); if (key === "introduction") article.introduction = ""; else article.blog.conclusion = ""; }
+      const scrubbed = scrubAnecdotes(value);
+      if (scrubbed.changed) { warnings.push(`${key}: a first-person anecdote sentence was rewritten as a general scene or removed. Write any family or occasion scene as a general scene addressed to "you", never as the author's own experience.`); if (key === "introduction") article.introduction = scrubbed.text; else article.blog.conclusion = scrubbed.text; }
     }
     const focus = andText(recipe.title).toLowerCase();
     if (format === "blog_1000_1200_v1" && !article.seoTitle.toLowerCase().includes(focus)) warnings.push("The SEO title should naturally include the recipe title as the focus keyword.");
     if (format === "blog_1000_1200_v1" && !article.introduction.split(/\s+/).slice(0, 100).join(" ").toLowerCase().includes(focus)) warnings.push("Include the focus keyword naturally within the first 100 words.");
     article.wordCount = articleDocument(article, recipe).wordCount;
     if (format === "blog_1000_1200_v1" && (article.wordCount < 1000 || article.wordCount > 1200)) warnings.push(`Article is ${article.wordCount} words; aim for 1,000–1,200 with useful supported content, never filler.`);
+    if (format === "master_recipe_v1" && storyLayout()) { const target = storyWordTarget(recipe); if (article.wordCount < target.min * 0.9 || article.wordCount > target.max * 1.4) warnings.push(`Article is ${article.wordCount} words; aim for about ${target.min}–${target.max} with useful description, tips, serving ideas and answers, never filler.`); }
   } else article.wordCount = articleDocument(article, recipe).wordCount;
   return { article, warnings: [...new Set(warnings)] };
+}
+// Sentence-level clean-up of invented personal anecdotes: "my grandmother/family/mother" becomes "your …" when nothing else in the
+// sentence is first person; sentences that claim the author's own experience ("I tested", "I grew up"…) are dropped. The rest stays.
+const ANECDOTE = /\b(?:my (?:family|grandmother|grandma|mother|mom|grandparents)|I (?:tested|grew up|remember|always make))\b/i;
+export function scrubAnecdotes(text: string): { text: string; changed: boolean } {
+  if (!ANECDOTE.test(text)) return { text, changed: false };
+  const paragraphs = text.split(/\n\s*\n/).map(paragraph => (paragraph.match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g) || [paragraph]).flatMap(sentence => {
+    if (!ANECDOTE.test(sentence)) return [sentence];
+    const swapped = sentence.replace(/\b([Mm])y (family|grandmother|grandma|mother|mom|grandparents)\b/g, (_m, m, who) => `${m === "M" ? "Your" : "your"} ${who}`);
+    return /\b(?:I|me|my|mine|we|our|us)\b/i.test(swapped) ? [] : [swapped];
+  }).join("").trim()).filter(Boolean);
+  return { text: paragraphs.join("\n\n"), changed: true };
 }
 export class ArtifactStore {
   constructor(public store: IntelligenceStore) {}

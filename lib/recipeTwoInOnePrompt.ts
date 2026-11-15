@@ -14,7 +14,9 @@ export function twoInOnePrompt(extraInstructions: unknown): string {
   if (extraInstructions !== undefined && typeof extraInstructions !== "string") throw new Error("Extra instructions must be text.");
   const extra = (extraInstructions as string | undefined)?.trim() || "";
   if (extra.length > MAX_EXTRA_INSTRUCTIONS) throw new Error("Extra instructions must be 4000 characters or fewer.");
-  return TWO_IN_ONE_PROMPT + (extra ? "\nAdditional user instructions: " + extra : "");
+  // Experimental: name each input's role and say which instruction wins when they conflict.
+  const roles = "\n\nImage 1 sets the base scene and camera. Image 2 supplies the additional ingredients. Neither image's food may be dropped or duplicated.";
+  return TWO_IN_ONE_PROMPT + roles + (extra ? "\nUser-requested edits take priority over the default dishware, surface and camera choices above, while every ingredient from both photos remains protected.\nAdditional user instructions: " + extra : "");
 }
 
 export function twoInOneReferences(references: unknown): [string, string] {

@@ -1,4 +1,5 @@
 import { MAX_EXTRA_INSTRUCTIONS, MAX_FOOD_REFERENCE_LENGTH } from "./recipeImageToImageSettings";
+import { quickInstructions } from "./photoQuickInstructions";
 
 // Server-only prompt: never pass through a planner, return it in a response, or
 // import this module into the client workspace.
@@ -42,13 +43,23 @@ const FOOD_VARIATION_PROMPT = [
   "The final result must look like an authentic homemade food photograph from a phone camera roll.",
 ].join("\n");
 
+const MANDATORY_MARKERS = ["Mandatory changes for every generation:", "- always change the plate", "- always change the table", "- if a spoon or fork", "- make the result feel like a different real photo"];
+const PRESET_SAFE_PROMPT = FOOD_VARIATION_PROMPT.split("\n")
+  .filter((line) => !MANDATORY_MARKERS.some((marker) => line.startsWith(marker)))
+  .join("\n")
+  .replace("Strictly preserve:", "Apply ONLY the changes listed under the user's instructions below. Everything else, including dishware, table, utensils, lighting and camera, stays as photographed unless a listed change says otherwise.\n\nStrictly preserve (except where a listed change requires otherwise):");
+
 export function foodVariationPrompt(extraInstructions: unknown): string {
   if (extraInstructions !== undefined && typeof extraInstructions !== "string") {
     throw new Error("Extra instructions must be text.");
   }
   const extra = (extraInstructions as string | undefined)?.trim() || "";
   if (extra.length > MAX_EXTRA_INSTRUCTIONS) throw new Error("Extra instructions must be 4000 characters or fewer.");
-  return FOOD_VARIATION_PROMPT + (extra ? "\nUser-requested edits take priority over default styling, camera, dishware and layout choices, while food identity and ingredient amounts remain protected. Preserving ingredients does not mean preserving their coordinates. When rearrangement is requested, visibly relocate the individual ingredients and their containers, not just their labels or background. Do not interpret a lighting or background-only edit as a request to rearrange.\nAdditional user instructions: " + extra : "");
+  // Experimental: when a quick preset is active the user asked for specific edits, so the default
+  // "change dishware and surface" block must not fight it. Everything not requested stays as photographed.
+  const presetActive = quickInstructions.some((preset) => extra.includes(preset.text));
+  const base = presetActive ? PRESET_SAFE_PROMPT : FOOD_VARIATION_PROMPT;
+  return base + (extra ?"\nUser-requested edits take priority over default styling, camera, dishware and layout choices, while food identity and ingredient amounts remain protected. Preserving ingredients does not mean preserving their coordinates. When rearrangement is requested, visibly relocate the individual ingredients and their containers, not just their labels or background. Do not interpret a lighting or background-only edit as a request to rearrange.\nAdditional user instructions: " + extra : "");
 }
 
 export function foodReference(references: unknown): string {

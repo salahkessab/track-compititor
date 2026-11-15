@@ -17,7 +17,7 @@ import { PHOTO_PROFILE_VERSION, ANALYSIS_PROFILE_VERSION } from "./photoProfile"
 import { createReferenceBatch, prepareReferenceBatch, validateReferenceApproval, nextReferenceStage, processReferenceStage, isPhotoStage } from "./referenceWorkflow";
 import { deletionAvailability } from "./deleteGeneration";
 import { IMAGE_STORAGE_VERSION } from "./imageStorage";
-import { editorialPayload, editorialWritingContext, validateEditorialBrief, EDITORIAL_VERSION } from "./editorial";
+import { editorialPayload, editorialWritingContext, validateEditorialBrief, EDITORIAL_VERSION, omittedSections } from "./editorial";
 import { boundedSourceReading } from "./recipe-context";
 import { refineArticle, REFINEMENT_VERSION, REFINEMENT_INPUT_LIMIT } from './refinement';
 import { articleDocument } from './article-document';
@@ -420,7 +420,7 @@ export class BatchEngine {
         if (Buffer.byteLength(payload.input) > 64000) throw new Error("Writing prompt exceeds the local limit.");
         const response = await this.paid(stage, item, settings, "text", payload, signal);
         const rawArticle = JSON.parse(outputText(response));
-        if (brief && rawArticle.blog) for (const key of brief.omitSections) rawArticle.blog[key] = [];
+        if (brief && rawArticle.blog) for (const key of omittedSections(brief.omitSections)) rawArticle.blog[key] = [];
         const checked = validateArticle(rawArticle, source, settings.articleFormat || "compact_v1");
         if (brief) checked.article.sectionOrder = brief.sectionOrder;
         b.artifacts.put(item, stage.kind === 'article' ? 'article-generated.json' : 'article-corrected.json', JSON.stringify(checked.article, null, 2), 'application/json');
