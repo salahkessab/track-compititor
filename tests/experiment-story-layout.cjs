@@ -89,3 +89,9 @@ test('story prompt requires the scene paragraph and a self-check; correction may
   assert.match(articlePrompt(recipe, undefined, format), /Before returning, check the introduction/);
   assert.match(articlePrompt(recipe, { draft: {}, warnings: ['short'] }, format), /reach the story length target/);
 }));
+
+test('in the story layout the editorial brief cannot drop tips, serving ideas or FAQs', () => {
+  const { omittedSections } = require('../.intelligence-build/lib/recipe-intelligence/editorial.js');
+  assert.deepEqual(omittedSections(['faqs', 'serving', 'proTips', 'storage'], true), ['storage']);
+  assert.deepEqual(omittedSections(['faqs', 'storage'], false), ['faqs', 'storage']);
+});
