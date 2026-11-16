@@ -220,10 +220,10 @@ export function RecipeDesigns() {
   function check() {
     if(photoUploading.current)throw new Error("Wait for the food photo to finish uploading.");
     if(!photo)throw new Error("Upload the original food photograph first.");
-    validateTitle(title,noText); validateDesignSettings(settings);
+    validateTitle(title, !title.trim()); validateDesignSettings(settings);
     if(noText)throw new Error("Enter the exact recipe title for this design.");
     if(notes.length>1000)throw new Error("Notes must be at most 1000 characters.");
-    if(requiresRecipeIngredients(previewStyleId))validateRecipeIngredients(ingredients);
+    if(requiresRecipeIngredients(previewStyleId) && ingredients.trim())validateRecipeIngredients(ingredients);
   }
   async function record(result: Result) { setStage("Preparing image…"); const prepared = await prepareClientImage(result.image, ["png", "webp"], result.artwork || (result.sourceId === photo?.id ? photo.blob : undefined)); result = {...result, image: prepared.blob}; const saved={...result,designSignature:result.qa.designSignature};setSelected(saved); await saveLocal("history",saved.id,saved); setHistory(h=>mergeHistory(h,saved));announce("history",saved.id);}
   async function saveFilteredCopy(filtered: FilteredImage) {
@@ -261,7 +261,7 @@ export function RecipeDesigns() {
         const sourceImage=await recipeEditImage(source);
         const refImages=await Promise.all(refs.map(ref=>recipeEditImage(ref,true)));
         const promptCopy=promptCopies[previewStyleId];
-        const ingredientText=requiresRecipeIngredients(previewStyleId)?validateRecipeIngredients(ingredients):undefined;
+        const ingredientText=requiresRecipeIngredients(previewStyleId) && ingredients.trim()?validateRecipeIngredients(ingredients):undefined;
         const promptSnapshot=recipeDirectPrompt(previewStyleId,title,notes,promptCopy,ingredientText,settings.image.size,photoInstructions);
         for(let i=0;i<settings.count;i++) {
           await checkpoint(`image edit ${i+1} dispatched`);setStage(`OpenAI is designing image ${i+1} of ${settings.count}…`);sent=true;
@@ -344,7 +344,7 @@ export function RecipeDesigns() {
             <p className="text-xs text-gray-600">These settings control the OpenAI request. Pinterest and Facebook download as PNG. WordPress uses high-quality WebP at 1536 × 864.</p>
           </div>
           <div className="grid gap-2"><label htmlFor="recipe-design-style" className="text-sm font-medium text-gray-900">Professional design style</label><select id="recipe-design-style" className={inputClass} value={settings.styleId} disabled={isBusy} onChange={e=>{update("styleId",e.target.value as DesignSettings["styleId"]);setError("");}}>{ACTIVE_RECIPE_STYLE_PRESETS.map(style=><option key={style.id} value={style.id}>{style.name}</option>)}</select></div>
-          {requiresRecipeIngredients(previewStyleId) && <div className="grid gap-2"><label htmlFor="recipe-design-ingredients" className="text-sm font-medium text-gray-900">Ingredients <span className="text-blue-700">· required</span></label><textarea id="recipe-design-ingredients" className={inputClass} rows={7} maxLength={2000} disabled={isBusy} value={ingredients} onChange={e=>setIngredients(e.target.value)} placeholder={'Chicken breast (1 lb)\nBroccoli (2 cups)\nGarlic (3 cloves)'}/><p className="text-xs leading-relaxed text-gray-600">Enter one ingredient per line, including its amount. Up to 20 lines. Check the finished image for spelling and quantities.</p></div>}
+          {requiresRecipeIngredients(previewStyleId) && <div className="grid gap-2"><label htmlFor="recipe-design-ingredients" className="text-sm font-medium text-gray-900">Ingredients <span className="text-blue-700">· optional</span></label><textarea id="recipe-design-ingredients" className={inputClass} rows={7} maxLength={2000} disabled={isBusy} value={ingredients} onChange={e=>setIngredients(e.target.value)} placeholder={'Chicken breast (1 lb)\nBroccoli (2 cups)\nGarlic (3 cloves)'}/><p className="text-xs leading-relaxed text-gray-600">Enter one ingredient per line, including its amount. Up to 20 lines. Check the finished image for spelling and quantities.</p></div>}
           <div className="grid gap-2">
             <div className="flex flex-wrap gap-2" role="group" aria-label="Food photo quick instructions">
               {quickInstructions.map(preset=><button key={preset.label} type="button" title={preset.label+" — food photo only"} aria-label={preset.label+" — food photo only"} disabled={isBusy || photoInstructions.includes(preset.text)}
