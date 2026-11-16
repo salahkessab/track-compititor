@@ -1,3 +1,7 @@
+export const NEW_PHOTO_STYLE_IDS = ["new_photo_vintage_label","new_photo_chalkboard","new_photo_index_card","new_photo_modern_banner","new_photo_kraft_tag"] as const;
+export const DEFAULT_RECIPE_STYLE_ID = "new_photo_vintage_label";
+export function isNewPhotoStyle(id: string): boolean { return (NEW_PHOTO_STYLE_IDS as readonly string[]).includes(id); }
+export function requiresRecipeIngredients(id: string): boolean { return id === INGREDIENT_CARD_STYLE_ID || isNewPhotoStyle(id); }
 export const INGREDIENT_CARD_STYLE_ID = "vintage_ingredients_card";
 
 /** Keep the owner's spelling and amounts, while removing blank separator lines. */

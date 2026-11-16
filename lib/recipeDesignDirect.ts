@@ -1,6 +1,6 @@
 import { getRecipeStyle, validateRecipePromptCopy, type RecipePromptCopy, type RecipeStyleId } from "./recipeDesignStylePresets";
 import { validateTitle } from "./recipeDesigns";
-import { INGREDIENT_CARD_STYLE_ID } from "./recipeDesignIngredients";
+import { requiresRecipeIngredients, isNewPhotoStyle } from "./recipeDesignIngredients";
 
 // Vercel's request body is bounded. Keep the original image first and reserve
 // room for the complete prompt and optional style references.
@@ -33,7 +33,7 @@ export function recipeDirectPrompt(styleId: RecipeStyleId, titleValue: unknown, 
   if (!style) throw new Error("Choose a saved Recipe Designs style.");
   if (typeof notesValue !== "string" || notesValue.length > 1000) throw new Error("Invalid extra instructions.");
   const copy = validateRecipePromptCopy(copyValue, styleId) as RecipePromptCopy | undefined;
-  const isIngredientsCard = styleId === INGREDIENT_CARD_STYLE_ID;
+  const isIngredientsCard = requiresRecipeIngredients(styleId);
   const wordpress = canvasSize === "1536x864";
   const rawTemplate = copy?.template || style.template;
   const template = wordpress ? rawTemplate.replaceAll("4:5", "16:9").replaceAll("1200 × 1500", "1536 × 864").replace(/\bvertical\b/gi, "landscape").replace(/\bportrait\b/gi, "landscape") : rawTemplate;
@@ -41,6 +41,10 @@ export function recipeDirectPrompt(styleId: RecipeStyleId, titleValue: unknown, 
     ? template.replace(/\{\{(?:TITLE|STYLE_NOTES|INGREDIENTS)\}\}/g, token => token === "{{TITLE}}" ? title : token === "{{STYLE_NOTES}}" ? notesValue : ingredientsValue?.trim() || "[Enter ingredients, one per line]")
     : template.replaceAll("{{TITLE}}", title).replaceAll("{{STYLE_NOTES}}", notesValue);
   const directPrompt = `${fullPrompt}\n\nDIRECT IMAGE EDIT INSTRUCTIONS:\nThe first attached image is the owner's original food photograph. Use it as the food source for this finished design. Any later attached images are visual style references only; do not copy their food, title, logo, or finished layout. Produce the COMPLETE finished recipe graphic in this one image, including the exact title \"${title}\"${isIngredientsCard ? " and every supplied ingredient line and amount, with the INGREDIENTS: heading" : ""}. References to a protected photo layer in the style specification mean preserve the source food visually; no later compositor will add the photo or title. Do not leave an empty photo opening, an empty label, or placeholder text. Preserve the food's appearance as faithfully as the image-edit model allows. ${wordpress ? "Compose a full-width 1536 × 864 landscape WordPress article image in 16:9. Adapt the chosen style to the wide canvas, with the food dominant and all exact text legible. Keep essential content away from the edges. Do not add portrait panels or blurred sidebars." : "Keep the complete title and essential composition inside a centered 4:5 safe area so a portrait output can be exported without cutting them off."} Do not invent ingredients, slogans, logos, watermarks, or extra copy.`;
+  if (isNewPhotoStyle(styleId)) {
+    const sized = canvasSize && canvasSize !== "auto" ? fullPrompt.replaceAll("1200 × 1500", canvasSize.replace("x", " × ")) : fullPrompt;
+    return `${sized}\n\nREFERENCE HANDLING:\nThe first attached image is a dish reference only. Ignore any existing labels, borders or typography in it. Create the new photograph and graphic described above. Later images are optional style inspiration only. Use only the exact supplied title and ingredient list for text.${notesValue ? `\nAdditional owner preferences: ${notesValue}` : ""}${photoInstructions.trim() ? `\nPHOTO EDIT PREFERENCES:\n${photoInstructions.trim()}\nApply these preferences only to the newly created food photograph. Preserve the selected label design, title, ingredient text, typography and frame. Never add or omit ingredients.` : ""}`;
+  }
   const finishing = DIRECT_STYLE_FINAL_CHECK[styleId];
   const photoEdits = photoInstructions.trim() ? `\n\nFOOD PHOTO EDITS ONLY:\nApply these edits exclusively inside the food photograph, never to the surrounding graphic: ${photoInstructions.trim()}\nDESIGN PRESERVATION: Keep the selected ${style.name} design specification, outer layout, frame, decorative background, title placement, typography, exact recipe title and supplied ingredient-card text unchanged. A tabletop color request affects only the table pictured in the food photograph, not the design background. Background cleanup must not remove design decorations. Camera and ingredient-position edits stay within the existing photo area. Requested bold ingredient labels may appear only inside that photo and must not replace or restyle the main title or ingredient card. Never invent ingredients or quantities. These scoped photo edits override source-photo appearance preservation only for the explicitly requested changes; they cannot override the design preservation rules.` : "";
   return `${directPrompt}${finishing ? `\n\nSTYLE-SPECIFIC FINAL CHECK:\n${finishing}` : ""}${notesValue ? `\n\nAdditional owner instructions: ${notesValue}` : ""}${photoEdits}`;

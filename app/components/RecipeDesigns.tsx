@@ -9,14 +9,14 @@ import { prepareRecipeDownload } from "@/lib/recipeWebp";
 import { OpenAIImageControls } from "./OpenAIImageControls";
 import { ImageFilterStudio, type FilteredImage } from "./ImageFilterStudio";
 import { DEFAULT_DESIGN_SETTINGS, CURATED_DESIGN_FAMILIES, avoidRecentRecipeLayout, recipeArtworkSize, recipeDesignAspect, selectRecipeStyle, validateDesignSettings, validateTemplateEdits, validateResearch, validateTitle, type DesignFamily, type DesignMode, type DesignPlan, type DesignSettings, type Research, type TemplateEdits } from "@/lib/recipeDesigns";
-import { getRecipeStyle, RECIPE_STYLE_PRESETS, renderRecipeStylePrompt, validateRecipePromptCopy, type RecipePromptCopy } from "@/lib/recipeDesignStylePresets";
+import { getRecipeStyle, RECIPE_STYLE_PRESETS, ACTIVE_RECIPE_STYLE_PRESETS, renderRecipeStylePrompt, validateRecipePromptCopy, type RecipePromptCopy } from "@/lib/recipeDesignStylePresets";
 import { OPENAI_MODELS } from "@/lib/config";
 import { OPENAI_IMAGE_MODEL_IDS, imageQualitiesFor, supportsImageComplexity } from "@/lib/openaiImageSettings";
 import { estimateOpenAIImageOutput } from "@/lib/imagePricing";
 import { analysisThumbnail, prepareLocalPhoto, type LocalPhoto } from "@/lib/recipeDesignPhoto";
 import { recipeEditImage } from "@/lib/recipeDesignPhoto";
 import { recipeDirectPrompt } from "@/lib/recipeDesignDirect";
-import { INGREDIENT_CARD_STYLE_ID, validateRecipeIngredients } from "@/lib/recipeDesignIngredients";
+import { DEFAULT_RECIPE_STYLE_ID, requiresRecipeIngredients, isNewPhotoStyle, validateRecipeIngredients } from "@/lib/recipeDesignIngredients";
 import { recipeDesignPng, recipeDesignDimensions } from "@/lib/recipeDesignOutput";
 import { renderIngredientsCard, renderProtectedDesign, recipeDesignLayout, type DesignQA } from "@/lib/recipeDesignRenderer";
 import { referenceTemplate, TEMPLATE_COLORS } from "@/lib/recipeDesignScene";
@@ -110,7 +110,7 @@ async function download(blob: Blob, name: string, format?: "png" | "webp") {
 }
 
 export function RecipeDesigns() {
-  const [settings,setSettings]=useState<DesignSettings>({...DEFAULT_DESIGN_SETTINGS,model:"gpt-image-2.6-sunburst",artworkSize:"selected",styleId:INGREDIENT_CARD_STYLE_ID,researchEnabled:false,photoAnalysis:false,image:{...DEFAULT_DESIGN_SETTINGS.image,size:"1152x1440"}});
+  const [settings,setSettings]=useState<DesignSettings>({...DEFAULT_DESIGN_SETTINGS,model:"gpt-image-2.6-sunburst",artworkSize:"selected",styleId:DEFAULT_RECIPE_STYLE_ID,researchEnabled:false,photoAnalysis:false,image:{...DEFAULT_DESIGN_SETTINGS.image,size:"1152x1440"}});
   const [ready,setReady]=useState(false);
   const [title,setTitle]=useState(""); const [noText,setNoText]=useState(false); const [notes,setNotes]=useState(""); const [ingredients,setIngredients]=useState(""); const [evidence,setEvidence]=useState("");
   const [photo,setPhoto]=useState<LocalPhoto | null>(null); const [refs,setRefs]=useState<LocalPhoto[]>([]); const [uploadingPhoto,setUploadingPhoto]=useState(false);
@@ -130,9 +130,9 @@ export function RecipeDesigns() {
     try {
       const [saved,oldHistory,oldJobs,savedPreset,activeLock,savedCopies]=await Promise.all([loadLocal<DesignSettings>("settings","current"),listLocal<Result>("history"),listLocal<Job>("jobs"),loadLocal<Preset>("settings","saved-preset"),loadLocal<{id:string;createdAt:string}>("locks","active"),loadLocal<Record<string,unknown>>("settings","prompt-copies")]);
       if(!active)return;
-      if(saved) { try {const valid=validateDesignSettings(saved);setSettings({...valid,artworkSize:"selected",image:{...valid.image,size:"1152x1440",output_format:"png"},styleId:INGREDIENT_CARD_STYLE_ID,mode:"auto",researchEnabled:false,photoAnalysis:false});} catch { /* ignore stale local settings */ } }
+      if(saved) { try {const valid=validateDesignSettings(saved);setSettings({...valid,artworkSize:"selected",image:{...valid.image,size:"1152x1440",output_format:"png"},styleId:DEFAULT_RECIPE_STYLE_ID,mode:"auto",researchEnabled:false,photoAnalysis:false});} catch { /* ignore stale local settings */ } }
       const sorted=oldHistory.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)); setHistory(current=>sorted.reduce(mergeHistory,current));
-      if(savedCopies){const valid:Record<string,RecipePromptCopy>={};for(const style of RECIPE_STYLE_PRESETS){try{const copy=validateRecipePromptCopy(savedCopies[style.id],style.id);if(copy)valid[style.id]=copy;}catch{/* ignore invalid local copy */}}setPromptCopies(valid);}
+      if(savedCopies){const valid:Record<string,RecipePromptCopy>={};for(const style of [...RECIPE_STYLE_PRESETS,...ACTIVE_RECIPE_STYLE_PRESETS]){try{const copy=validateRecipePromptCopy(savedCopies[style.id],style.id);if(copy)valid[style.id]=copy;}catch{/* ignore invalid local copy */}}setPromptCopies(valid);}
       setJobs(current=>oldJobs.map(recoverJob).reduce(mergeJob,current)); setPreset(savedPreset || null);setPaidLock(activeLock || null);
     } catch { if(active)setError("Workspace storage is unavailable. Check the connection and retry."); }
     finally {if(active)setReady(true);}
@@ -223,7 +223,7 @@ export function RecipeDesigns() {
     validateTitle(title,noText); validateDesignSettings(settings);
     if(noText)throw new Error("Enter the exact recipe title for this design.");
     if(notes.length>1000)throw new Error("Notes must be at most 1000 characters.");
-    if(previewStyleId===INGREDIENT_CARD_STYLE_ID)validateRecipeIngredients(ingredients);
+    if(requiresRecipeIngredients(previewStyleId))validateRecipeIngredients(ingredients);
   }
   async function record(result: Result) { setStage("Preparing image…"); const prepared = await prepareClientImage(result.image, ["png", "webp"], result.artwork || (result.sourceId === photo?.id ? photo.blob : undefined)); result = {...result, image: prepared.blob}; const saved={...result,designSignature:result.qa.designSignature};setSelected(saved); await saveLocal("history",saved.id,saved); setHistory(h=>mergeHistory(h,saved));announce("history",saved.id);}
   async function saveFilteredCopy(filtered: FilteredImage) {
@@ -261,7 +261,7 @@ export function RecipeDesigns() {
         const sourceImage=await recipeEditImage(source);
         const refImages=await Promise.all(refs.map(ref=>recipeEditImage(ref,true)));
         const promptCopy=promptCopies[previewStyleId];
-        const ingredientText=previewStyleId===INGREDIENT_CARD_STYLE_ID?validateRecipeIngredients(ingredients):undefined;
+        const ingredientText=requiresRecipeIngredients(previewStyleId)?validateRecipeIngredients(ingredients):undefined;
         const promptSnapshot=recipeDirectPrompt(previewStyleId,title,notes,promptCopy,ingredientText,settings.image.size,photoInstructions);
         for(let i=0;i<settings.count;i++) {
           await checkpoint(`image edit ${i+1} dispatched`);setStage(`OpenAI is designing image ${i+1} of ${settings.count}…`);sent=true;
@@ -279,7 +279,7 @@ export function RecipeDesigns() {
           const qa:DesignQA={originalSha256,workingSha256:originalSha256,outputSha256,photoRect:{x:0,y:0,width:0,height:0},pixelDifferences:-1,title,transformations:["Uploaded food photo sent to OpenAI image edits",`Final image fitted to ${dimensions.width} × ${dimensions.height} PNG master`],visual:{reviewRequired:true,font:"OpenAI image model",titleSize:null,artworkTexture:"none",notes:["Direct AI image edits cannot guarantee pixel-for-pixel preservation. Compare the result with the original before publishing."]}};
           await record({downloadFormat:settings.image.size === "1536x864" ? "webp" : "png",outputWidth:dimensions.width,outputHeight:dimensions.height,id:crypto.randomUUID(),sourceId:source.id,title,ingredients:ingredientText,noText:false,createdAt:new Date().toISOString(),plan,research:null,researchStatus:"Direct OpenAI image edit",artwork,image,qa,status:"OpenAI image edit",costs:[...job.costs],imageModel:settings.model,artworkSize:recipeArtworkSize(settings),promptSnapshot});
         }
-        job.status="complete"; await checkpoint("complete");setNotice(previewStyleId===INGREDIENT_CARD_STYLE_ID?"OpenAI design complete. Check the title, ingredients and amounts against your input before publishing.":"OpenAI design complete. Compare it with your original photo before publishing.");
+        job.status="complete"; await checkpoint("complete");setNotice(requiresRecipeIngredients(previewStyleId)?"OpenAI design complete. Check the title, ingredients and amounts against your input before publishing.":"OpenAI design complete. Compare it with your original photo before publishing.");
       } catch(e) {
         const providerError=e instanceof DesignRequestError ? e : null;
         if(providerError?.usage) job.costs.push(providerError.usage);
@@ -343,8 +343,8 @@ export function RecipeDesigns() {
             <OpenAIImageControls recipePresets model={settings.model} value={settings.image} onChange={image=>setSettings(s=>({...s,image,artworkSize:"selected"}))} disabled={isBusy} quickSettingsOnly/>
             <p className="text-xs text-gray-600">These settings control the OpenAI request. Pinterest and Facebook download as PNG. WordPress uses high-quality WebP at 1536 × 864.</p>
           </div>
-          <div className="grid gap-2"><label htmlFor="recipe-design-style" className="text-sm font-medium text-gray-900">Professional design style</label><select id="recipe-design-style" className={inputClass} value={settings.styleId} disabled={isBusy} onChange={e=>{update("styleId",e.target.value as DesignSettings["styleId"]);setError("");}}>{RECIPE_STYLE_PRESETS.map(style=><option key={style.id} value={style.id}>{style.name}</option>)}</select></div>
-          {previewStyleId===INGREDIENT_CARD_STYLE_ID && <div className="grid gap-2"><label htmlFor="recipe-design-ingredients" className="text-sm font-medium text-gray-900">Ingredients <span className="text-blue-700">· required</span></label><textarea id="recipe-design-ingredients" className={inputClass} rows={7} maxLength={2000} disabled={isBusy} value={ingredients} onChange={e=>setIngredients(e.target.value)} placeholder={'Chicken breast (1 lb)\nBroccoli (2 cups)\nGarlic (3 cloves)'}/><p className="text-xs leading-relaxed text-gray-600">Enter one ingredient per line, including its amount. Up to 20 lines. Check the finished image for spelling and quantities.</p></div>}
+          <div className="grid gap-2"><label htmlFor="recipe-design-style" className="text-sm font-medium text-gray-900">Professional design style</label><select id="recipe-design-style" className={inputClass} value={settings.styleId} disabled={isBusy} onChange={e=>{update("styleId",e.target.value as DesignSettings["styleId"]);setError("");}}>{ACTIVE_RECIPE_STYLE_PRESETS.map(style=><option key={style.id} value={style.id}>{style.name}</option>)}</select></div>
+          {requiresRecipeIngredients(previewStyleId) && <div className="grid gap-2"><label htmlFor="recipe-design-ingredients" className="text-sm font-medium text-gray-900">Ingredients <span className="text-blue-700">· required</span></label><textarea id="recipe-design-ingredients" className={inputClass} rows={7} maxLength={2000} disabled={isBusy} value={ingredients} onChange={e=>setIngredients(e.target.value)} placeholder={'Chicken breast (1 lb)\nBroccoli (2 cups)\nGarlic (3 cloves)'}/><p className="text-xs leading-relaxed text-gray-600">Enter one ingredient per line, including its amount. Up to 20 lines. Check the finished image for spelling and quantities.</p></div>}
           <div className="grid gap-2">
             <div className="flex flex-wrap gap-2" role="group" aria-label="Food photo quick instructions">
               {quickInstructions.map(preset=><button key={preset.label} type="button" title={preset.label+" — food photo only"} aria-label={preset.label+" — food photo only"} disabled={isBusy || photoInstructions.includes(preset.text)}
@@ -375,7 +375,7 @@ export function RecipeDesigns() {
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_120px]"><label className="grid gap-2 text-sm text-gray-600">OpenAI image model<select className={inputClass} value={settings.model} disabled={isBusy} onChange={e=>changeModel(e.target.value)}>{OPENAI_IMAGE_MODEL_IDS.map(m=><option key={m} value={m}>{m}</option>)}</select></label><label className="grid gap-2 text-sm text-gray-600">Designs<input className={inputClass} type="number" min="1" max="3" value={settings.count} disabled={isBusy} onChange={e=>update("count",Number(e.target.value))}/></label></div>
           {settings.model==="gpt-image-2.5-sunburst" && <label className="grid gap-2 text-sm text-gray-600">Artwork request size<select className={inputClass} value={settings.artworkSize} disabled={isBusy} onChange={e=>update("artworkSize",e.target.value as DesignSettings["artworkSize"])}><option value="1280x1600">1280 × 1600 · 4:5 artwork</option><option value="selected">Use selected image size below</option></select></label>}
           <OpenAIImageControls recipePresets model={settings.model} value={settings.image} onChange={image=>setSettings(s=>({...s,image,artworkSize:"selected"}))} disabled={isBusy} hidePartialImages hideQuickSettings countDescription="WordPress exports at 1536 × 864. Other recipe designs retain the 1200 × 1500 layout. Pinterest and Facebook download as PNG; WordPress uses high-quality WebP."/>
-          <div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void saveStyle()}>Save settings</button>{preset && <button type="button" className={buttonClass} disabled={isBusy} onClick={()=>{try{const valid=validateDesignSettings(preset.settings);setSettings({...valid,styleId:valid.styleId==="auto"?"vintage_farmhouse_recipe":valid.styleId,mode:"auto",researchEnabled:false,photoAnalysis:false});setNotice(`Restored ${preset.name}.`);}catch{setError("Saved settings are no longer compatible.");}}}>Load saved settings</button>}</div>
+          <div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={isBusy} onClick={()=>void saveStyle()}>Save settings</button>{preset && <button type="button" className={buttonClass} disabled={isBusy} onClick={()=>{try{const valid=validateDesignSettings(preset.settings);setSettings({...valid,styleId:isNewPhotoStyle(valid.styleId)?valid.styleId:DEFAULT_RECIPE_STYLE_ID,mode:"auto",researchEnabled:false,photoAnalysis:false});setNotice(`Restored ${preset.name}.`);}catch{setError("Saved settings are no longer compatible.");}}}>Load saved settings</button>}</div>
           </div></details>
         </div>
         <aside className="rounded-[22px] border border-gray-200 bg-white/60 p-4"><div className="flex items-center justify-between gap-2"><div><p className="text-xs uppercase tracking-[.18em] text-blue-700">Output preview</p><h2 className="studio-title mt-1 text-xl">{selected ? selected.outputWidth ?? 1200 : recipeDesignDimensions(settings.image.size).width} × {selected ? selected.outputHeight ?? 1500 : recipeDesignDimensions(settings.image.size).height} · {selected ? recipeResultFormat(selected).toUpperCase() : settings.image.size === "1536x864" ? "WEBP" : "PNG"} download</h2></div><button type="button" className={buttonClass} onClick={()=>setShowHistory(v=>!v)}>Design History ({history.length})</button></div>

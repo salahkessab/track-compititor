@@ -497,3 +497,20 @@ test('photo presets preserve all style specifications and stay scoped to the pho
   assert.throws(()=>recipeDirectPrompt(RECIPE_STYLE_PRESETS[0].id,'Title','',undefined,undefined,undefined,{}),/Photo instructions/);
   assert.throws(()=>recipeDirectPrompt(RECIPE_STYLE_PRESETS[0].id,'Title','',undefined,undefined,undefined,'x'.repeat(4001)),/Photo instructions/);
 });
+
+test('five active new-photo styles preserve exact ingredients and avoid legacy photo locks',()=>{
+ const {ACTIVE_RECIPE_STYLE_PRESETS,validateRecipePromptCopy}=load(path.resolve(__dirname,'../lib/recipeDesignStylePresets.ts'));
+ const {requiresRecipeIngredients}=load(path.resolve(__dirname,'../lib/recipeDesignIngredients.ts'));
+ assert.equal(ACTIVE_RECIPE_STYLE_PRESETS.length,5);
+ for(const style of ACTIVE_RECIPE_STYLE_PRESETS){
+  assert.ok(requiresRecipeIngredients(style.id));
+  const prompt=recipeDirectPrompt(style.id,'The Best Lasagna Soup','',undefined,'1 onion, diced\n2 cloves garlic, minced','1152x1440','Make the bowl red.');
+  assert.ok(prompt.includes('1 onion, diced\n2 cloves garlic, minced'));
+  assert.ok(prompt.includes('NEW, original'));
+  assert.ok(prompt.includes('1152 × 1440'));
+  assert.ok(prompt.includes('Make the bowl red.'));
+  assert.ok(!prompt.includes("Preserve the food's appearance as faithfully"));
+  assert.ok(!prompt.includes('{{INGREDIENTS}}'));
+  assert.throws(()=>validateRecipePromptCopy({baseStyleId:style.id,version:2,template:style.template.replace('{{INGREDIENTS}}','')},style.id),/ingredients/);
+ }
+});

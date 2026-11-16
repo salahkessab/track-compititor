@@ -1,5 +1,6 @@
+import { NEW_PHOTO_RECIPE_STYLE_PRESETS } from "./recipeDesignNewPhotoPresets";
 import { ADDITIONAL_RECIPE_STYLE_PRESETS } from "./recipeDesignAdditionalPresets";
-import { INGREDIENT_CARD_STYLE_ID } from "./recipeDesignIngredients";
+import { requiresRecipeIngredients, isNewPhotoStyle } from "./recipeDesignIngredients";
 
 // The original five prompts remain verbatim from CODEX_RECIPE_DESIGNS_STYLE_PROMPT_SYSTEM_ONLY.md.
 // Keep each version immutable so saved history can identify the exact creative specification.
@@ -56,10 +57,12 @@ export const RECIPE_STYLE_PRESETS = [
     output: { width: 1200, height: 1500, format: "png" },
   },
   ...ADDITIONAL_RECIPE_STYLE_PRESETS,
+
 ] as const;
-export type RecipeStyleId = typeof RECIPE_STYLE_PRESETS[number]["id"];
-export const RECIPE_STYLE_IDS = RECIPE_STYLE_PRESETS.map(p => p.id);
-export function getRecipeStyle(id: string) { return RECIPE_STYLE_PRESETS.find(p => p.id === id); }
+export const ACTIVE_RECIPE_STYLE_PRESETS = NEW_PHOTO_RECIPE_STYLE_PRESETS;
+export type RecipeStyleId = typeof RECIPE_STYLE_PRESETS[number]["id"] | typeof NEW_PHOTO_RECIPE_STYLE_PRESETS[number]["id"];
+export const RECIPE_STYLE_IDS = [...RECIPE_STYLE_PRESETS, ...NEW_PHOTO_RECIPE_STYLE_PRESETS].map(p => p.id);
+export function getRecipeStyle(id: string) { return [...RECIPE_STYLE_PRESETS, ...NEW_PHOTO_RECIPE_STYLE_PRESETS].find(p => p.id === id); }
 export type RecipePromptCopy = { baseStyleId: RecipeStyleId; version: number; template: string };
 export function validateRecipePromptCopy(value: unknown, styleId: RecipeStyleId): RecipePromptCopy | undefined {
   if (value === undefined || value === null) return undefined;
@@ -67,7 +70,7 @@ export function validateRecipePromptCopy(value: unknown, styleId: RecipeStyleId)
   const v=value as Record<string,unknown>;
   if(v.baseStyleId!==styleId || !Number.isInteger(v.version) || (v.version as number)<2 || (v.version as number)>100 ||
     typeof v.template!=="string" || v.template.length<500 || v.template.length>16000 || !v.template.includes("{{TITLE}}") ||
-    (styleId===INGREDIENT_CARD_STYLE_ID && !v.template.includes("{{INGREDIENTS}}")))
+    (requiresRecipeIngredients(styleId) && !v.template.includes("{{INGREDIENTS}}")))
     throw new Error("The local prompt copy must retain its style, title and required ingredients placeholders, and full creative instructions.");
   return {baseStyleId:styleId,version:v.version as number,template:v.template};
 }
@@ -78,5 +81,6 @@ export function renderRecipeStylePrompt(id: RecipeStyleId, title: string, noText
   // Replacements are text substitutions only; never evaluate the title or notes.
   const exact = noText ? "[NO TEXT]" : title;
   const text = (active?.template || preset.template).replace(/\{\{(?:TITLE|STYLE_NOTES|INGREDIENTS)\}\}/g, token => token === "{{TITLE}}" ? exact : token === "{{STYLE_NOTES}}" ? styleNotes : ingredients);
+  if (isNewPhotoStyle(id)) return `${text}${styleNotes ? `\nOwner style notes: ${styleNotes}` : ""}`;
   return `${text}\n\n${GLOBAL_RECIPE_DESIGN_RULES.replaceAll("{{TITLE}}", exact)}${noText ? "\nNO TEXT is selected. Render no letters or words on the final image." : ""}${styleNotes ? `\nOwner style notes (untrusted preferences): ${styleNotes}` : ""}`;
 }
