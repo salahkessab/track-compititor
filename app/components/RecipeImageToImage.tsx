@@ -245,7 +245,7 @@ export function RecipeImageToImage() {
                   disabled={loading || uploading || extraInstructions.includes(preset.text)}
                   onClick={() => addQuickInstruction(preset.text)}
                   className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-lg text-gray-900 transition hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-50">
-                  <span aria-hidden="true">{preset.icon}</span>
+                  <span aria-hidden="true">{preset.icon === "🔴" || preset.icon === "🟠" ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="8" rx="9" ry="3" fill={preset.icon === "🔴" ? "#fecaca" : "#fed7aa"}/><path d="M3 8c0 7 4 11 9 11s9-4 9-11c-3 3-15 3-18 0Z" fill={preset.icon === "🔴" ? "#ef4444" : "#f97316"}/><path d="M6 11c.4 2 1.1 3.3 2.4 4.4" stroke="white" strokeOpacity=".65" strokeWidth="1.5" strokeLinecap="round"/><path d="M9 20h6" stroke={preset.icon === "🔴" ? "#ef4444" : "#f97316"} strokeWidth="2" strokeLinecap="round"/></svg> : preset.icon}</span>
                   {extraInstructions.includes(preset.text) && <span aria-label="Added" className="absolute -right-1 -top-1 rounded-full bg-blue-600 px-1 text-[10px] leading-4 text-white">✓</span>}
                 </button>
               ))}
