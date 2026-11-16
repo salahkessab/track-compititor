@@ -74,3 +74,48 @@ body::after {
   background: #4F6B4A; color: #fff; font: 600 11px/1.4 system-ui, sans-serif; letter-spacing: .04em;
   box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
 }
+
+/* Sidebar layout from the Claude Design mockup: espresso menu on the left, content on the right; stacks on phones. */
+:root { --studio-nav: #2B211C; --studio-bg: #F6F1E8; --studio-accent: #A4472B; --studio-accent-hover: #7E3420; }
+.studio-shell { display: flex; flex-wrap: wrap; min-height: 100vh; background: var(--studio-bg); }
+.studio-main { flex: 999 1 560px; max-width: 1280px; }
+nav.studio-sidebar[aria-label="Main navigation"] {
+  flex: 1 1 240px; max-width: 260px; min-height: 100vh; box-sizing: border-box;
+  display: flex !important; flex-direction: column; gap: 28px; margin: 0 !important;
+  padding: 28px 20px !important; border-radius: 0 !important; border: 0 !important;
+  background: var(--studio-nav) !important; color: #F3EADF; box-shadow: none !important;
+}
+.studio-brand { display: flex; align-items: center; gap: 12px; }
+.studio-brand-mark { width: 40px; height: 40px; border-radius: 12px; background: #C8613F; color: #FFF7EE; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.studio-brand-name { display: block; font-family: "Fraunces Variable", Georgia, serif; font-size: 20px; font-weight: 600; color: #F3EADF; }
+.studio-brand-sub { display: block; font-size: 12px; color: #C9B9A8; }
+.studio-nav-group { display: flex; flex-direction: column; gap: 4px; }
+.studio-nav-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #BBA996; padding: 0 12px 6px; }
+nav.studio-sidebar a.studio-nav-link {
+  display: flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 12px;
+  border-radius: 10px !important; color: #E6D9CB !important; font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap;
+}
+nav.studio-sidebar a.studio-nav-link:hover { background: #3D302A !important; color: #FFF7EE !important; }
+nav.studio-sidebar a.studio-nav-link[aria-current="page"] { background: #3D302A !important; border-color: transparent !important; color: #FFF7EE !important; font-weight: 600; box-shadow: inset 3px 0 0 #E08A68; }
+html[data-theme="dark"] { --studio-nav: #0F0B09; }
+html[data-theme="dark"] .studio-shell { background: var(--studio-bg); }
+@media (max-width: 760px) {
+  nav.studio-sidebar[aria-label="Main navigation"] { max-width: none; min-height: 0; flex-basis: 100%; gap: 14px; padding: 16px !important; }
+  .studio-nav-group { flex-direction: row; flex-wrap: wrap; }
+  .studio-nav-title { flex-basis: 100%; padding-bottom: 2px; }
+  nav.studio-sidebar a.studio-nav-link { min-height: 40px; padding: 8px 12px; }
+}
+
+/* Recipe Intelligence pieces from the mockup */
+.studio-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--studio-muted); }
+.studio-steps li { display: inline-flex; align-items: center; gap: 8px; }
+.studio-steps li + li::before { content: ""; width: 28px; height: 1px; background: var(--studio-line); margin-right: 2px; }
+.studio-steps span { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--studio-line); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.studio-steps li[aria-current="step"] { color: var(--studio-ink); font-weight: 600; }
+.studio-steps li[aria-current="step"] span { background: #C8613F; border-color: #C8613F; color: #FFF; }
+nav[aria-label="Recipe Intelligence navigation"] a { border-radius: 999px !important; min-height: 44px; display: inline-flex; align-items: center; padding: 0 18px !important; }
+.studio-article-card { box-shadow: 0 1px 2px rgb(43 33 28 / 6%), 0 8px 24px rgb(43 33 28 / 5%); }
+html[data-theme="dark"] .studio-article-card { box-shadow: none; }
+nav[aria-label="Recipe Intelligence navigation"] a:not([aria-current="page"]) { background: var(--studio-panel-top) !important; border: 1px solid var(--studio-line) !important; color: var(--studio-ink) !important; }
+nav[aria-label="Recipe Intelligence navigation"] a[aria-current="page"] { background: var(--studio-nav) !important; border-color: var(--studio-nav) !important; }
+html[data-theme="dark"] nav[aria-label="Recipe Intelligence navigation"] a[aria-current="page"] { background: #C8613F !important; border-color: #C8613F !important; }

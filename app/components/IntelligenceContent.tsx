@@ -40,7 +40,18 @@ function ContentControls({ value, change }: { value: ContentSettings; change: (v
   const output = value.images ? value.output || "article_images" : "article_only";
   return <fieldset className="space-y-4"><legend className="mb-3 text-lg">Recipe options</legend>
     <div className="grid gap-4 sm:grid-cols-2">
-      <label className="text-sm">Create<select className={`${input} mt-1`} value={output} onChange={e => set({ output: e.target.value as ContentSettings["output"], images: e.target.value !== "article_only" })}><option value="article_images">Article and images</option><option value="article_only">Article only</option><option value="images_only">Images only</option></select></label>
+      <fieldset className="sm:col-span-2">
+        <legend className="text-sm">What to create</legend>
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {([["article_images", "Article and images", "Full post with photos"], ["article_only", "Article only", "Text, no image cost"], ["images_only", "Images only", "Edit the recipe photos"]] as const).map(([id, name, hint]) => {
+            const picked = output === id;
+            return <button key={id} type="button" aria-pressed={picked} onClick={() => set({ output: id, images: id !== "article_only" })}
+              className={`flex min-h-[64px] flex-col items-start justify-center gap-0.5 rounded-xl border px-3 py-2 text-left text-sm ${picked ? "border-blue-600 bg-blue-50 ring-2 ring-blue-600" : "border-gray-200 bg-white"}`}>
+              <span className="font-semibold text-gray-900">{name}</span><span className="text-xs text-gray-600">{hint}</span>
+            </button>;
+          })}
+        </div>
+      </fieldset>
       <label className="text-sm">Automation<select className={`${input} mt-1`} value={value.mode} onChange={e => set({ mode: e.target.value as ContentSettings["mode"] })}><option value="full">Full automatic</option><option value="before_articles">Review before articles</option><option value="before_images">Review before images</option></select></label>
       {output !== "images_only" && (value.articleFormat || "master_recipe_v1") === "master_recipe_v1" && <fieldset className="sm:col-span-2">
         <legend className="text-sm">Writing style <span className="text-gray-600">· ingredients and steps never change</span></legend>

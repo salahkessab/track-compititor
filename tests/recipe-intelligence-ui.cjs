@@ -217,7 +217,7 @@ test('Start a recipe shows four photos unchecked and saves only selected photos 
   const modes = [...document.querySelectorAll('select')].find(s => s.closest('label')?.textContent.startsWith('Automation'));
   assert.deepEqual([...modes.options].map(o => o.value), ['full', 'before_articles', 'before_images']);
   assert.equal(modes.closest('details').querySelector('summary').textContent, 'Article and image options');
-  assert.equal(modes.closest('details').open, false);
+  assert.equal(modes.closest('details').open, true, 'options are shown open, as in the redesign');
   await click('Photo colors');
   assert.match(document.body.textContent,/Cookware or bowl color/);assert.match(document.body.textContent,/Spoon or utensil color/);await click('Reset photo palette');
   const color=label=>[...document.querySelectorAll('input[type=color]')].find(e=>e.parentElement.textContent.startsWith(label));

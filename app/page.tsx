@@ -847,21 +847,24 @@ export default function Page() {
   }
 
   return (
-    <main className="studio-main mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
-      <ImagePreparationNotifications />
-      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[220px] bg-[radial-gradient(circle_at_top,rgba(201,122,61,0.12),transparent_55%)]" />
-      <div className="pointer-events-none absolute right-0 top-20 -z-10 h-56 w-56 rounded-full bg-green-50/8 blur-3xl" />
-
-      <nav aria-label="Main navigation" className="mb-5 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[20px] border border-gray-200 bg-white/92 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.22)]">
-        {MAIN_TABS.map((tab) => {
-          const active = contentType === tab.contentType &&
-            (!("workflow" in tab) || recipeWorkflow === tab.workflow);
-          return (
-            <a
-              key={tab.id}
-              href={`/?tab=${tab.id}`}
-              aria-current={active ? "page" : undefined}
-              onClick={(event) => {
+    <div className="studio-shell">
+      <nav aria-label="Main navigation" className="studio-sidebar">
+        <div className="studio-brand">
+          <span className="studio-brand-mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11h16a8 8 0 0 1-16 0z" /><path d="M9 7c0-1.5 1-2 1-3" /><path d="M14 7c0-1.5 1-2 1-3" /></svg></span>
+          <span><span className="studio-brand-name">Recipe Studio</span><span className="studio-brand-sub">Content workspace</span></span>
+        </div>
+        {[{ title: "Recipes", ids: ["recipe-intelligence", "recipe-designs", "image-to-image", "two-in-one"] }, { title: "Other studios", ids: ["horses", "home-decor"] }].map((group) => (
+          <div key={group.title} className="studio-nav-group">
+            <div className="studio-nav-title">{group.title}</div>
+            {MAIN_TABS.filter((tab) => (group.ids as readonly string[]).includes(tab.id)).map((tab) => {
+              const active = contentType === tab.contentType &&
+                (!("workflow" in tab) || recipeWorkflow === tab.workflow);
+              return (
+                <a
+                  key={tab.id}
+                  href={`/?tab=${tab.id}`}
+                  aria-current={active ? "page" : undefined}
+                  onClick={(event) => {
                 if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 event.preventDefault();
                 const url = new URL(window.location.href);
@@ -875,18 +878,21 @@ export default function Page() {
                   setPreview(null);
                   setPreviewPinned(false);
                 }
-              }}
-              className={`whitespace-nowrap rounded-[14px] px-4 py-2.5 text-sm font-medium transition ${
-                active
-                  ? "bg-blue-600 text-white shadow-[0_12px_30px_rgba(243,229,212,0.18)]"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-blue-700"
-              }`}
-            >
-              {tab.label}
-            </a>
-          );
-        })}
+                  }}
+                  className="studio-nav-link"
+                >
+                  {tab.label.replace(/^\S*\p{Extended_Pictographic}\S*\s*/u, "")}
+                </a>
+              );
+            })}
+          </div>
+        ))}
       </nav>
+    <main className="studio-main min-w-0 flex-1 px-4 py-5 sm:px-8 sm:py-8">
+      <ImagePreparationNotifications />
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[220px] bg-[radial-gradient(circle_at_top,rgba(201,122,61,0.12),transparent_55%)]" />
+      <div className="pointer-events-none absolute right-0 top-20 -z-10 h-56 w-56 rounded-full bg-green-50/8 blur-3xl" />
+
       <ThemeToggle />
 
       {/* â”€â”€ Settings panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -1619,6 +1625,7 @@ export default function Page() {
       )}
       {filterTarget && <ImageFilterStudio source={filterTarget.url} fileName={filterTarget.fileName} onClose={() => setFilterTarget(null)} />}
     </main>
+    </div>
   );
 }
 
