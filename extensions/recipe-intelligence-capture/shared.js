@@ -10,7 +10,7 @@
     return url.href;
   }
 
-  // Executed only in a discovered loopback app tab. It uses that tab's existing
+  // Executed only in a discovered app tab. It uses that tab's existing
   // HttpOnly session, leaving authentication and CSRF checks unchanged.
   async function appBridge(message) {
     if (!(location.protocol === 'https:' || location.protocol === 'http:' && location.hostname === '127.0.0.1') || location.origin !== message.origin) return { error: 'The app tab changed. Reopen Recipe Intelligence.', status: 409 };
@@ -25,17 +25,21 @@
       if (message.op === 'probe') {
         const capability = await api('capabilities');
         if (!capability.enabled || capability.browserCapture !== 1) return {error:'This local app needs the browser capture update.',status:409};
-        const snapshot = await api('snapshot'); return { ready:true, root:snapshot.runtime === 'server' ? `workspace:${snapshot.settings.workspaceId}` : snapshot.settings.root };
+        const snapshot = await api('snapshot'); return { ready:true, root:snapshot.runtime === 'server' ? `workspace:${snapshot.settings.workspaceId}` : snapshot.settings.root,
+          destination:new URLSearchParams(location.search).get('tab') === 'home-decor' ? 'home-decor' : 'recipe', decorBrowserCapture:capability.decorBrowserCapture === 1 };
       }
-      if (message.op === 'begin') return await api('imports/browser', 'POST', message.data);
+      const destination = message.destination || 'recipe';
+      if (!['recipe','home-decor'].includes(destination)) throw new Error('Choose Recipes or Home & Decor.');
+      const prefix = destination === 'home-decor' ? 'decor' : 'imports';
+      if (message.op === 'begin') return await api(`${prefix}/browser`, 'POST', message.data);
       if (!uuid.test(message.id || '')) throw new Error('Invalid import ID.');
       if (message.op === 'photo') {
         if (message.base64.length > 14000000) throw new Error('Photo exceeds the transfer limit.');
         const bytes = Uint8Array.from(atob(message.base64), c => c.charCodeAt(0));
-        return await api(`imports/${message.id}/browser-photo`, 'POST', bytes, {'Content-Type':message.mime,'X-File-Name':message.name,'X-Source-Url':encodeURIComponent(message.url),'X-Photo-Caption':encodeURIComponent(message.caption || '')});
+        return await api(`${prefix}/${message.id}/browser-photo`, 'POST', bytes, {'Content-Type':message.mime,'X-File-Name':message.name,'X-Source-Url':encodeURIComponent(message.url),'X-Photo-Caption':encodeURIComponent(message.caption || '')});
       }
-      if (message.op === 'finish') return await api(`imports/${message.id}/browser-finish`, 'POST', {missingPhotos:message.missingPhotos});
-      if (message.op === 'estimate') return await api(`imports/${message.id}/estimate`, 'POST', {});
+      if (message.op === 'finish') return await api(`${prefix}/${message.id}/browser-finish`, 'POST', {missingPhotos:message.missingPhotos});
+      if (message.op === 'estimate' && destination === 'recipe') return await api(`imports/${message.id}/estimate`, 'POST', {});
       throw new Error('Unsupported import operation.');
     } catch (error) { return { error:error.message || 'The local workspace is unavailable.', status:error.status || 0 }; }
   }

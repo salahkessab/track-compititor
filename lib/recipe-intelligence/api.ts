@@ -84,7 +84,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     ? json({ enabled: false, phase: 5 }) : json({ error: "Open Recipe Intelligence with the Windows local launcher." }, 503);
   if (!trustedRequest(request)) return json({ error: "Workspace origin check failed." }, 403);
   if (serverMode() && !serverAuthenticated(request)) return json({ error: "Sign in to Recipe Intelligence." }, 401, { "WWW-Authenticate": 'Basic realm="Recipe Intelligence", charset="UTF-8"' });
-  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, ...(serverMode() ? { mode: "server" } : {}) });
+  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, decorBrowserCapture: 1, ...(serverMode() ? { mode: "server" } : {}) });
   const token = process.env.RECIPE_INTELLIGENCE_TOKEN!;
   const cookie = (request.headers.get("cookie") || "").split(";").map(part => part.trim()).find(part => part.startsWith("ri_session="))?.slice(11) || "";
   if (segments[0] === "session" && request.method === "POST") {
@@ -123,17 +123,22 @@ export async function handleIntelligence(request: Request): Promise<Response> {
       const decor = new DecorStore(database);
       if (!id && request.method === 'GET') return json({ jobs: decor.list(), worker: database.snapshot().worker });
       if (!id && request.method === 'POST') { const data = await body(request, 180000); return json(decor.create(data.url, data.text), 201); }
+      if (id === 'browser' && !child && request.method === 'POST') return json(decor.beginBrowser(await body(request, MAX_CAPTURE_BYTES)), 201);
+      if (id && child === 'browser-finish' && request.method === 'POST') return json(decor.finishBrowser(id, await body(request)));
       if (id && !child && request.method === 'GET') return json(decor.detail(id));
       if (id && !child && request.method === 'DELETE') { const data = await body(request); if (data.confirmed !== true) throw new Error('Confirm deletion of this article and its saved photos.'); return json(decor.remove(id)); }
       if (id && child === 'selection' && request.method === 'POST') return json(decor.select(id, await body(request)));
       if (id && child === 'approve' && request.method === 'POST') return json(decor.approve(id, (await body(request)).version));
       if (id && child === 'retry-image' && request.method === 'POST') return json(await decor.retryPreparation(id, String((await body(request)).photoId)));
       if (id && child === 'archive' && request.method === 'POST') return json(decor.archive(id, (await body(request)).archived));
-      if (id && child === 'upload' && request.method === 'POST') {
+      if (id && ['upload', 'browser-photo'].includes(child) && request.method === 'POST') {
         const reader = request.body?.getReader(); if (!reader) throw new Error('Upload is empty.');
         const chunks: Uint8Array[] = []; let size = 0;
         try { for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 10 * 1024 * 1024) throw new Error('Photo exceeds 10 MB.'); chunks.push(part.value); } } finally { await reader.cancel().catch(() => {}); }
-        return json(await decor.upload(id, Buffer.concat(chunks), decodeURIComponent(request.headers.get('x-photo-caption') || 'Uploaded reference')));
+        const caption = decodeURIComponent(request.headers.get('x-photo-caption') || 'Uploaded reference');
+        return json(child === 'browser-photo'
+          ? await decor.uploadBrowser(id, Buffer.concat(chunks), decodeURIComponent(request.headers.get('x-source-url') || ''), caption)
+          : await decor.upload(id, Buffer.concat(chunks), caption));
       }
       if (id && ['photo', 'output'].includes(child) && segments[3] && request.method === 'GET') return new Response(new Uint8Array(child === 'output' ? await decor.exportedFile(id, segments[3]) : decor.file(id, segments[3], false)), { headers: { 'Content-Type': child === 'output' ? 'image/webp' : 'image/png', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
       if (id && ['preview', 'zip'].includes(child) && request.method === 'GET') return new Response(new Uint8Array(await decor.document(id, child === 'zip')), { headers: { 'Content-Type': child === 'zip' ? 'application/zip' : 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', ...(child === 'zip' ? { 'Content-Disposition': 'attachment; filename="home-decor-article.zip"' } : { 'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'" }) } });

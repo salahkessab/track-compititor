@@ -42,7 +42,7 @@ function assertIdle(store: IntelligenceStore) {
     || store.db.prepare("SELECT 1 FROM wordpress_media WHERE state='uploading' LIMIT 1").get()
     || store.db.prepare("SELECT 1 FROM recipe_imports WHERE status IN ('running','capturing') LIMIT 1").get()
     || store.db.prepare("SELECT 1 FROM content_items WHERE state='running' LIMIT 1").get()
-    || (table(store, 'decor_jobs') && store.db.prepare("SELECT 1 FROM decor_jobs WHERE state IN ('running','importing') LIMIT 1").get())
+    || (table(store, 'decor_jobs') && store.db.prepare("SELECT 1 FROM decor_jobs WHERE state IN ('running','importing','capturing') LIMIT 1").get())
     || (table(store, 'decor_calls') && store.db.prepare("SELECT 1 FROM decor_calls WHERE state IN ('reserved','dispatched') LIMIT 1").get());
   if (busy) throw new Error('Wait for the current generation, import or WordPress request to finish before deleting all articles.');
   const locks = checked(store.root, 'verified-images/locks');

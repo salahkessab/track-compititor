@@ -20,7 +20,7 @@ import { refineArticle, REFINEMENT_VERSION, REFINEMENT_INPUT_LIMIT, type Refinem
 const now = () => new Date().toISOString();
 const MAX_SELECTED = 12;
 type Photo = { id: string; caption: string; group: string; path: string; selected: boolean; width: number; height: number; output?: string; error?: string; phase?: string; preparationId?: string };
-type Job = { id: string; state: string; createdAt: string; updatedAt: string; source: DecorSource; photos: Photo[]; brief: string; settings: ContentSettings; quote?: any; limit?: number; article?: any; refinement?: RefinementReport; error?: string; warnings: string[]; archived?: boolean };
+type Job = { id: string; state: string; createdAt: string; updatedAt: string; source: DecorSource; photos: Photo[]; brief: string; settings: ContentSettings; quote?: any; limit?: number; article?: any; refinement?: RefinementReport; error?: string; warnings: string[]; archived?: boolean; browserCapture?: { fingerprint: string; uploadedUrls: string[] } };
 export class DecorStore {
   constructor(public store: IntelligenceStore) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS decor_jobs(id TEXT PRIMARY KEY,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,data_json TEXT NOT NULL);
@@ -51,6 +51,66 @@ export class DecorStore {
       brief: 'Natural daylight, realistic lived-in rooms. Muted sage, warm oak and warm white accents. Keep each room group consistent.', settings: contentSettings(this.store), warnings: [] };
     this.store.db.prepare('INSERT INTO decor_jobs VALUES(?,?,?,?,?)').run(id, job.state, job.createdAt, job.updatedAt, JSON.stringify(job));
     return this.detail(id);
+  }
+  beginBrowser(input: Record<string, unknown>) {
+    if (typeof input.captureId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(input.captureId)) throw new Error('Invalid browser capture ID.');
+    if (typeof input.url !== 'string' || input.url.length > 4096) throw new Error('Provide the captured article URL.');
+    const url = publicUrl(input.url).href;
+    if (typeof input.html !== 'string' || !input.html.trim() || Buffer.byteLength(input.html) > 1_500_000) throw new Error('The captured article is empty or too large (1.5 MB maximum).');
+    const id = input.captureId, fingerprint = digest(JSON.stringify([url, input.html]));
+    return this.store.db.transaction(() => {
+      if (this.store.db.prepare('SELECT 1 FROM decor_jobs WHERE id=?').get(id)) {
+        if (this.get(id).browserCapture?.fingerprint !== fingerprint) throw new Error('This capture ID belongs to different content. Capture the page again.');
+        return this.browserDetail(id);
+      }
+      // Parse the captured article directly; no recipe extraction, URL fetch or AI call.
+      const source = extractDecor(input.html as string, url); source.photos = [];
+      const job: Job = { id, state: 'capturing', createdAt: now(), updatedAt: now(), source, photos: [],
+        brief: 'Natural daylight, realistic lived-in rooms. Muted sage, warm oak and warm white accents. Keep each room group consistent.',
+        settings: contentSettings(this.store), warnings: [], browserCapture: { fingerprint, uploadedUrls: [] } };
+      this.store.db.prepare('INSERT INTO decor_jobs VALUES(?,?,?,?,?)').run(id, job.state, job.createdAt, job.updatedAt, JSON.stringify(job));
+      return this.browserDetail(id);
+    }).immediate();
+  }
+  private browserDetail(id: string) {
+    const job = this.get(id);
+    if (!job.browserCapture) throw new Error('This is not a Home & Decor browser import.');
+    return { id, status: job.state === 'capturing' ? 'capturing' : 'ready',
+      photos: job.photos.map(p => ({ id: p.id, state: 'ready' })), uploadedUrls: job.browserCapture.uploadedUrls };
+  }
+  async uploadBrowser(id: string, bytes: Buffer, source: string, caption: string) {
+    const job = this.get(id), url = publicUrl(source).href;
+    if (!job.browserCapture) throw new Error('This is not a Home & Decor browser import.');
+    if (job.browserCapture.uploadedUrls.includes(url)) return this.browserDetail(id);
+    if (job.state !== 'capturing') throw new Error('This browser import is already finished.');
+    if (job.browserCapture.uploadedUrls.length >= 30) throw new Error('Keep up to 30 reference candidates.');
+    const revision = digest(JSON.stringify(job));
+    const existingPaths = new Set(job.photos.map(p => p.path));
+    await this.photo(job, bytes, caption);
+    try { return this.store.db.transaction(() => {
+      const current = this.get(id);
+      if (current.browserCapture?.uploadedUrls.includes(url)) return this.browserDetail(id);
+      if (current.state !== 'capturing' || digest(JSON.stringify(current)) !== revision) throw new Error('The import changed while saving this photo. Resume the import to retry.');
+      job.browserCapture!.uploadedUrls.push(url); this.save(job);
+      return this.browserDetail(id);
+    }).immediate(); } finally {
+      // A cancelled or overlapping upload must not leave an unreferenced file.
+      let savedPaths = new Set<string>();
+      try { savedPaths = new Set(this.get(id).photos.map(p => p.path)); } catch { /* Article was deleted. */ }
+      for (const photo of job.photos) if (!existingPaths.has(photo.path) && !savedPaths.has(photo.path)) fs.rmSync(storagePath(this.store.root, photo.path), { force: true });
+    }
+  }
+  finishBrowser(id: string, input: Record<string, unknown>) {
+    return this.store.db.transaction(() => {
+      const job = this.get(id);
+      if (!job.browserCapture) throw new Error('This is not a Home & Decor browser import.');
+      if (job.state !== 'capturing') return this.browserDetail(id);
+      const missing = Number(input.missingPhotos || 0);
+      if (!Number.isSafeInteger(missing) || missing < 0 || missing > 80) throw new Error('Invalid missing photo count.');
+      if (missing) job.warnings.push(`${missing} source photographs could not be imported from Chrome. You can upload them manually.`);
+      // Photo selection, estimate and paid approval stay in Home & Decor.
+      job.state = 'review'; this.save(job); return this.browserDetail(id);
+    }).immediate();
   }
   private editable(job: Job) { if (job.state !== 'review' || this.store.db.prepare('SELECT 1 FROM decor_calls WHERE job_id=?').get(job.id)) throw new Error('This article has already been queued or generated. Create a new import to change its references.'); }
   private async photo(job: Job, bytes: Buffer, caption: string, sourceUrl?: string) {
@@ -98,7 +158,7 @@ export class DecorStore {
       job.limit = job.quote.limit; job.state = 'queued'; this.save(job); return this.detail(id);
     }).immediate();
   }
-  archive(id: string, value: unknown) { const job = this.get(id); if (typeof value !== 'boolean') throw new Error('Choose Archive or Restore.'); if (['queued', 'running', 'importing', 'import_queued'].includes(job.state)) throw new Error('Wait for the current work before archiving.'); job.archived = value; this.save(job); return this.detail(id); }
+  archive(id: string, value: unknown) { const job = this.get(id); if (typeof value !== 'boolean') throw new Error('Choose Archive or Restore.'); if (['queued', 'running', 'importing', 'import_queued', 'capturing'].includes(job.state)) throw new Error('Wait for the current work before archiving.'); job.archived = value; this.save(job); return this.detail(id); }
   remove(id: string) {
     return this.store.db.transaction(() => {
     const job = this.get(id);

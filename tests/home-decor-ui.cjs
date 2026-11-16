@@ -44,3 +44,15 @@ test('completed decor articles provide preview and download and require delete c
   await ui.click('Delete'); assert.ok(document.querySelector('[role=dialog]')); assert.ok(!calls.some(c => c.init.method === 'DELETE'));
   await ui.click('Keep article'); assert.equal(document.querySelector('[role=dialog]'), null);
 });
+
+test('extension review link opens its decor article without any paid approval',async t=>{
+  const id='c8411ee3-c45c-4ea0-a9d7-98becd9a76ae',calls=[];
+  const job={id,state:'review',source:{title:'Captured bedroom guide',url:'https://decor.example/bedroom',text:'A bedroom guide'},brief:'Soft linen',warnings:[],photos:[],settings:{},actual:0,held:0};
+  const ui=await setup(t,async(url,init={})=>{calls.push({url,init});return Response.json({jobs:[job],worker:{online:true}})});
+  window.history.replaceState(null,'','/?tab=home-decor&decorId='+id);
+  await React.act(async()=>ui.root.render(React.createElement(HomeDecor,{active:true})));
+  assert.ok(document.querySelector('a[href="https://decor.example/bedroom"]'));
+  assert.ok(document.body.textContent.includes('Imported article text'));
+  assert.ok(calls.every(c=>!c.init.method||c.init.method==='GET'));
+  assert.ok(!document.body.textContent.includes('Approve $'));
+});

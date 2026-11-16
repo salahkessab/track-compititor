@@ -64,3 +64,12 @@ User review found that Settings was difficult to find in the sidebar and the ext
 - Production build and type checking passed.
 - 13 targeted Chrome checks passed, including desktop/mobile layout, direct Settings reload, both ZIP download responses and a simulated workspace outage. No generation or publishing requests were made.
 - Screenshots: E:/Projects/Recipe-Intelligence/studio-redesign/work/settings-local-desktop.png and settings-local-mobile.png. Captured after the navigation transition settled; Settings is the active sidebar destination.
+
+## Home & Decor extension import follow-up
+
+Extension 2.5.0 adds a destination selector, defaulting to the connected app tab. Decor captures use a separate authenticated import path and open the captured article for photo selection; they never enter recipe validation or automatically approve generation. Interrupted imports retain their destination, reuse uploaded photos, and finish idempotently. Older recipe captures remain recipe captures; start a fresh capture to select Home & Decor.
+
+- 478 automated tests passed, including real bridge/API coverage for non-recipe text, photo bytes, retries, authentication, CSRF and no paid dispatch. Production build passed.
+- 9 Chrome checks passed with isolated fixtures: destination selection, decor-only operations, locked destination after saving, review deep link, mobile layout and unchecked reference photos. No paid requests or production data changes.
+- Screenshots: work/decor-extension-desktop.png, work/decor-extension-mobile.png and work/decor-import-local.png. The plain green photo is an explicit test fixture, not generated output.
+- Users must replace their unpacked extension files, reload version 2.5.0 in Chrome, and open a fresh capture tab. An older app refuses decor capture rather than falling back to recipes.

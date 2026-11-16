@@ -2,7 +2,7 @@ const {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto} = CaptureHel
 const connection = CaptureConnection.createConnection(chrome,appBridge);
 const $ = id => document.getElementById(id);
 const extensionVersion = chrome.runtime.getManifest().version;
-$('version').textContent = `Capture v${extensionVersion} · Recipe photo filter enabled`;
+$('version').textContent = `Capture v${extensionVersion} · Recipes and Home & Decor`;
 const sourceTab = Number(new URLSearchParams(location.search).get('sourceTab'));
 let job, previous, app, busy = false;
 const photoCache = new Map();
@@ -28,6 +28,7 @@ async function findApp(options={}) {
   $('connection').hidden=true; connectionControls(true);
   try {
     app=await connection.connect({root:job?.workspaceRoot,...options});
+    if (job && !job.started && !job.destinationChosen && app.destination) { job.destination=app.destination; render(); }
     $('connection-status').textContent=`Connected · ${app.root}`;
     $('app-url').value=app.origin; $('connect').textContent='Reconnect'; $('open-app').hidden=false;
     return app;
@@ -44,6 +45,8 @@ async function findApp(options={}) {
 }
 function render() {
   const capture = job.capture;
+  job.destination ||= 'recipe';
+  $('destination').value=job.destination; $('destination').disabled=!!job.started || busy;
   $('title').textContent = capture.title;
   $('source').textContent = capture.url; $('source').href = capture.url;
   $('counts').textContent = `${capture.words.toLocaleString()} words · ${capture.images.length} photos found`;
@@ -63,7 +66,7 @@ function render() {
         img.src = `data:${data.mime};base64,${data.base64}`;
         img.hidden = false; notice.remove();
       } catch {
-        notice.textContent = 'Photo unavailable. Open the recipe tab, scroll to this photo and let it load, then capture again. This photo will not be imported unless it can be read.';
+        notice.textContent = 'Photo unavailable. Open the article tab, scroll to this photo and let it load, then capture again. This photo will not be imported unless it can be read.';
       }
     });
     const span = document.createElement('span'), checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = job.selected.includes(index); checkbox.disabled = !!job.started;
@@ -71,13 +74,15 @@ function render() {
     span.append(checkbox,document.createTextNode(photo.caption || `Photo ${index+1}`)); label.append(img,notice,span); $('photos').append(label);
   });
   $('warnings').replaceChildren();
-  if (job.extensionVersion !== extensionVersion) warn('This saved capture comes from an earlier extension version. Its photo selection is preserved. Start a fresh capture from the recipe page to use the current filter.');
-  if (capture.truncated) warn('This is a long page. The preview contains the first part; check that the recipe is present.');
-  if (!capture.images.length) warn('No source photos were found. The app can estimate new images from the recipe text.');
+  if (job.extensionVersion !== extensionVersion) warn('This saved capture comes from an earlier extension version. Its photo selection is preserved. Start a fresh capture from the article page to use the current filter.');
+  if (capture.truncated) warn('This is a long page. The preview contains the first part; check that the article content you need is present.');
+  if (!capture.images.length) warn(job.destination === 'home-decor' ? 'No source photos were found. You can upload reference photos in Home & Decor before reviewing the estimate.' : 'No source photos were found. The app can estimate new images from the recipe text.');
   for (const failed of job.failed || []) warn(`Photo ${failed.index+1}: ${failed.message}`);
   $('import').disabled = false;
   $('import').hidden = !!job.done; $('open').hidden = !job.done; $('next').hidden = !job.done;
-  $('import').textContent = job.started ? 'Resume saving' : 'Save to My articles';
+  $('import').textContent = job.started ? 'Resume saving' : job.destination === 'home-decor' ? 'Save to Home & Decor' : 'Save to My articles';
+  $('open').textContent = job.destination === 'home-decor' ? 'Review Home & Decor' : 'Review My articles';
+  $('next').textContent = job.destination === 'home-decor' ? 'Open Home & Decor to choose photos and room groups, review the estimate, and approve generation.' : 'Keep collecting recipes. When you finish, open My articles to review photos and click Generate for each article.';
 }
 function warn(message) { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); }
 async function capturePage() {
@@ -85,9 +90,9 @@ async function capturePage() {
   try {
     const tab = await chrome.tabs.get(sourceTab);
     const savedConnection = await connection.readSaved();
-    if (new URL(tab.url).hostname === '127.0.0.1' || new URL(tab.url).searchParams.get('tab') === 'recipe-intelligence' || new URL(tab.url).origin === savedConnection?.origin) {
+    if (new URL(tab.url).hostname === '127.0.0.1' || ['recipe-intelligence','home-decor'].includes(new URL(tab.url).searchParams.get('tab')) || new URL(tab.url).origin === savedConnection?.origin) {
       await findApp({origin:tab.url,allowOpen:false});
-      status('Connected. Open a recipe website and click the extension to capture it.');
+      status('Connected. Open a recipe or Home & Decor article and click the extension to capture it.');
       return;
     }
     publicImageUrl(tab.url);
@@ -95,9 +100,9 @@ async function capturePage() {
     const capture = result?.result;
     if (!capture || capture.text.length < 40) throw new Error('No readable article found. Open the article itself, let it load, then capture it again.');
     publicImageUrl(capture.url);
-    if (new Blob([capture.html]).size > 1500000) throw new Error('This page is too large. Open the individual recipe page and try again.');
+    if (new Blob([capture.html]).size > 1500000) throw new Error('This page is too large. Open the individual article page and try again.');
     capture.images = capture.images.filter(p => { try { p.url = publicImageUrl(p.url); p.alternatives = p.alternatives.map(u => new URL(u,capture.url).href).filter(u => {try {publicImageUrl(u);return true;}catch{return false;}}); return true; } catch { return false; } });
-    job = {id:crypto.randomUUID(),extensionVersion,capture,sourceTab,selected:capture.images.map((_,i)=>i),uploaded:[],failed:[],started:false};
+    job = {id:crypto.randomUUID(),extensionVersion,capture,sourceTab,destination:savedConnection?.destination || 'recipe',selected:capture.images.map((_,i)=>i),uploaded:[],failed:[],started:false};
     render(); status('Ready to import.');
   } catch (e) { status('Capture needs your attention.'); showError(e); $('retry').hidden = false; }
 }
@@ -154,11 +159,13 @@ async function importRecipe() {
       job.pending = true; await save();
       status('Connecting to your workspace…'); await findApp();
       if (job.workspaceRoot && job.workspaceRoot !== app.root) throw new Error('This capture belongs to another storage folder. Open the original workspace to resume it.');
+      if (job.destination === 'home-decor' && !app.decorBrowserCapture) throw new Error('Update the app to support Home & Decor browser imports. This article has not been sent to the recipe importer.');
       // Save before the first request, so any interrupted import can be resumed.
       job.started = true; job.workspaceRoot = app.root; await save(); render(); $('import').disabled = true;
-      let imported = await bridge(app,{op:'begin',data:{captureId:job.id,url:job.capture.url,html:job.capture.html}});
+      const destination = job.destination || 'recipe';
+      let imported = await bridge(app,{op:'begin',destination,data:{captureId:job.id,url:job.capture.url,html:job.capture.html}});
       if (imported.status === 'capturing') {
-        job.uploaded = job.selected.filter(index => imported.photos.some(p => p.state === 'ready' && p.source_url === job.capture.images[index].url));
+        job.uploaded = job.selected.filter(index => imported.uploadedUrls?.includes(job.capture.images[index].url) || imported.photos.some(p => p.state === 'ready' && p.source_url === job.capture.images[index].url));
         job.failed = [];
         for (const index of job.selected) {
           if (job.uploaded.includes(index)) continue;
@@ -166,29 +173,30 @@ async function importRecipe() {
           const photo = job.capture.images[index]; let data;
           try { data = await readablePhoto(photo); } catch (e) { job.failed.push({index,message:e.message}); await save(); continue; }
           try {
-            await bridge(app,{op:'photo',id:job.id,...data,url:photo.url,caption:photo.caption,name:`Photo ${index+1}`}); job.uploaded.push(index);
+            await bridge(app,{op:'photo',destination,id:job.id,...data,url:photo.url,caption:photo.caption,name:`Photo ${index+1}`}); job.uploaded.push(index);
           } catch (e) { if (e.status !== 400) throw e; job.failed.push({index,message:e.message}); }
           await save();
         }
-        imported = await bridge(app,{op:'finish',id:job.id,missingPhotos:job.failed.length});
+        imported = await bridge(app,{op:'finish',destination,id:job.id,missingPhotos:job.failed.length});
       }
-      status('Calculating the estimate…');
-      const batch = await bridge(app,{op:'estimate',id:job.id});
+      status(destination === 'home-decor' ? 'Saving for photo selection and review…' : 'Calculating the estimate…');
+      const batch = destination === 'home-decor' ? imported : await bridge(app,{op:'estimate',destination,id:job.id});
       if (!/^[a-f0-9-]{36}$/i.test(batch.id)) throw new Error('The app returned an invalid estimate.');
       job.batchId = batch.id; job.appOrigin = app.origin; job.done = true; job.pending = false; await save(); render();
-      $('result').textContent = `Saved the recipe and ${imported.photos.filter(p=>p.state==='ready').length} photos. Finish collecting recipes, then review them in My articles. No generation has started.`;
+      $('result').textContent = `Saved the ${destination === 'home-decor' ? 'Home & Decor article' : 'recipe'} and ${imported.photos.filter(p=>p.state==='ready').length} photos. ${destination === 'home-decor' ? 'Choose photos and review the estimate in Home & Decor.' : 'Finish collecting recipes, then review them in My articles.'} No generation has started.`;
       status('Imported. Saved for your review.'); $('open').hidden = false; $('next').hidden = false; $('import').hidden = true;
       // Stay here so the user can finish collecting recipes before review.
     });
   } catch (e) { status('Import needs your attention. Your saved progress is kept.'); showError(e); }
-  finally { busy = false; $('import').disabled = false; $('resume').disabled = false; connectionControls(false); }
+  finally { busy = false; $('import').disabled = false; $('resume').disabled = false; $('destination').disabled=!!job?.started; connectionControls(false); }
 }
 async function openEstimate() {
   if (!job?.batchId) return;
   await findApp();
   if (app.root !== job.workspaceRoot) throw new Error('Open the workspace that received this capture.');
-  await connection.focus(app,`${app.origin}/?tab=recipe-intelligence&view=batches`);
+  await connection.focus(app,job.destination === 'home-decor' ? `${app.origin}/?tab=home-decor&decorId=${job.batchId}` : `${app.origin}/?tab=recipe-intelligence&view=batches`);
 }
+$('destination').onchange = () => { if (!job || job.started || busy) return; job.destination=$('destination').value; job.destinationChosen=true; render(); };
 $('connect').onclick = () => void findApp().catch(()=>{});
 $('save-connection').onclick = () => void findApp({origin:$('app-url').value}).catch(()=>{});
 $('workspace').onchange = () => { if ($('workspace').value) void findApp({origin:$('workspace').value}).catch(()=>{}); };

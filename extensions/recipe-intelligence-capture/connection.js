@@ -17,7 +17,7 @@
     async function readSaved() {
       if (!loaded) {
         const candidate = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
-        try { if (candidate && typeof candidate.root === 'string' && candidate.root.length <= 4096) saved = {origin:appOrigin(candidate.origin),root:candidate.root}; } catch { /* Ignore invalid old settings. */ }
+        try { if (candidate && typeof candidate.root === 'string' && candidate.root.length <= 4096) saved = {origin:appOrigin(candidate.origin),root:candidate.root,...(['recipe','home-decor'].includes(candidate.destination)?{destination:candidate.destination}:{})}; } catch { /* Ignore invalid old settings. */ }
         loaded = true;
       }
       return saved;
@@ -38,7 +38,7 @@
       const origin = appOrigin(tab.url);
       const result = await bridge({id:tab.id,origin},{op:'probe'});
       if (result.ready !== true || typeof result.root !== 'string' || !result.root || result.root.length > 4096) throw new Error('This tab is not a connected Recipe Intelligence workspace.');
-      return {id:tab.id,origin,root:result.root};
+      return {id:tab.id,origin,root:result.root,...(['recipe','home-decor'].includes(result.destination)?{destination:result.destination}:{}),decorBrowserCapture:result.decorBrowserCapture === true};
     }
     async function scan(requested) {
       const tabs = await browser.tabs.query({url:['http://127.0.0.1/*','https://*/*']});
@@ -46,7 +46,7 @@
       for (const tab of tabs) {
         try {
           const origin = appOrigin(tab.url), url = new URL(tab.url);
-          const appTab = url.hostname === '127.0.0.1' || origin === requested || origin === saved?.origin || url.searchParams.get('tab') === 'recipe-intelligence';
+          const appTab = url.hostname === '127.0.0.1' || origin === requested || origin === saved?.origin || ['recipe-intelligence','home-decor'].includes(url.searchParams.get('tab'));
           if (appTab && !seen.has(origin) && Number.isInteger(tab.id)) { seen.add(origin); candidates.push(tab); }
         } catch { /* Unrelated tab. */ }
       }
@@ -54,7 +54,7 @@
       return {ready:results.filter(r=>r.status==='fulfilled').map(r=>r.value), errors:results.filter(r=>r.status==='rejected').map(r=>r.reason)};
     }
     async function remember(target) {
-      const next = {origin:appOrigin(target.origin),root:target.root};
+      const next = {origin:appOrigin(target.origin),root:target.root,...(target.destination?{destination:target.destination}:{})};
       await browser.storage.local.set({[STORAGE_KEY]:next}); saved = next; loaded = true;
       return target;
     }
@@ -67,7 +67,7 @@
       const preferred = eligible.find(t=>t.origin===(requested || saved?.origin));
       if (preferred || eligible.length===1) return remember(preferred || eligible[0]);
       if (eligible.length>1) {
-        const error = new Error('More than one workspace is open. Choose where to save this recipe.'); error.targets=eligible; throw error;
+        const error = new Error('More than one workspace is open. Choose where to save this article.'); error.targets=eligible; throw error;
       }
       const restoreOrigin = requested || saved?.origin;
       const existing = restoreOrigin && found.ready.find(t=>t.origin===restoreOrigin);

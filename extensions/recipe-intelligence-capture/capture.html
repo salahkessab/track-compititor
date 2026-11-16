@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recipe Intelligence Capture</title><link rel="stylesheet" href="capture.css"></head>
 <body><main>
-  <header><span class="eyebrow">RECIPE INTELLIGENCE</span><h1>Bring this recipe into your workspace.</h1><p>Save recipes → finish collecting → review and Generate in the app.</p><p id="version" class="hint"></p></header>
+  <header><span class="eyebrow">RECIPE STUDIO</span><h1>Bring this article into your workspace.</h1><p>Save articles and photos → review → generate in the app.</p><p id="version" class="hint"></p></header>
   <section class="card" aria-label="App connection"><p id="connection-status" role="status" aria-live="polite">Checking your app connection…</p>
     <div class="actions"><button id="connect" class="secondary">Connect</button><button id="open-app" class="secondary" hidden>Open connected app</button></div>
     <details id="connection-settings"><summary>Connection settings</summary><p class="hint">The app address is remembered after a successful connection. No password or API key is stored.</p>
@@ -11,6 +11,8 @@
   </section>
   <section class="card"><p id="status" role="status" aria-live="polite">Reading the open page…</p><p id="error" role="alert" hidden></p>
     <h2 id="title"></h2><a id="source" target="_blank" rel="noreferrer"></a><p id="counts"></p>
+    <label>Save article to<select id="destination"><option value="recipe">Recipes · My articles</option><option value="home-decor">Home &amp; Decor</option></select></label>
+    <p class="hint">Choose the article type before saving. Home &amp; Decor imports do not require ingredients or recipe instructions.</p>
     <div class="actions"><button id="import" disabled>Save to My articles</button><button id="resume" class="secondary" hidden>Resume previous import</button><button id="retry" class="secondary" hidden>Capture page again</button><button id="open" class="secondary" hidden>Review My articles</button></div>
     <p id="next" class="hint" hidden>Keep collecting recipes. When you finish, open My articles to review photos and click Generate for each article.</p>
     <p class="hint">Keep this tab open while importing. Capturing is free. Generation starts only when you click Generate in the app.</p>

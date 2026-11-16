@@ -10,7 +10,7 @@ test('packaged Chrome icons decode as PNG at their declared dimensions',async()=
   }
 });
 async function until(predicate) { for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('Extension UI did not settle'); }
-async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,pageRecovery=false,windowState='normal',offline=false,sourceIsApp=false}={}) {
+async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,pageRecovery=false,windowState='normal',offline=false,sourceIsApp=false,destination='recipe',decorSupported=true}={}) {
   const dom=new JSDOM(fs.readFileSync(path.join(directory,'capture.html'),'utf8'),{url:'https://extension.example/capture.html?sourceTab=11',runScripts:'outside-only'});
   const w=dom.window, calls=[],navigations=[],windowUpdates=[]; let uploads=0,stage='capturing',photos=[];
   const capture={url:'https://food.example/soup/',title:'Carrot soup',html:'<article><h1>Carrot soup</h1><p>The captured article.</p></article>',text:'Carrot soup\nA warm soup made from carrots, water and salt.',words:12,images:[{url:'https://cdn.example/soup.jpg',caption:'Carrot soup',alternatives:[]}],truncated:false};
@@ -26,13 +26,13 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
       if(options.func.name==='pagePhoto')return [{result:pageRecovery?{base64:'AQID',mime:'image/jpeg'}:null}];
       if(options.func.name==='renderedPhoto')return [{result:null}];
       assert.equal(options.world,'ISOLATED');const m=options.args[0];calls.push(m);
-      if(m.op==='probe')return [{result:{ready:true,root:'E:\\Recipes'}}];
+      if(m.op==='probe')return [{result:{ready:true,root:'E:\\Recipes',destination,decorBrowserCapture:decorSupported}}];
       if(m.op==='begin')return [{result:{id:m.data.captureId,status:stage,photos}}];
       if(m.op==='photo'){
         if(failFirstUpload&&++uploads===1)return [{result:{error:'Local app restarting',status:503}}];
         photos=[{id:'p1',state:'ready',source_url:m.url}];return [{result:{photos}}];
       }
-      if(m.op==='finish'){stage='ready';return [{result:{photos,status:stage}}];}
+      if(m.op==='finish'){stage='ready';return [{result:{id:m.id,photos,status:stage}}];}
       if(m.op==='estimate')return [{result:{id:batchId,quote:{estimated:.71}}}];
       throw new Error(`Unexpected operation ${m.op}`);
     }}
@@ -46,7 +46,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
   w.eval(fs.readFileSync(path.join(directory,'connection.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(directory,'capture.js'),'utf8'));
   t.after(()=>dom.window.close());
-  await until(()=>w.document.getElementById('status').textContent===(sourceIsApp?'Connected. Open a recipe website and click the extension to capture it.':'Ready to import.'));
+  await until(()=>w.document.getElementById('status').textContent===(sourceIsApp?'Connected. Open a recipe or Home & Decor article and click the extension to capture it.':'Ready to import.'));
   await until(()=>!w.document.getElementById('connect').disabled);
   const button=id=>w.document.getElementById(id);
   const run=async()=>{button('import').click();await until(()=>!button('import').disabled&&(button('status').textContent.startsWith('Imported.')||button('status').textContent.startsWith('Import needs')));};
@@ -54,7 +54,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
 }
 test('extension preview imports image bytes, finishes before estimating, and waits for manual library review',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.4\.1/);
+  assert.match(screen.button('version').textContent,/Capture v2\.5\.0/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
@@ -69,8 +69,45 @@ test('extension preview imports image bytes, finishes before estimating, and wai
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/No generation has started/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.4.1');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.5.0');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
+});
+
+test('Home & Decor destination imports photos without recipe estimation and opens the captured decor job',async t=>{
+  const screen=await ui(t,{destination:'home-decor'});
+  assert.equal(screen.button('destination').value,'home-decor');
+  assert.equal(screen.button('import').textContent,'Save to Home & Decor');
+  await screen.run();
+  const operations=screen.calls.filter(m=>m.op!=='probe');
+  assert.deepEqual(operations.map(m=>m.op),['begin','photo','finish']);
+  assert.ok(operations.every(m=>m.destination==='home-decor'));
+  assert.equal(screen.storage.lastCapture.destination,'home-decor');
+  assert.equal(screen.button('destination').disabled,true);
+  assert.match(screen.button('result').textContent,/Home & Decor article.*No generation has started/);
+  screen.button('open').click();await until(()=>screen.navigations.length===1);
+  const url=new URL(screen.navigations[0].details.url);
+  assert.equal(url.searchParams.get('tab'),'home-decor');assert.equal(url.searchParams.get('decorId'),screen.storage.lastCapture.id);
+  assert.ok(!screen.calls.some(m=>['estimate','approve'].includes(m.op)));
+});
+
+test('manual decor choice overrides the open recipe tab and refuses an app without decor capture support',async t=>{
+  const screen=await ui(t,{decorSupported:false});
+  screen.button('destination').value='home-decor';screen.button('destination').dispatchEvent(new screen.w.Event('change'));
+  await screen.run();
+  assert.match(screen.button('error').textContent,/Update the app.*Home & Decor/);
+  assert.ok(screen.calls.every(m=>m.op==='probe'));
+  assert.equal(screen.storage.lastCapture.destination,'home-decor');
+  assert.equal(screen.button('destination').disabled,false);
+});
+
+test('resuming a decor capture keeps its destination even if the app tab changes to recipes',async t=>{
+  const screen=await ui(t,{destination:'home-decor',failFirstUpload:true});await screen.run();
+  assert.equal(screen.storage.lastCapture.started,true);assert.equal(screen.storage.lastCapture.done,undefined);
+  const next=await ui(t,{storage:screen.storage,destination:'recipe'});
+  next.button('resume').click();assert.equal(next.button('destination').value,'home-decor');
+  await next.run();assert.equal(next.storage.lastCapture.done,true);
+  assert.ok(next.calls.filter(m=>m.op!=='probe').every(m=>m.destination==='home-decor'));
+  assert.ok(!next.calls.some(m=>m.op==='estimate'));
 });
 
 test('a direct 403 can recover from the source tab and uses those same bytes for preview and import',async t=>{

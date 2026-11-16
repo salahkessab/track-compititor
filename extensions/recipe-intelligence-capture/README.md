@@ -1,6 +1,8 @@
-# Recipe Intelligence Capture 2.4.1
+# Recipe Intelligence Capture 2.5.0
 
-Capture a recipe article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
+Capture a recipe or Home & Decor article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
+
+Version 2.5.0 adds **Save article to → Home & Decor**. The connected app's Home & Decor tab selects this destination automatically for a new capture; you can change it before saving. Decor imports use the decor article reader, never recipe ingredient validation. Select photos and room groups and review the estimate in Home & Decor before approving generation. Interrupted imports retain their original destination. If a decor article was previously submitted as a recipe, start a fresh capture and choose Home & Decor.
 
 Version 2.4.1 saves captures for review without switching you to the app. It remembers the connected app address and storage folder, shows connection status before importing, and can reopen a closed app tab. A changed launcher port is detected from an open app tab for the same workspace. Captures are saved before connecting, so an offline app does not lose the pending import. The recipe photo filters and saved generation history are unchanged.
 
@@ -8,7 +10,7 @@ Version 2.4.1 saves captures for review without switching you to the app. It rem
 
 ## Install once
 
-Download the ZIP from **Recipe Intelligence → Use a recipe URL → Capture recipes with the Chrome extension**, or use this repository folder directly.
+Download the ZIP from **Settings → Chrome extension**, or use this repository folder directly.
 
 1. Open `chrome://extensions` in Chrome and enable **Developer mode**.
 2. Choose **Load unpacked** and select this folder (the folder containing `manifest.json`). If using the ZIP, extract it first.
@@ -17,15 +19,15 @@ Download the ZIP from **Recipe Intelligence → Use a recipe URL → Capture rec
 
 After updating files in this folder, click **Reload** on the extension's card and close old capture tabs before starting a new capture.
 
-Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.4.1** at the top. Old capture tabs and resumed imports keep their previously captured photos. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
+Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.5.0** at the top. Old capture tabs and resumed imports keep their previously captured photos and destination. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
 
 ## Use
 
 1. Open the recipe in Chrome and wait for its article and images to appear. Scrolling through the recipe can load lazy photographs.
 2. Click **Recipe Intelligence Capture** in the toolbar. A capture preview opens in a separate tab.
-3. Click **Save to My articles**. All discovered photos are selected; optionally uncheck any you do not want.
+3. Choose **Recipes · My articles** or **Home & Decor** in **Save article to**, then click Save. All discovered photos are selected; optionally uncheck any you do not want.
 4. Keep the capture tab open until it finishes. The article is saved without starting generation or switching tabs. Continue collecting more recipes.
-5. When you finish collecting, click **Review My articles**. Review each article and its photos, then click **Generate**.
+5. When you finish collecting, click **Review My articles** or **Review Home & Decor**. Decor opens the specific captured article so you can choose photos and room groups, review its estimate, and approve generation.
 6. Below $2.50 maximum expected spend, Generate starts that article directly. If the estimate or reserved maximum reaches $2.50, the app shows the cost and asks before starting. Existing budget enforcement remains active; a changed or expired quote must be reviewed again.
 
 No AI requests or charges occur during capture or import. The extension never approves a generation job.
