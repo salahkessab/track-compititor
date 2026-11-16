@@ -3,15 +3,16 @@
 export type ArticleVoice = "classic" | "lean" | "story" | "quick" | "holiday" | "budget" | "beginner";
 
 export const ARTICLE_VOICES: { id: ArticleVoice; label: string }[] = [
-  { id: "classic", label: "Classic: the default Master recipe article" },
-  { id: "lean", label: "Lean: short introduction, recipe, tips" },
-  { id: "story", label: "Story: occasion, family scene, FAQ (close to source length)" },
-  { id: "quick", label: "Quick & Practical: straight to the point, tips and mistakes" },
-  { id: "holiday", label: "Holiday / Occasion: make-ahead, hosting, serving guests" },
-  { id: "budget", label: "Budget / Family: cost, kids, leftovers, meal prep" },
-  { id: "beginner", label: "Step-by-step Beginner: plain words, how to know it's done" },
+  { id: "classic", label: "Classic: the default Master recipe article (no fixed length)" },
+  { id: "lean", label: "Lean: short introduction, recipe, tips (~500–650 words)" },
+  { id: "story", label: "Story: occasion, family scene, FAQ (~1,300–1,500 words)" },
+  { id: "quick", label: "Quick & Practical: straight to the point, tips and mistakes (~800–900 words)" },
+  { id: "holiday", label: "Holiday / Occasion: make-ahead, hosting, serving guests (~1,300–1,500 words)" },
+  { id: "budget", label: "Budget / Family: cost, kids, leftovers, meal prep (~1,300–1,500 words)" },
+  { id: "beginner", label: "Step-by-step Beginner: plain words, how to know it's done (~1,450–1,650 words)" },
 ];
 
+// Word ranges in the labels are for a typical 1,300-word source; story-based styles follow the source article's length.
 export const isArticleVoice = (value: unknown): value is ArticleVoice => ARTICLE_VOICES.some(v => v.id === value);
 
 /** The chosen style, or the older environment switches when a batch was created without one. */
