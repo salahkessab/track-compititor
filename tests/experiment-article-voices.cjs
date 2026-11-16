@@ -29,7 +29,7 @@ test('seven writing styles are offered and an unknown style falls back to classi
 
 test('settings keep the chosen style and reject an unknown one', () => {
   assert.equal(validateContentSettings({ articleVoice: 'budget' }).articleVoice, 'budget');
-  assert.equal(validateContentSettings({}).articleVoice, undefined);
+  assert.equal(validateContentSettings({}).articleVoice, 'auto', 'Auto is the default');
   assert.throws(() => validateContentSettings({ articleVoice: 'poem' }), /writing style/);
 });
 
