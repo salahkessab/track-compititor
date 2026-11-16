@@ -483,8 +483,8 @@ test('provider failure is surfaced as uncertain and is not retried',async()=>{
 });
 
 test('photo presets preserve all style specifications and stay scoped to the photo', () => {
-  const {quickInstructions} = load(path.resolve(__dirname,'../lib/photoQuickInstructions.ts'));
-  const instructions = quickInstructions.map(p=>p.text).join('\n\n');
+  const {quickInstructions,appendQuickInstruction} = load(path.resolve(__dirname,'../lib/photoQuickInstructions.ts'));
+  const instructions = quickInstructions.reduce((text,p)=>appendQuickInstruction(text,p.text),'');
   assert.ok(instructions.length <= 4000);
   for (const style of RECIPE_STYLE_PRESETS) {
     const base=recipeDirectPrompt(style.id,'Exact title','Owner style notes',undefined,'Butter (1 cup)','1024x1536');

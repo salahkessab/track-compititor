@@ -1,5 +1,5 @@
 "use client";
-import { quickInstructions } from "@/lib/photoQuickInstructions";
+import { quickInstructions, appendQuickInstruction } from "@/lib/photoQuickInstructions";
 import { VerifiedImage } from './VerifiedImage';
 
 import { useEffect, useRef, useState } from "react";
@@ -64,7 +64,7 @@ export function RecipeImageToImage() {
 
   function addQuickInstruction(text: string) {
     if (loading || uploading || extraInstructions.includes(text)) return;
-    const next = extraInstructions.trimEnd() + (extraInstructions.trim() ? "\n\n" : "") + text;
+    const next = appendQuickInstruction(extraInstructions, text);
     if (next.length > MAX_EXTRA_INSTRUCTIONS) {
       setError("Make some room in Extra instructions before adding this preset.");
       return;

@@ -1,6 +1,6 @@
 "use client";
 import { VerifiedImage } from "./VerifiedImage";
-import { quickInstructions } from "@/lib/photoQuickInstructions";
+import { quickInstructions, appendQuickInstruction } from "@/lib/photoQuickInstructions";
 import { prepareClientImage, resolveImageResponse } from "@/lib/preparedImageClient";
 import { readGenerationPayload } from "@/lib/generationResponse";
 
@@ -349,7 +349,7 @@ export function RecipeDesigns() {
             <div className="flex flex-wrap gap-2" role="group" aria-label="Food photo quick instructions">
               {quickInstructions.map(preset=><button key={preset.label} type="button" title={preset.label+" — food photo only"} aria-label={preset.label+" — food photo only"} disabled={isBusy || photoInstructions.includes(preset.text)}
                 className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-lg text-gray-900 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-50"
-                onClick={()=>{const next=photoInstructions.trimEnd()+(photoInstructions.trim()?"\n\n":"")+preset.text;if(next.length>4000){setError("Make some room in Photo instructions before adding this preset.");return;}setPhotoInstructions(next);setError("");}}>
+                onClick={()=>{const next=appendQuickInstruction(photoInstructions,preset.text);if(next.length>4000){setError("Make some room in Photo instructions before adding this preset.");return;}setPhotoInstructions(next);setError("");}}>
                 <span aria-hidden="true">{preset.icon}</span>{photoInstructions.includes(preset.text)&&<span aria-label="Added" className="absolute -right-1 -top-1 rounded-full bg-blue-600 px-1 text-[10px] leading-4 text-white">✓</span>}
               </button>)}
               <button type="button" title="Clear photo instructions" aria-label="Clear photo instructions" disabled={isBusy || !photoInstructions} onClick={()=>setPhotoInstructions("")} className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-400/40 text-red-500 hover:bg-red-500/10 disabled:opacity-40">
