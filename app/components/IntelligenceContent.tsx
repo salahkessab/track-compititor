@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { OPENAI_IMAGE_MODEL_IDS, imageQualitiesFor, imageSizesFor, supportsImageComplexity } from "../../lib/openaiImageSettings";
 import type { ContentSettings } from "../../lib/recipe-intelligence/settings";
 import { WRITING_MODELS } from "../../lib/recipe-intelligence/textModels";
-import { ARTICLE_VOICES } from "../../lib/recipe-intelligence/article-voices";
+import { ARTICLE_VOICES, AUTO_VOICE_LABEL } from "../../lib/recipe-intelligence/article-voices";
 import { durationLabel } from "../../lib/recipe-intelligence/format";
 import { ImportPhotos, PhotoResults, StartRecipe } from "./RecipeImports";
 import { WordPressConnections, WordPressCopy } from "./RecipeWordPress";
@@ -42,7 +42,7 @@ function ContentControls({ value, change }: { value: ContentSettings; change: (v
     <div className="grid gap-4 sm:grid-cols-2">
       <label className="text-sm">Create<select className={`${input} mt-1`} value={output} onChange={e => set({ output: e.target.value as ContentSettings["output"], images: e.target.value !== "article_only" })}><option value="article_images">Article and images</option><option value="article_only">Article only</option><option value="images_only">Images only</option></select></label>
       <label className="text-sm">Automation<select className={`${input} mt-1`} value={value.mode} onChange={e => set({ mode: e.target.value as ContentSettings["mode"] })}><option value="full">Full automatic</option><option value="before_articles">Review before articles</option><option value="before_images">Review before images</option></select></label>
-      {output !== "images_only" && (value.articleFormat || "master_recipe_v1") === "master_recipe_v1" && <label className="text-sm sm:col-span-2">Writing style<select className={`${input} mt-1`} value={value.articleVoice || "classic"} onChange={e => set({ articleVoice: e.target.value as ContentSettings["articleVoice"] })}>{ARTICLE_VOICES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}</select></label>}
+      {output !== "images_only" && (value.articleFormat || "master_recipe_v1") === "master_recipe_v1" && <label className="text-sm sm:col-span-2">Writing style<select className={`${input} mt-1`} value={value.articleVoice || "classic"} onChange={e => set({ articleVoice: e.target.value as ContentSettings["articleVoice"] })}>{ARTICLE_VOICES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}<option value="auto">{AUTO_VOICE_LABEL}</option></select></label>}
     </div>
     <div className="space-y-1 text-sm text-gray-600" aria-label="Current recipe settings">
       {output !== "images_only" && <p>{WRITING_MODELS.find(m => m.id === value.textModel)?.label || value.textModel} · {value.articleFormat === "master_recipe_v1" ? "Master recipe article" : value.articleFormat === "blog_1000_1200_v1" ? "1,000–1,200 words" : "Compact recipe"} · {value.basis === "original" ? "Keep original recipe" : "Compare recipe suggestions"}</p>}

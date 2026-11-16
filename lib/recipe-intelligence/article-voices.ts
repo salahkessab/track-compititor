@@ -12,6 +12,22 @@ export const ARTICLE_VOICES: { id: ArticleVoice; label: string }[] = [
   { id: "beginner", label: "Step-by-step Beginner: plain words, how to know it's done (~1,450–1,650 words)" },
 ];
 
+/** A style choice in the settings: one style for every article, or "auto" for a different style per article. */
+export type ArticleVoiceSetting = ArticleVoice | "auto";
+export const AUTO_VOICE_LABEL = "Auto: the app picks a different style for each article";
+export const AUTO_VOICES: ArticleVoice[] = ["lean", "story", "quick", "holiday", "budget", "beginner"];
+export const isVoiceSetting = (value: unknown): value is ArticleVoiceSetting => value === "auto" || isArticleVoice(value);
+
+/** The style for one recipe. "auto" picks from AUTO_VOICES using the recipe's URL or title, so the same recipe keeps the
+ *  same style across the article, correction and validation stages, while different recipes get different styles. */
+export function voiceFor(setting: unknown, recipe: { url?: string; title?: string }): ArticleVoice | undefined {
+  if (setting !== "auto") return isArticleVoice(setting) ? setting : undefined;
+  const key = recipe.url || recipe.title || "";
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619) >>> 0; }
+  return AUTO_VOICES[hash % AUTO_VOICES.length];
+}
+
 // Word ranges in the labels are for a typical 1,300-word source; story-based styles follow the source article's length.
 export const isArticleVoice = (value: unknown): value is ArticleVoice => ARTICLE_VOICES.some(v => v.id === value);
 

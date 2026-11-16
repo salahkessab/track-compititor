@@ -79,3 +79,18 @@ test('each sectioned style renders its own headings with the ingredients unchang
     assert.match(classic.html, /Complete Recipe Card/);
   } finally { restore(); }
 });
+
+test('auto style gives each recipe its own style, the same one at every stage, and the settings accept it', () => {
+  const { voiceFor, AUTO_VOICES } = require('../.intelligence-build/lib/recipe-intelligence/article-voices.js');
+  assert.equal(validateContentSettings({ articleVoice: 'auto' }).articleVoice, 'auto');
+  const picks = Array.from({ length: 40 }, (_, i) => voiceFor('auto', { url: `https://food.example/recipe-${i}` }));
+  assert.ok(picks.every(v => AUTO_VOICES.includes(v)));
+  assert.ok(new Set(picks).size >= 4, 'different recipes get different styles');
+  assert.equal(voiceFor('auto', { url: 'https://food.example/a' }), voiceFor('auto', { url: 'https://food.example/a' }));
+  assert.equal(voiceFor('budget', { url: 'x' }), 'budget');
+  assert.equal(voiceFor(undefined, { url: 'x' }), undefined);
+  const recipe = source();
+  const chosen = voiceFor('auto', recipe);
+  const prompt = writingPayload(recipe, { ...DEFAULT_CONTENT_SETTINGS, articleVoice: 'auto' }).input;
+  assert.equal(prompt, articlePrompt(recipe, undefined, format, chosen));
+});
