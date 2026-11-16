@@ -55,3 +55,12 @@ Evidence is local and intentionally excluded from Git to keep reference photos p
 ## Limits and follow-up
 
 Live paid provider requests and live WordPress publication were deliberately not exercised. The visual update leaves those backend paths unchanged. Runtime API failure behavior remains covered by existing automated tests. New icon assets are static; there are no new production dependencies.
+
+## Settings discoverability follow-up
+
+User review found that Settings was difficult to find in the sidebar and the extension download was collapsed. Added a direct Settings destination with its own active state and breadcrumb. Chrome extension and WordPress plugin download cards now appear at the top, including when the workspace connection is unavailable; existing connection forms and settings remain available below.
+
+- Navigation regression extended for Settings, browser Back, workspace sub-navigation and draft preservation. The 30 relevant navigation, recipe UI, extension package and WordPress UI tests passed.
+- Production build and type checking passed.
+- 13 targeted Chrome checks passed, including desktop/mobile layout, direct Settings reload, both ZIP download responses and a simulated workspace outage. No generation or publishing requests were made.
+- Screenshots: E:/Projects/Recipe-Intelligence/studio-redesign/work/settings-local-desktop.png and settings-local-mobile.png. Captured after the navigation transition settled; Settings is the active sidebar destination.

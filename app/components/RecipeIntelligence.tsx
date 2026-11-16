@@ -2,6 +2,7 @@
 import { IntelligenceContent } from "./IntelligenceContent";
 import { WorkspaceError } from "./WorkspaceError";
 import { ArticleStorage } from './ArticleStorage';
+import { SettingsDownloads } from './SettingsDownloads';
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -126,7 +127,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
     finally { setBusy(false); }
   };
   const scan = (siteId?: string) => act(() => request("scans", "POST", siteId ? { siteIds: [siteId] } : { allActive: true }), "Manual discovery queued. Use a historical report to verify recipe publication dates.");
-  const navigate = (id: string) => { const target = new URL(window.location.href); target.searchParams.set("view", id); window.history.pushState(null, "", target); setView(id); };
+  const navigate = (id: string) => { const target = new URL(window.location.href); target.searchParams.set("view", id); window.history.pushState(null, "", target); setView(id); window.dispatchEvent(new window.PopStateEvent("popstate")); };
   const date = (value: string | null) => value ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: snapshot?.settings.timezone || "Africa/Casablanca" }).format(new Date(value)) : "Not scanned";
   const runCard = (run: Run) => <div key={run.id} className="border-b border-gray-200/60 pb-4 last:border-0">
     <div className="flex flex-wrap justify-between gap-2 text-sm"><span>{run.site_name} · {label(run.status)}</span><span>{run.processed} processed · {run.remaining} pending · {run.errors} errors</span></div>
@@ -143,13 +144,14 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
   return <section aria-label="Recipe Intelligence workspace" className="space-y-5">
     <div className="studio-panel rounded-[24px] border p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><h1 className="studio-title text-2xl">Recipe Intelligence</h1><p className="mt-2 max-w-2xl text-sm text-gray-600">Paste a recipe URL, review the cost, and generate an article with images.</p></div>
+        <div><h1 className="studio-title text-2xl">{view === "settings" ? "Settings" : "Recipe Intelligence"}</h1><p className="mt-2 max-w-2xl text-sm text-gray-600">{view === "settings" ? "Download the browser extension and WordPress plugin, connect your websites, and manage your workspace." : "Paste a recipe URL, review the cost, and generate an article with images."}</p></div>
       </div>
       {enabled && snapshot && (view === "settings" || ["websites", "reports"].includes(view) || snapshot.readOnly || !snapshot.worker.online) && <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
         {["websites", "reports"].includes(view) && <><span>{snapshot.sites.length} / 10 websites</span><span>{snapshot.sites.reduce((sum, site) => sum + site.urls, 0).toLocaleString()} discovered URLs</span></>}
         <span className={snapshot.worker.online ? "text-green-700" : "text-amber-700"}>{snapshot.readOnly ? "Recovery view · saved recipes available · generation paused" : snapshot.worker.online ? (snapshot.runtime === "server" ? "Cloud workspace ready · works while your computer is off" : "Ready · updates automatically") : snapshot.runtime === "server" ? "Server worker starting or offline" : "Worker starting or offline · use the Windows launcher"}</span>
       </div>}
     </div>
+    {view === "settings" && <SettingsDownloads />}
     {error && <div role="alert" className="rounded-xl border border-red-400/30 bg-red-950/30 p-4 text-sm text-red-700"><WorkspaceError message={error} />{snapshot && <button className={`${button} ml-3`} disabled={busy} onClick={() => void act(reload)}>Reconnect</button>}</div>}
     {notice && <div role="status" className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 p-4 text-sm text-green-700">{notice}</div>}
     {enabled === null && !error && <p className="text-sm text-gray-600">Connecting to your workspace…</p>}
@@ -159,7 +161,7 @@ export function RecipeIntelligence({ active = false }: { active?: boolean }) {
         {[["start", "Use a recipe URL"], ["batches", "My articles"], ["websites", "Tracked websites"], ["reports", "Find recipes"], ["settings", "Settings"]].map(([id, title]) => <a key={id} href={`/?tab=recipe-intelligence&view=${id}`} aria-current={view === id ? "page" : undefined}
           className={`${button} ${view === id ? "!border-blue-600 !text-blue-700" : ""}`} onClick={event => {
             if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-            event.preventDefault(); const target = new URL(window.location.href); target.searchParams.set("view", id); window.history.pushState(null, "", target); setView(id);
+            event.preventDefault(); navigate(id);
           }}>{title}</a>)}
       </nav>
       {["start", "settings"].includes(view) && <CaptureSetup local server={snapshot.runtime === "server"} />}

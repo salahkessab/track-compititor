@@ -127,8 +127,8 @@ export function StudioOverview({
           <StudioIcon name="gear" />
           <h2>Workspace settings</h2>
           <p>
-            Storage usage, connected websites and publishing settings remain
-            available in Recipe Intelligence.
+            Download the Chrome extension and WordPress plugin, connect your
+            websites, and manage storage and publishing defaults.
           </p>
           <button
             className="ui-secondary"
@@ -137,7 +137,7 @@ export function StudioOverview({
               const url = new URL(window.location.href);
               url.searchParams.set("view", "settings");
               window.history.pushState(null, "", url);
-              window.dispatchEvent(new PopStateEvent("popstate"));
+              window.dispatchEvent(new window.PopStateEvent("popstate"));
             }}
           >
             Manage settings &amp; storage

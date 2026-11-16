@@ -367,8 +367,10 @@ export default function Page() {
   const navigationInitialized = useRef(false);
   useEffect(() => {
     const selectFromUrl = () => {
-      const id = new URLSearchParams(window.location.search).get("tab");
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("tab");
       setOverview(!id || id === "overview");
+      setSettingsOpen(id === "recipe-intelligence" && params.get("view") === "settings");
       setMenuOpen(false);
       if (!id || id === "overview") return;
       const tab = MAIN_TABS.find((item) => item.id === id) || MAIN_TABS[0];
@@ -384,6 +386,7 @@ export default function Page() {
     return () => window.removeEventListener("popstate", selectFromUrl);
   }, [switchContentType]);
   const [overview, setOverview] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [filterTarget, setFilterTarget] = useState<{ url: string; fileName: string } | null>(null);
   const [refs, setRefs] = useState<RefImage[]>([]);
@@ -858,10 +861,10 @@ export default function Page() {
       <ImagePreparationNotifications />
       <nav id="studio-navigation" aria-label="Main navigation" className={`studio-sidebar ${menuOpen ? "is-open" : ""}`}>
         <div className="studio-brand"><StudioIcon name="stack"/><span>Recipe Studio<small>Creative workspace</small></span></div>
-        <a href="/?tab=overview" aria-current={overview ? "page" : undefined} onClick={event=>{if(event.button!==0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;event.preventDefault();const url=new URL(window.location.href);url.searchParams.set("tab","overview");window.history.pushState(null,"",url);setOverview(true);setMenuOpen(false);}}><StudioIcon name="squares-four"/>Overview</a>
+        <a href="/?tab=overview" aria-current={overview ? "page" : undefined} onClick={event=>{if(event.button!==0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;event.preventDefault();const url=new URL(window.location.href);url.searchParams.set("tab","overview");window.history.pushState(null,"",url);setOverview(true);setSettingsOpen(false);setMenuOpen(false);}}><StudioIcon name="squares-four"/>Overview</a>
         <span className="studio-nav-label">WORKSPACE</span>
         {MAIN_TABS.map((tab) => {
-          const active = !overview && contentType === tab.contentType &&
+          const active = !overview && !settingsOpen && contentType === tab.contentType &&
             (!("workflow" in tab) || recipeWorkflow === tab.workflow);
           return (
             <a
@@ -873,16 +876,19 @@ export default function Page() {
                 event.preventDefault();
                 setOverview(false);setMenuOpen(false);
                 const url = new URL(window.location.href);
-                if (url.searchParams.get("tab") !== tab.id) {
+                if (url.searchParams.get("tab") !== tab.id || settingsOpen) {
                   url.searchParams.set("tab", tab.id);
+                  if (settingsOpen) url.searchParams.delete("view");
                   window.history.pushState(null, "", url);
                 }
+                setSettingsOpen(false);
                 switchContentType(tab.contentType);
                 if ("workflow" in tab) {
                   setRecipeWorkflow(tab.workflow);
                   setPreview(null);
                   setPreviewPinned(false);
                 }
+                window.dispatchEvent(new window.PopStateEvent("popstate"));
               }}
               className={`whitespace-nowrap rounded-[14px] px-4 py-2.5 text-sm font-medium transition ${
                 active
@@ -894,8 +900,20 @@ export default function Page() {
             </a>
           );
         })}
+        <span className="studio-nav-label">MANAGE</span>
+        <a href="/?tab=recipe-intelligence&view=settings" aria-current={settingsOpen ? "page" : undefined}
+          title="Browser extension, WordPress plugin and workspace settings"
+          onClick={event => {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            const url = new URL(window.location.href);
+            url.searchParams.set("tab", "recipe-intelligence");
+            url.searchParams.set("view", "settings");
+            window.history.pushState(null, "", url);
+            window.dispatchEvent(new window.PopStateEvent("popstate"));
+          }}><StudioIcon name="gear"/>Settings</a>
       </nav>
-      <header className="studio-topbar"><div className="studio-breadcrumb"><button type="button" className="studio-menu" aria-label="Toggle navigation" aria-expanded={menuOpen} aria-controls="studio-navigation" onClick={()=>setMenuOpen(v=>!v)}><StudioIcon name="list"/></button><span>Studio</span><span aria-hidden="true">/</span><strong>{overview ? "Overview" : MAIN_TABS.find(tab=>contentType===tab.contentType && (!("workflow" in tab) || recipeWorkflow===tab.workflow))?.label.replace("🐴 ", "")}</strong></div><ThemeToggle /></header>
+      <header className="studio-topbar"><div className="studio-breadcrumb"><button type="button" className="studio-menu" aria-label="Toggle navigation" aria-expanded={menuOpen} aria-controls="studio-navigation" onClick={()=>setMenuOpen(v=>!v)}><StudioIcon name="list"/></button><span>Studio</span><span aria-hidden="true">/</span><strong>{overview ? "Overview" : settingsOpen ? "Settings" : MAIN_TABS.find(tab=>contentType===tab.contentType && (!("workflow" in tab) || recipeWorkflow===tab.workflow))?.label.replace("🐴 ", "")}</strong></div><ThemeToggle /></header>
       <div id="studio-workspace" className="studio-workspace">
       {overview && <StudioOverview onNavigate={id=>{document.querySelector<HTMLAnchorElement>(`nav[aria-label="Main navigation"] a[href="/?tab=${id}"]`)?.click();}}/>}
       <div hidden={overview}>

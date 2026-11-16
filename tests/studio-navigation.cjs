@@ -81,6 +81,25 @@ test('navigation links open their sections and keep the current draft during in-
     assert.equal(visible('intelligence'), true);
     assert.equal(window.location.search, '?tab=recipe-intelligence');
     assert.equal(workspace('designs').querySelector('input').value, 'draft stays here');
+    await React.act(async () => link('Settings').click());
+    assert.equal(visible('intelligence'), true);
+    assert.equal(window.location.search, '?tab=recipe-intelligence&view=settings');
+    assert.equal(link('Settings').getAttribute('aria-current'), 'page');
+    assert.equal(link('Recipe Intelligence').getAttribute('aria-current'), null);
+    assert.equal(document.querySelector('.studio-breadcrumb strong').textContent, 'Settings');
+    await React.act(async () => link('Recipe Intelligence').click());
+    assert.equal(window.location.search, '?tab=recipe-intelligence');
+    assert.equal(link('Settings').getAttribute('aria-current'), null);
+    await React.act(async () => { window.history.back(); await settle(); });
+    assert.equal(link('Settings').getAttribute('aria-current'), 'page');
+    await React.act(async () => {
+      window.history.pushState(null, '', '/?tab=recipe-intelligence&view=batches');
+      window.dispatchEvent(new window.PopStateEvent('popstate'));
+    });
+    assert.equal(link('Settings').getAttribute('aria-current'), null);
+    assert.equal(link('Recipe Intelligence').getAttribute('aria-current'), 'page');
+    await React.act(async () => link('Recipe Designs').click());
+    assert.equal(workspace('designs').querySelector('input').value, 'draft stays here');
   } finally {
     await React.act(async () => root.unmount()); dom.window.close();
     for (const name of globals) {
