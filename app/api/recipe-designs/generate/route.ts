@@ -6,7 +6,7 @@ import { generateRecipeDesignArtwork } from "@/lib/recipeDesignArtworkImage";
 import { withCostLedger, recordOpenAIImage, costSummary } from "@/lib/costLedger";
 import { MAX_RECIPE_EDIT_REQUEST_CHARS, recipeDirectPrompt, validateRecipeEditImage } from "@/lib/recipeDesignDirect";
 import { selectRecipeStyle, validateDesignSettings, validateTitle } from "@/lib/recipeDesigns";
-import { requiresRecipeIngredients, isNewPhotoStyle, validateRecipeIngredients } from "@/lib/recipeDesignIngredients";
+import { requiresRecipeIngredients, validateRecipeIngredients } from "@/lib/recipeDesignIngredients";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,9 +17,9 @@ async function run(req: Request, phase: (value: 'generating' | 'preparing') => v
     const b = await req.json();
     if (b.approved !== true) throw new Error("Approve the paid image edit first.");
     const settings = validateDesignSettings(b.settings);
-    const styleId = selectRecipeStyle(settings.styleId, typeof b.title === "string" ? b.title : "");
-    const { title } = validateTitle(b.title, isNewPhotoStyle(styleId) && typeof b.title === "string" && !b.title.trim());
-    const ingredients = requiresRecipeIngredients(styleId) && (!isNewPhotoStyle(styleId) || (typeof b.ingredients === "string" && b.ingredients.trim())) ? validateRecipeIngredients(b.ingredients) : undefined;
+    const { title } = validateTitle(b.title, false);
+    const styleId = selectRecipeStyle(settings.styleId, title);
+    const ingredients = requiresRecipeIngredients(styleId) ? validateRecipeIngredients(b.ingredients) : undefined;
     const photo = validateRecipeEditImage(b.photo, 2_950_000);
     if (!Array.isArray(b.references) || b.references.length > 3) throw new Error("Use up to three optional style references.");
     const references = b.references.map((value: unknown) => validateRecipeEditImage(value, 260_000));
