@@ -3,6 +3,7 @@ import "@fontsource-variable/fraunces/wght.css";
 import "@fontsource-variable/rokkitt/wght.css";
 import "@fontsource-variable/archivo-narrow/wght.css";
 import "@fontsource/special-elite/index.css";
+import "./experiment-theme.css"; // experiment branch only: remove this line to restore the current look
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
