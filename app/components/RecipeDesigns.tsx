@@ -110,7 +110,7 @@ async function download(blob: Blob, name: string, format?: "png" | "webp") {
 }
 
 export function RecipeDesigns() {
-  const [settings,setSettings]=useState<DesignSettings>({...DEFAULT_DESIGN_SETTINGS,model:"gpt-image-2.6-sunburst",artworkSize:"selected",styleId:"vintage_farmhouse_recipe",researchEnabled:false,photoAnalysis:false,image:{...DEFAULT_DESIGN_SETTINGS.image}});
+  const [settings,setSettings]=useState<DesignSettings>({...DEFAULT_DESIGN_SETTINGS,model:"gpt-image-2.6-sunburst",artworkSize:"selected",styleId:INGREDIENT_CARD_STYLE_ID,researchEnabled:false,photoAnalysis:false,image:{...DEFAULT_DESIGN_SETTINGS.image,size:"1152x1440"}});
   const [ready,setReady]=useState(false);
   const [title,setTitle]=useState(""); const [noText,setNoText]=useState(false); const [notes,setNotes]=useState(""); const [ingredients,setIngredients]=useState(""); const [evidence,setEvidence]=useState("");
   const [photo,setPhoto]=useState<LocalPhoto | null>(null); const [refs,setRefs]=useState<LocalPhoto[]>([]); const [uploadingPhoto,setUploadingPhoto]=useState(false);
@@ -130,7 +130,7 @@ export function RecipeDesigns() {
     try {
       const [saved,oldHistory,oldJobs,savedPreset,activeLock,savedCopies]=await Promise.all([loadLocal<DesignSettings>("settings","current"),listLocal<Result>("history"),listLocal<Job>("jobs"),loadLocal<Preset>("settings","saved-preset"),loadLocal<{id:string;createdAt:string}>("locks","active"),loadLocal<Record<string,unknown>>("settings","prompt-copies")]);
       if(!active)return;
-      if(saved) { try {const valid=validateDesignSettings(saved);setSettings({...valid,artworkSize:"selected",image:{...valid.image,size:"1024x1536",output_format:"png"},styleId:valid.styleId==="auto"?"vintage_farmhouse_recipe":valid.styleId,mode:"auto",researchEnabled:false,photoAnalysis:false});} catch { /* ignore stale local settings */ } }
+      if(saved) { try {const valid=validateDesignSettings(saved);setSettings({...valid,artworkSize:"selected",image:{...valid.image,size:"1152x1440",output_format:"png"},styleId:INGREDIENT_CARD_STYLE_ID,mode:"auto",researchEnabled:false,photoAnalysis:false});} catch { /* ignore stale local settings */ } }
       const sorted=oldHistory.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)); setHistory(current=>sorted.reduce(mergeHistory,current));
       if(savedCopies){const valid:Record<string,RecipePromptCopy>={};for(const style of RECIPE_STYLE_PRESETS){try{const copy=validateRecipePromptCopy(savedCopies[style.id],style.id);if(copy)valid[style.id]=copy;}catch{/* ignore invalid local copy */}}setPromptCopies(valid);}
       setJobs(current=>oldJobs.map(recoverJob).reduce(mergeJob,current)); setPreset(savedPreset || null);setPaidLock(activeLock || null);
