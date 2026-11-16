@@ -96,6 +96,9 @@ test('separate Recipe Designs tabs can generate concurrently without a confirmat
     await React.act(async () => {
       tabs.forEach((tab, index) => {
         setInput(tab.querySelector('#recipe-design-title'), index ? 'Chicken dinner' : 'Apple pie');
+        const ingredients = tab.querySelector('#recipe-design-ingredients');
+        Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set.call(ingredients, index ? 'Chicken (1 lb)' : 'Apples (2)');
+        ingredients.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
         tab.querySelector('[aria-label="Drop an original food photo here or browse files"]').dispatchEvent(drop(new dom.window.File(['photo'], `food-${index}.png`, { type: 'image/png' })));
       });
       await settle();

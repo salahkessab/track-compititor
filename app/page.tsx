@@ -8,6 +8,7 @@ import { RecipeImageToImage } from "./components/RecipeImageToImage";
 import { RecipeTwoInOne } from "./components/RecipeTwoInOne";
 import { RecipeDesigns } from "./components/RecipeDesigns";
 import { HomeDecor } from "./components/HomeDecor";
+import { StudioOverview, StudioIcon } from "./components/StudioOverview";
 import { ThemeToggle } from './components/ThemeToggle';
 import { prepareClientImage } from "@/lib/preparedImageClient";
 import { VerifiedImage, ImagePreparationNotifications } from './components/VerifiedImage';
@@ -367,6 +368,9 @@ export default function Page() {
   useEffect(() => {
     const selectFromUrl = () => {
       const id = new URLSearchParams(window.location.search).get("tab");
+      setOverview(!id || id === "overview");
+      setMenuOpen(false);
+      if (!id || id === "overview") return;
       const tab = MAIN_TABS.find((item) => item.id === id) || MAIN_TABS[0];
       switchContentType(tab.contentType);
       if ("workflow" in tab) {
@@ -379,6 +383,8 @@ export default function Page() {
     window.addEventListener("popstate", selectFromUrl);
     return () => window.removeEventListener("popstate", selectFromUrl);
   }, [switchContentType]);
+  const [overview, setOverview] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [filterTarget, setFilterTarget] = useState<{ url: string; fileName: string } | null>(null);
   const [refs, setRefs] = useState<RefImage[]>([]);
   const [expandedAnalysis, setExpandedAnalysis] = useState<Set<string>>(new Set());
@@ -847,14 +853,15 @@ export default function Page() {
   }
 
   return (
-    <main className="studio-main mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
+    <main id="studio-content" className="studio-main studio-shell">
+      <a className="studio-skip" href="#studio-workspace">Skip to workspace</a>
       <ImagePreparationNotifications />
-      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[220px] bg-[radial-gradient(circle_at_top,rgba(201,122,61,0.12),transparent_55%)]" />
-      <div className="pointer-events-none absolute right-0 top-20 -z-10 h-56 w-56 rounded-full bg-green-50/8 blur-3xl" />
-
-      <nav aria-label="Main navigation" className="mb-5 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[20px] border border-gray-200 bg-white/92 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.22)]">
+      <nav id="studio-navigation" aria-label="Main navigation" className={`studio-sidebar ${menuOpen ? "is-open" : ""}`}>
+        <div className="studio-brand"><StudioIcon name="stack"/><span>Recipe Studio<small>Creative workspace</small></span></div>
+        <a href="/?tab=overview" aria-current={overview ? "page" : undefined} onClick={event=>{if(event.button!==0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;event.preventDefault();const url=new URL(window.location.href);url.searchParams.set("tab","overview");window.history.pushState(null,"",url);setOverview(true);setMenuOpen(false);}}><StudioIcon name="squares-four"/>Overview</a>
+        <span className="studio-nav-label">WORKSPACE</span>
         {MAIN_TABS.map((tab) => {
-          const active = contentType === tab.contentType &&
+          const active = !overview && contentType === tab.contentType &&
             (!("workflow" in tab) || recipeWorkflow === tab.workflow);
           return (
             <a
@@ -864,6 +871,7 @@ export default function Page() {
               onClick={(event) => {
                 if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 event.preventDefault();
+                setOverview(false);setMenuOpen(false);
                 const url = new URL(window.location.href);
                 if (url.searchParams.get("tab") !== tab.id) {
                   url.searchParams.set("tab", tab.id);
@@ -882,12 +890,15 @@ export default function Page() {
                   : "text-gray-600 hover:bg-gray-100 hover:text-blue-700"
               }`}
             >
-              {tab.label}
+              <StudioIcon name={tab.id === "horses" ? "horse" : tab.id === "recipe-designs" ? "layout" : tab.id === "image-to-image" ? "image" : tab.id === "two-in-one" ? "images" : tab.id === "home-decor" ? "armchair" : "article"}/>{tab.label.replace("🐴 ", "")}
             </a>
           );
         })}
       </nav>
-      <ThemeToggle />
+      <header className="studio-topbar"><div className="studio-breadcrumb"><button type="button" className="studio-menu" aria-label="Toggle navigation" aria-expanded={menuOpen} aria-controls="studio-navigation" onClick={()=>setMenuOpen(v=>!v)}><StudioIcon name="list"/></button><span>Studio</span><span aria-hidden="true">/</span><strong>{overview ? "Overview" : MAIN_TABS.find(tab=>contentType===tab.contentType && (!("workflow" in tab) || recipeWorkflow===tab.workflow))?.label.replace("🐴 ", "")}</strong></div><ThemeToggle /></header>
+      <div id="studio-workspace" className="studio-workspace">
+      {overview && <StudioOverview onNavigate={id=>{document.querySelector<HTMLAnchorElement>(`nav[aria-label="Main navigation"] a[href="/?tab=${id}"]`)?.click();}}/>}
+      <div hidden={overview}>
 
       {/* â”€â”€ Settings panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div hidden={!showRecipeImageToImage}>
@@ -899,9 +910,9 @@ export default function Page() {
       <div hidden={contentType !== "recipes" || recipeWorkflow !== "designs"}>
         <RecipeDesigns />
       </div>
-      <HomeDecor active={contentType === "recipes" && recipeWorkflow === "decor"} />
+      <HomeDecor active={!overview && contentType === "recipes" && recipeWorkflow === "decor"} />
       <div hidden={contentType !== "recipes" || recipeWorkflow !== "intelligence"}>
-        <RecipeIntelligence active={contentType === "recipes" && recipeWorkflow === "intelligence"} />
+        <RecipeIntelligence active={!overview && contentType === "recipes" && recipeWorkflow === "intelligence"} />
       </div>
       <div hidden={contentType === "recipes"}>
       <section className="studio-panel mb-4 grid gap-4 rounded-[28px] p-5 sm:p-6 sm:grid-cols-2 md:grid-cols-4">
@@ -1618,6 +1629,7 @@ export default function Page() {
         </>
       )}
       {filterTarget && <ImageFilterStudio source={filterTarget.url} fileName={filterTarget.fileName} onClose={() => setFilterTarget(null)} />}
+      </div></div>
     </main>
   );
 }

@@ -55,6 +55,13 @@ test('navigation links open their sections and keep the current draft during in-
     assert.equal(link('Image to Image').getAttribute('href'), '/?tab=image-to-image');
     assert.equal(link('2 in one image').getAttribute('href'), '/?tab=two-in-one');
     workspace('designs').querySelector('input').value = 'draft stays here';
+    await React.act(async () => link('Overview').click());
+    assert.equal(link('Overview').getAttribute('aria-current'), 'page');
+    assert.ok(workspace('designs').closest('[hidden]'), 'overview hides the mounted workspace');
+    assert.equal(document.querySelector('.studio-breadcrumb strong').textContent, 'Overview');
+    await React.act(async () => document.querySelector('.overview-tool[href="/?tab=recipe-designs"]').click());
+    assert.equal(link('Recipe Designs').getAttribute('aria-current'), 'page');
+    assert.equal(workspace('designs').querySelector('input').value, 'draft stays here');
     let modifiedClickWasPrevented;
     const stopNavigation = event => { if (event.ctrlKey) { modifiedClickWasPrevented = event.defaultPrevented; event.preventDefault(); } };
     document.addEventListener('click', stopNavigation);

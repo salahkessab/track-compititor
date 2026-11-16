@@ -1,47 +1,57 @@
-# Recipe Intelligence article library QA
-
-Date: 2026-11-12
-
-Source visual truth: `C:/Users/pc/AppData/Local/Temp/codex-clipboard-5bec03c9-5250-40c0-8956-1acebf92c4a1.png` (2048 × 895 pixels).
-
-Browser-rendered implementation evidence: `.test-build/library-qa/desktop.jpg` (1265 × 712 pixels); `.test-build/library-qa/mobile.jpg` (390 × 844 CSS viewport). Screenshots are local verification artifacts, not production content.
-
-State: isolated local Next.js preview with 25 mock article rows and saved approved recipe photo fixtures. API requests were intercepted by a local mock server; no live generation or spending approval occurred.
-
-## Comparison
-
-Source and desktop screenshot were viewed together. This implements the reference's article-list hierarchy, not a pixel-for-pixel clone: the existing dark/gold theme and navigation are retained. CSS viewport sizes were compared at their native sizes, without stretching or equalizing pixel dimensions. The screenshot source does not supply device-pixel-ratio metadata.
-
-- Typography: article titles use the existing readable sans-serif UI face, semibold weight and natural wrapping; the app heading retains its existing serif face. Unlike the source, long titles wrap rather than truncate.
-- Layout: repeated horizontal rows replace the batch dropdown as the primary view. Each desktop row contains title/state, original thumbnails, generated thumbnails, and cost/action. Rows are taller than the source to fit both image groups and explicit spending information. On a phone, those groups stack with no hidden primary action or horizontal overflow observed.
-- Color: existing charcoal surfaces, subdued borders, light text, gold primary buttons, and green completion states are intentional adaptations. Focus rings and labels remain visible.
-- Images: original and generated photographs use actual approved test assets with deliberate thumbnail crops. Originals are explicitly labeled reference-only. No source platform food posters or branding are copied. Full images remain available through article details and output links.
-- Copy: one primary approval button per ready article; estimated cost and maximum approved spend are distinct. Completed rows show actual item-specific spend. Advanced budget and batch controls are closed initially.
-
-## Interaction checks
-
-- Pagination changed from page 1 to page 2 and disabled Next on the final page.
-- Searching Rigatoni returned four matching rows and reset pagination to page 1.
-- Mock approval changed only the chosen row to running; other rows retained their approval buttons.
-- Opening a completed article exposed its existing article/download/gallery actions and Skip this photo controls.
-- Desktop and 390-pixel mobile layouts inspected in the browser.
-- Browser console error inspection returned no errors.
-- Automated regression coverage checks item-level budget isolation, stale estimates, rollback, references/output previews and exact approval payloads.
-
-## Findings and iteration history
-
-No actionable P0/P1/P2 visual findings remain. Initial mobile lazy-loaded thumbnails finished loading on interaction and all three were visible on the subsequent screenshot. Generated format variants were deduplicated for legacy jobs during implementation review.
-
-Focused-region comparison used the article rows and spending action within the full-view images; an additional crop was unnecessary because text and thumbnails were readable.
-
-P3 follow-up: optional adjustable row density for very large libraries. Not required for this simplified workflow.
-
-## Light dashboard palette follow-up
-
-The user subsequently requested the Article Rewriter dashboard palette. The previous dark/gold adaptation is superseded. Source reference: `https://github.com/salahkessab/rewrite-articles-flippa`, specifically `components/AppShell.tsx`, `components/Sidebar.tsx` and `app/dashboard/page.tsx`; the user's explicit hex values take priority over any differences in that repository.
-
-Updated evidence: `.test-build/library-qa/light-desktop.jpg` (1265 × 712) and `.test-build/library-qa/light-mobile.jpg` (390 × 844). Browser inspection confirmed page background rgb(249,250,251), navigation rgb(3,7,18), primary button rgb(37,99,235) with white text, and secondary button rgb(147,51,234) with white text. Settings fields use white backgrounds, rgb(17,24,39) text and a blue focus outline. Status text uses green, amber and red dark enough for white cards. The navigation remains horizontal; no sidebar or new features were added.
-
-Layout, typography, image framing and responsive breakpoints remain unchanged. Settings and article-list interactions were checked locally with mocked data and no console errors. Hover colors are explicitly #1D4ED8 and #7E22CE; destructive controls retain a red-on-pale-red treatment. No recipe generation prompt, artwork palette or stored output was changed.
+# Studio redesign QA
 
 Final result: passed
+
+## Scope and reference
+
+The current working application at baseline 4879d5e is the functional reference. The approved mock is the visual direction, not a replacement for real functionality. All generation, writing, metadata, storage, export and publishing implementation remains unchanged.
+
+- Visual source: C:/Users/hp/.codex/generated_images/01a1ca32-fe20-76c3-9c3b-d6b49d51e410/exec-00e07ba8-753c-4f46-ab53-d48999daac58.png (1672 × 941 pixels).
+- Production implementation: http://127.0.0.1:3102/?tab=recipe-designs
+- Browser: local Google Chrome through Playwright, explicitly approved after the embedded browser failed to start.
+- Desktop viewport: 1600 × 1000 CSS pixels, deviceScaleFactor 1. Full-page capture: 1600 × 1169 pixels.
+- Mobile viewport: 390 × 844 CSS pixels, deviceScaleFactor 1. Additional layout checks at 1024, 1280 and 1920 pixels.
+- Reference is a populated concept; implementation first capture is the real empty workspace. Generated artwork, mock credits, unimplemented mock features and incorrect mock dimensions are not treated as required application behavior.
+
+## Visual evidence
+
+Evidence is local and intentionally excluded from Git to keep reference photos private.
+
+- Implementation screenshot: E:/Projects/Recipe-Intelligence/studio-redesign/work/designs-desktop.png
+- Side-by-side source/implementation: E:/Projects/Recipe-Intelligence/studio-redesign/work/reference-comparison.png. Both normalized to 1000px wide while preserving aspect ratio; no claim of equal vertical density for different content states.
+- Focused configuration comparison: E:/Projects/Recipe-Intelligence/studio-redesign/work/configuration-comparison.png. Source crop (555,80,440,750); implementation crop (630,176,404,750), original pixel scale.
+- Other screens: E:/Projects/Recipe-Intelligence/studio-redesign/work/overview-desktop.png, horses-desktop.png, image-to-image-desktop.png, two-in-one-desktop.png, articles-desktop.png, websites-desktop.png, settings-desktop.png and decor-desktop.png.
+- Mobile: E:/Projects/Recipe-Intelligence/studio-redesign/work/recipe-designs-mobile.png plus each workspace's mobile capture.
+- Light mode: E:/Projects/Recipe-Intelligence/studio-redesign/work/designs-light.png.
+
+## Findings and comparison history
+
+1. Initial comparison found P2 platform-size wrapping in the narrower configuration panel: the width/height pair split across lines. Updated the scoped button sizing and nonbreaking size text; moved the existing selected check to the corner. Recaptured the production build and compared the focused region again. Dimensions are readable and controls remain inside their columns.
+2. Initial navigation screenshot was captured during a render/paint transition. Retaken after the navigation state settled; Overview breadcrumb and sidebar selection now match. No product logic change was needed.
+3. No outstanding P0/P1/P2 visual findings remain in the checked states.
+
+## Required fidelity surfaces
+
+- Typography: local Segoe UI/Arial sans-serif replaces the old serif UI heading; consistent hierarchy and readable field labels. Artwork and article-document typography are untouched.
+- Spacing/layout: fixed sidebar and breadcrumb; three-part details/configuration/preview layout on wide screens, two columns on medium screens, stacked panels and a menu button on mobile. All existing controls are retained, including collapsed advanced sections.
+- Colors/tokens: graphite surfaces, thin gray borders, blue active/primary actions, preserved semantic feedback colors; existing light mode and saved preference still work.
+- Images/assets: library Phosphor SVG navigation icons with MIT attribution. Existing photo previews retain their pixels and aspect handling. Original quick-instruction and platform icons are intentionally retained. No paid images were generated for this redesign.
+- Copy/content: existing workflows, costs, actual formats, prompts and control labels remain authoritative. Overview describes existing workspaces and shows no invented counts or credit balances.
+
+## Functional preservation and validation
+
+- AST inventory compared original control attributes and handlers, excluding presentation classes: all 187 original controls in the six main UI files remain. One new mobile navigation control was added. Detailed local record: E:/Projects/Recipe-Intelligence/studio-redesign/work/control-parity.json.
+- All 36 horse categories, Select all and Clear remain functional.
+- All five active Recipe Design styles still require a title and ingredients. Missing either field sends no generation request.
+- Facebook and Vintage Recipe Label remain the default Recipe Design choices.
+- Real browser drop events tested in Recipe Designs, Image to Image and both 2 in one slots.
+- Photo presets, red/orange replacement, clear instructions, browser Back, Overview links and retained drafts checked.
+- Recipe Intelligence and Home & Decor use isolated HTTP fixtures for browser UI checks. Existing backend tests cover real storage/metadata/export logic. No production articles, credentials or WordPress posts were changed by these browser checks.
+- 34 browser checks passed; 0 JavaScript/page console errors; 0 unhandled fixture requests; 0 paid generation requests.
+- npm test: 474 passed, 0 failed. Two pre-existing tests failed on baseline too: updated their fixtures to use an active style and supply now-required ingredients, without weakening assertions. Expanded navigation regression coverage for Overview/draft preservation; focused rerun passed.
+- Production builds with both standard and local build configuration passed type checking and compilation.
+- git diff --check passed.
+
+## Limits and follow-up
+
+Live paid provider requests and live WordPress publication were deliberately not exercised. The visual update leaves those backend paths unchanged. Runtime API failure behavior remains covered by existing automated tests. New icon assets are static; there are no new production dependencies.

@@ -93,7 +93,7 @@ test('changing a recipe photo clears the old draft only after a valid upload', a
   try {
     await React.act(async () => { root.render(React.createElement(RecipeDesigns)); await settle(); });
     await React.act(async () => {
-      select(document.getElementById('recipe-design-style'), 'vintage_ingredients_card');
+      select(document.getElementById('recipe-design-style'), 'new_photo_vintage_label');
       select(document.querySelector('select[aria-label="Quality"]'), 'medium');
       select(document.querySelector('select[aria-label="Output format"]'), 'jpeg');
     });
@@ -131,7 +131,7 @@ test('changing a recipe photo clears the old draft only after a valid upload', a
     assert.equal(document.querySelector('img[alt="Style reference 1"]'), null);
     await React.act(async () => { finishReference(); await settle(); });
     assert.equal(document.querySelector('img[alt="Style reference 1"]'), null, 'a pending old reference must not return after the reset');
-    assert.equal(document.getElementById('recipe-design-style').value, 'vintage_ingredients_card');
+    assert.equal(document.getElementById('recipe-design-style').value, 'new_photo_vintage_label');
     assert.equal(document.querySelector('select[aria-label="Quality"]').value, 'medium');
     assert.equal(document.querySelector('select[aria-label="Output format"]').value, 'jpeg');
     assert.equal(stores.history.size, 1, 'the previous design stays in history');

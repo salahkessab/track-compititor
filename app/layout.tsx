@@ -6,8 +6,8 @@ import "@fontsource/special-elite/index.css";
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Horse Image Generator",
-  description: "Generate beautiful horse scenes with AI",
+  title: "Recipe Studio",
+  description: "Your workspace for recipe designs, images, articles and publishing.",
 };
 
 export const viewport: Viewport = {
