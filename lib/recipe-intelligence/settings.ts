@@ -1,6 +1,7 @@
 import { DEFAULT_IMAGE_SETTINGS, validateImageSettings, type OpenAIImageSettings } from "../openaiImageSettings";
 import { IntelligenceStore } from "./database";
 import { writingModelProfile, type WritingModel } from "./textModels";
+import { isArticleVoice, type ArticleVoice } from "./article-voices";
 export type Basis = "original" | "best_complete";
 export type Automation = "full" | "before_articles" | "before_images";
 export type ArticleFormat = "compact_v1" | "blog_1000_1200_v1" | "master_recipe_v1";
@@ -11,6 +12,7 @@ export type ContentSettings = {
   basis: Basis; mode: Automation; textModel: WritingModel; imageModel: string;
   images: boolean; imageSettings: OpenAIImageSettings; pinterestTitle: boolean; correction: boolean;
   articleFormat?: ArticleFormat;
+  articleVoice?: ArticleVoice;
   imageWorkflow?: "reference" | "legacy";
   output?: "article_images" | "article_only" | "images_only";
   palette?: PhotoPalette;
@@ -27,6 +29,7 @@ export function validateContentSettings(input: Partial<ContentSettings>): Conten
   if (!["original", "best_complete"].includes(value.basis) || !["full", "before_articles", "before_images"].includes(value.mode)) throw new Error("Invalid recipe basis or automation mode.");
   if (!writingModelProfile(value.textModel)) throw new Error("This writing model does not have a verified pricing profile.");
   if (!["compact_v1", "blog_1000_1200_v1", "master_recipe_v1"].includes(value.articleFormat || "")) throw new Error("Choose a supported article style.");
+  if (value.articleVoice !== undefined && !isArticleVoice(value.articleVoice)) throw new Error("Choose a supported writing style.");
   if (!["reference", "legacy"].includes(value.imageWorkflow || "") || !["article_images", "article_only", "images_only"].includes(value.output || "")) throw new Error("Choose a supported content workflow.");
   const inputPalette = value.palette || DEFAULT_PHOTO_PALETTE;
   const palette = { ...inputPalette, utensil: inputPalette.utensil === undefined ? DEFAULT_PHOTO_PALETTE.utensil : inputPalette.utensil };
@@ -36,7 +39,7 @@ export function validateContentSettings(input: Partial<ContentSettings>): Conten
   if (value.output === "images_only" && !value.images) throw new Error("Enable images for an images-only job.");
   if (imageSettings.partial_images !== 0) throw new Error("Batch images use one final output; partial previews remain available in the existing image tools.");
   if (imageSettings.size === "auto" || imageSettings.quality === "auto") throw new Error("Choose explicit image size and quality for a reviewable batch estimate.");
-  return { basis: value.basis, mode: value.mode, textModel: value.textModel, imageModel: value.imageModel, images: value.output === "article_only" ? false : value.images, imageSettings, pinterestTitle: value.pinterestTitle, correction: value.correction, articleFormat: value.articleFormat, imageWorkflow: value.imageWorkflow, output: value.output, palette: { ...palette } };
+  return { basis: value.basis, mode: value.mode, textModel: value.textModel, imageModel: value.imageModel, images: value.output === "article_only" ? false : value.images, imageSettings, pinterestTitle: value.pinterestTitle, correction: value.correction, articleFormat: value.articleFormat, ...(value.articleVoice ? { articleVoice: value.articleVoice } : {}), imageWorkflow: value.imageWorkflow, output: value.output, palette: { ...palette } };
 }
 export function contentSettings(store: IntelligenceStore): ContentSettings {
   const row = store.db.prepare("SELECT value FROM settings WHERE key='content_defaults'").get() as any;

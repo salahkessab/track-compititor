@@ -7,8 +7,9 @@ import { storagePath } from "./paths";
 import { IntelligenceStore } from "./database";
 import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
-import { storyWordTarget } from "./prompts";
-import { andText, articleDocument, storyLayout, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
+import { voiceWordTarget } from "./prompts";
+import { resolveVoice, sectionedVoice, type ArticleVoice } from "./article-voices";
+import { andText, articleDocument, publicationTitle, publicationTimes, publicationIngredient, privateSourceLanguage, validateBlog, type Article, type ArticleImage } from "./article-document";
 import { createZip } from "./zip";
 import { linkedArtifact } from './internalLinkState';
 import { IMAGE_STORAGE_VERSION, GENERATED_IMAGE_NAME, losslessImage } from "./imageStorage";
@@ -39,7 +40,8 @@ export function canonicalStep(step: string, source: string): string {
   text = text.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|sixty)\s+(seconds?|minutes?|hours?)\b/gi, (_m, word, unit) => `${NUMBER_WORDS[word.toLowerCase()]} ${unit}`);
   return text;
 }
-export function validateArticle(raw: any, recipe: RecipeSnapshot, format: ArticleFormat = "compact_v1"): { article: Article; warnings: string[] } {
+export function validateArticle(raw: any, recipe: RecipeSnapshot, format: ArticleFormat = "compact_v1", style?: ArticleVoice): { article: Article; warnings: string[] } {
+  const voice = resolveVoice(style);
   const warnings: string[] = [];
   const text = (v: any, max: number) => typeof v === "string" ? v.replace(/<[^>]*>/g, "").trim().slice(0, max) : "";
   const prose = (v: any, max: number) => { const clean = text(v, max).replace(/\*\*/g, ""); const value = format === "master_recipe_v1" ? clean : clean.replace(/[—–]/g, ", "); return format === "blog_1000_1200_v1" ? andText(value) : value; };
@@ -75,7 +77,8 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
   if (article.seoTitle.length > 70) warnings.push("SEO title is longer than the suggested display length.");
   if (format === "blog_1000_1200_v1" || format === "master_recipe_v1") {
     if (format === "blog_1000_1200_v1") article.instructions = article.instructions.map(andText);
-    article.blog = validateBlog(raw?.blog, recipe, warnings, format);
+    article.blog = validateBlog(raw?.blog, recipe, warnings, format, voice);
+    if (format === "master_recipe_v1" && style && resolveVoice(style) === style) article.voice = style;
     if (format === "master_recipe_v1") article.editorialNotes = list(raw?.editorialNotes).slice(0, 10).map(note => text(note, 1500));
     if (format === "master_recipe_v1") {
       article.instructions.forEach((step, index) => { if (privateSourceLanguage(step)) warnings.push(`Step ${index + 1} still contains the source's first-person experience or attribution. Rewrite it as a neutral cooking instruction, preserving every numerical occurrence and method. Do not copy the source step.`); });
@@ -92,7 +95,7 @@ export function validateArticle(raw: any, recipe: RecipeSnapshot, format: Articl
     if (format === "blog_1000_1200_v1" && !article.introduction.split(/\s+/).slice(0, 100).join(" ").toLowerCase().includes(focus)) warnings.push("Include the focus keyword naturally within the first 100 words.");
     article.wordCount = articleDocument(article, recipe).wordCount;
     if (format === "blog_1000_1200_v1" && (article.wordCount < 1000 || article.wordCount > 1200)) warnings.push(`Article is ${article.wordCount} words; aim for 1,000–1,200 with useful supported content, never filler.`);
-    if (format === "master_recipe_v1" && storyLayout()) { const target = storyWordTarget(recipe); if (article.wordCount < target.min * 0.9 || article.wordCount > target.max * 1.4) warnings.push(`Article is ${article.wordCount} words; aim for about ${target.min}–${target.max} with useful description, tips, serving ideas and answers, never filler.`); }
+    if (format === "master_recipe_v1" && sectionedVoice(voice)) { const target = voiceWordTarget(recipe, voice); if (article.wordCount < target.min * 0.9 || article.wordCount > target.max * 1.4) warnings.push(`Article is ${article.wordCount} words; aim for about ${target.min}–${target.max} with useful description, tips, serving ideas and answers, never filler.`); }
   } else article.wordCount = articleDocument(article, recipe).wordCount;
   return { article, warnings: [...new Set(warnings)] };
 }

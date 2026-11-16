@@ -1,3 +1,4 @@
+import { resolveVoice, sectionedVoice } from "./article-voices";
 import type { RecipeSnapshot } from './article';
 import type { ContentSettings } from './settings';
 import { recipeReferences } from './article-document';
@@ -41,6 +42,6 @@ export function editorialWritingContext(brief: EditorialBrief) {
 }
 
 /** The story layout always publishes tips, serving ideas and FAQs, so the brief may only drop storage and variations there. */
-export function omittedSections(omit: readonly Section[], story = process.env.EXPERIMENT_STORY_ARTICLE === "1"): Section[] {
+export function omittedSections(omit: readonly Section[], story = sectionedVoice(resolveVoice())): Section[] {
   return story ? omit.filter(key => key === 'storage' || key === 'variations') : [...omit];
 }

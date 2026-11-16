@@ -61,3 +61,18 @@ Set these in the environment before `node scripts/run-experiment.cjs --allow-pai
 | `EXPERIMENT_STORY_ARTICLE=1` | Story layout, close to the source article's length (its word count, up to +15%; 1,300–1,500 when unknown). Introduction opens on the recipe's occasion, adds a general scene written to "you" (never a claim about a real person or the author), then describes the dish. Then: what makes it special, ingredients and instructions, tips, what to serve with it, FAQ, storage. Takes precedence over the lean layout. |
 
 All keep every fact rule: the writer cannot invent ingredients, quantities, times, temperatures, experience, testing or reader reviews, and the style guidance is described in our own words, never copied from any website.
+## Writing style menu
+
+Recipe options now has a **Writing style** menu (Master recipe article only). The choice is saved with each batch and article, so different articles can use different styles without restarting. When no style is chosen, the switches above still decide (story, then lean, otherwise classic).
+
+| Style | What changes |
+|---|---|
+| Classic | The default Master recipe article. |
+| Lean | Short introduction, recipe, tips. |
+| Story | Occasion, a general family scene, what makes it special, tips, serving ideas, FAQ, storage; close to the source's length. |
+| Quick & Practical | No stories. Straight to what you make, why it works, tips and mistakes to avoid, short answers. About 60% of the source's length. |
+| Holiday / Occasion | Opens on a supported occasion (or a general gathering), make-ahead and hosting tips, serving to guests. Never claims a tradition the source does not state; cooking more is described in words, never with new quantities. |
+| Budget / Family | Everyday family life, why it works for families, money-saving tips, kid-friendly serving, leftovers. Never states prices. |
+| Step-by-step Beginner | Plain words, "before you start", fuller step wording, how to know each stage is done, beginner questions. |
+
+In every style the ingredients, quantities, times, temperatures and order of steps stay exactly as in the source.

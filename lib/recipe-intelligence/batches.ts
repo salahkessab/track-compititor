@@ -1,3 +1,4 @@
+import { resolveVoice, sectionedVoice } from "./article-voices";
 import { excludedPhotoFile } from "./photoExclusions";
 import { checkImageProcessing } from '../imageMetadata';
 import fs from "node:fs";
@@ -420,8 +421,8 @@ export class BatchEngine {
         if (Buffer.byteLength(payload.input) > 64000) throw new Error("Writing prompt exceeds the local limit.");
         const response = await this.paid(stage, item, settings, "text", payload, signal);
         const rawArticle = JSON.parse(outputText(response));
-        if (brief && rawArticle.blog) for (const key of omittedSections(brief.omitSections)) rawArticle.blog[key] = [];
-        const checked = validateArticle(rawArticle, source, settings.articleFormat || "compact_v1");
+        if (brief && rawArticle.blog) for (const key of omittedSections(brief.omitSections, sectionedVoice(resolveVoice(settings.articleVoice)))) rawArticle.blog[key] = [];
+        const checked = validateArticle(rawArticle, source, settings.articleFormat || "compact_v1", settings.articleVoice);
         if (brief) checked.article.sectionOrder = brief.sectionOrder;
         b.artifacts.put(item, stage.kind === 'article' ? 'article-generated.json' : 'article-corrected.json', JSON.stringify(checked.article, null, 2), 'application/json');
         // forkVersion copies the previous artifacts for image reuse. Replace

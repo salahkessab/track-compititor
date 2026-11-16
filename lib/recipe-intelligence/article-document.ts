@@ -1,6 +1,7 @@
 import type { RecipeSnapshot } from "./article";
 import type { ArticleFormat } from "./settings";
 import { durationLabel } from "./format";
+import { resolveVoice, sectionedVoice, VOICE_LAYOUTS, type ArticleVoice } from "./article-voices";
 
 export type SupportedText = { text: string; evidenceIds: string[]; basis?: "source" | "culinary_knowledge" };
 export type BlogSections = {
@@ -8,7 +9,7 @@ export type BlogSections = {
   timeNote: SupportedText[]; variations: SupportedText[]; serving: SupportedText[];
   storage: SupportedText[]; proTips: SupportedText[]; faqs: (SupportedText & { question: string })[]; conclusion: string;
 };
-export type Article = { articleTitle?: string; seoTitle: string; metaDescription: string; slug: string; introduction: string; instructions: string[]; tips: string[]; storage: string[]; format?: ArticleFormat; blog?: BlogSections; wordCount?: number; editorialNotes?: string[]; sectionOrder?: string[] };
+export type Article = { articleTitle?: string; seoTitle: string; metaDescription: string; slug: string; introduction: string; instructions: string[]; tips: string[]; storage: string[]; format?: ArticleFormat; blog?: BlogSections; wordCount?: number; editorialNotes?: string[]; sectionOrder?: string[]; voice?: ArticleVoice };
 export const publicationTitle = (article: Article, recipe: RecipeSnapshot) => article.articleTitle?.trim() || recipe.title;
 export const escapeHtml = (v: unknown) => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export const andText = (text: string) => text.replace(/\s*&\s*/g, " and ");
@@ -40,8 +41,9 @@ export function recipeReferences(recipe: RecipeSnapshot): Record<string, string>
   return refs;
 }
 
-export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[], format: ArticleFormat = "blog_1000_1200_v1"): BlogSections {
+export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[], format: ArticleFormat = "blog_1000_1200_v1", voice?: ArticleVoice): BlogSections {
   const master = format === "master_recipe_v1";
+  const sectioned = master && sectionedVoice(resolveVoice(voice));
   const refs = recipeReferences(recipe);
   const prose = (v: unknown, max = 5000) => { if (typeof v !== "string") return ""; const text = v.replace(/<[^>]*>/g, "").replace(/\*\*/g, "").trim().slice(0, max); return master ? text : andText(text.replace(/[—–]/g, ", ")); };
   const numbers = (s: string): string[] => s.match(/\d+(?:[.,/]\d+)?|[¼½¾⅓⅔⅛⅜⅝⅞]/g) || [];
@@ -60,8 +62,8 @@ export function validateBlog(raw: any, recipe: RecipeSnapshot, warnings: string[
     const row = claim(v, "Ingredient notes"); const index = v?.ingredientIndex;
     return row && Number.isInteger(index) && index >= 0 && index < recipe.ingredients.length ? [{ ...row, ingredientIndex: index }] : [];
   });
-  const faqs = (Array.isArray(raw?.faqs) ? raw.faqs : []).slice(0, master && storyLayout() ? 6 : 5).flatMap((v: any) => { const row = claim(v, "FAQs"); const question = prose(v?.question, 250); if (!row || !question) return []; const answer = row.text.startsWith(question) ? row.text.slice(question.length).trim() : row.text; return answer ? [{ ...row, text: answer, question }] : []; });
-  const blog = { whyMake: claims("whyMake"), ingredientNotes, timeNote: master ? [] : claims("timeNote", 2), variations: claims("variations"), serving: claims("serving", master && storyLayout() ? 6 : 3), storage: claims("storage", 4), proTips: claims("proTips"), faqs, conclusion: master ? "" : prose(raw?.conclusion, 2500) };
+  const faqs = (Array.isArray(raw?.faqs) ? raw.faqs : []).slice(0, sectioned ? 6 : 5).flatMap((v: any) => { const row = claim(v, "FAQs"); const question = prose(v?.question, 250); if (!row || !question) return []; const answer = row.text.startsWith(question) ? row.text.slice(question.length).trim() : row.text; return answer ? [{ ...row, text: answer, question }] : []; });
+  const blog = { whyMake: claims("whyMake"), ingredientNotes, timeNote: master ? [] : claims("timeNote", 2), variations: claims("variations"), serving: claims("serving", sectioned ? 6 : 3), storage: claims("storage", 4), proTips: claims("proTips"), faqs, conclusion: master ? "" : prose(raw?.conclusion, 2500) };
   if (!master) {
     if (!blog.whyMake.length) warnings.push("Why make this recipe needs supported benefits.");
     if (blog.proTips.length < 3) warnings.push("Fewer than three supported pro tips are available.");
@@ -104,20 +106,23 @@ export function articleDocument(article: Article, recipe: RecipeSnapshot, images
   };
   const section = (title: string, claims: SupportedText[], bullets = false) => { if (claims.length) { heading(title); if (bullets) list(claims.map(v => v.text)); else claims.forEach(v => paragraphs(v.text)); } };
   const facts = () => { const rows = recipeFacts(recipe, !!blog); html.push(`<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(prose(v))}</dd>`).join("")}</dl>`); text.push(rows.map(([k,v]) => `${k}: ${prose(v)}`).join("\n")); markdown.push(rows.map(([k,v]) => `${k}: ${prose(v)}`).join("\n\n")); };
-  if (master && blog && storyLayout()) {
-    // Experimental story layout: occasion-led introduction, why it's special, the recipe card, then tips, serving ideas, FAQ and storage.
+  const voice = resolveVoice(article.voice);
+  if (master && blog && sectionedVoice(voice)) {
+    // Experimental sectioned styles (story, quick, holiday, budget, beginner): introduction, why it's special, the recipe card,
+    // then tips, serving ideas, FAQ and storage, with headings chosen by the style.
+    const layout = VOICE_LAYOUTS[voice as keyof typeof VOICE_LAYOUTS];
     heading(title, 1); photograph("featured"); references("hero"); paragraphs(article.introduction);
-    section(`What Makes This ${title} Special`, blog.whyMake, true);
+    section(layout.special(title), blog.whyMake, true);
     html.push('<section data-ri-recipe-card="1">');
     facts(); heading("Ingredients"); list(recipe.ingredients.map(publicationIngredient)); references("ingredients");
-    heading("Instructions"); list(article.instructions, true);
+    heading(layout.instructions); list(article.instructions, true);
     html.push('</section>');
     photograph("alternate");
-    section("Tips for the Best Results", blog.proTips, true);
-    section(`What to Serve With ${title}`, blog.serving);
-    if (blog.faqs.length) { heading("Frequently Asked Questions"); for (const faq of blog.faqs) { heading(faq.question, 3); paragraphs(faq.text); } }
-    section("Storage", blog.storage);
-  } else if (master && blog && leanLayout()) {
+    section(layout.tips, blog.proTips, true);
+    section(layout.serving(title), blog.serving);
+    if (blog.faqs.length) { heading(layout.faqs); for (const faq of blog.faqs) { heading(faq.question, 3); paragraphs(faq.text); } }
+    section(layout.storage, blog.storage);
+  } else if (master && blog && voice === "lean") {
     // Experimental lean layout: introduction, then ingredients and method inside the recipe card, then tips.
     // Optional sections the writer was told to leave empty are skipped; step photographs are not placed in this layout.
     heading(title, 1); photograph("featured"); references("hero"); paragraphs(article.introduction);
