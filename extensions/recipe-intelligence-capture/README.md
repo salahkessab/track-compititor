@@ -1,8 +1,10 @@
-# Recipe Intelligence Capture 2.5.0
+# Recipe Intelligence Capture 2.6.0
 
 Capture a recipe or Home & Decor article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
 
-Version 2.5.0 adds **Save article to → Home & Decor**. The connected app's Home & Decor tab selects this destination automatically for a new capture; you can change it before saving. Decor imports use the decor article reader, never recipe ingredient validation. Select photos and room groups and review the estimate in Home & Decor before approving generation. Interrupted imports retain their original destination. If a decor article was previously submitted as a recipe, start a fresh capture and choose Home & Decor.
+Version 2.6.0 loads lazy photos with bounded scrolling, detects verification pages, previews candidates in pages of 12, and supports up to 80 reference candidates. It stops before finalizing an import with missing selected photos: **Retry missing photos** reuses acknowledged uploads; **Continue with saved photos** explicitly accepts the missing photos. Truncated text, discovery limits, incomplete loading and converted/displayed image copies are reported. Update the backend as well as the extension; an older backend is refused before data transfer.
+
+Version 2.5.0 added **Save article to → Home & Decor**. The connected app's Home & Decor tab selects this destination automatically for a new capture; you can change it before saving. Decor imports use the decor article reader, never recipe ingredient validation. Select photos and room groups and review the estimate in Home & Decor before approving generation. Interrupted imports retain their original destination. If a decor article was previously submitted as a recipe, start a fresh capture and choose Home & Decor. Automatic classification and other article-writing niches are not part of this update.
 
 Version 2.4.1 saves captures for review without switching you to the app. It remembers the connected app address and storage folder, shows connection status before importing, and can reopen a closed app tab. A changed launcher port is detected from an open app tab for the same workspace. Captures are saved before connecting, so an offline app does not lose the pending import. The recipe photo filters and saved generation history are unchanged.
 
@@ -19,14 +21,14 @@ Download the ZIP from **Settings → Chrome extension**, or use this repository 
 
 After updating files in this folder, click **Reload** on the extension's card and close old capture tabs before starting a new capture.
 
-Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.5.0** at the top. Old capture tabs and resumed imports keep their previously captured photos and destination. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
+Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.6.0** at the top. Old capture tabs and resumed imports keep their previously captured photos and destination. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
 
 ## Use
 
-1. Open the recipe in Chrome and wait for its article and images to appear. Scrolling through the recipe can load lazy photographs.
-2. Click **Recipe Intelligence Capture** in the toolbar. A capture preview opens in a separate tab.
+1. Open the article in Chrome. If the website shows a verification screen, complete it normally until the article is visible.
+2. Click **Recipe Intelligence Capture** in the toolbar. A capture preview opens in a separate tab. The original article scrolls automatically for up to 20 seconds / 72 steps, then returns to its starting position. No page controls are clicked. If verification is detected, use the original tab to complete it and press **Capture page again**.
 3. Choose **Recipes · My articles** or **Home & Decor** in **Save article to**, then click Save. All discovered photos are selected; optionally uncheck any you do not want.
-4. Keep the capture tab open until it finishes. The article is saved without starting generation or switching tabs. Continue collecting more recipes.
+4. Keep the capture tab open until it finishes. If photos fail, retry the missing photos after they become readable in the source tab, or explicitly continue with the successfully saved photos. The capture ID and successful uploads are retained. No generation starts and no app switch occurs automatically.
 5. When you finish collecting, click **Review My articles** or **Review Home & Decor**. Decor opens the specific captured article so you can choose photos and room groups, review its estimate, and approve generation.
 6. Below $2.50 maximum expected spend, Generate starts that article directly. If the estimate or reserved maximum reaches $2.50, the app shows the cost and asks before starting. Existing budget enforcement remains active; a changed or expired quote must be reviewed again.
 
@@ -37,13 +39,15 @@ If the app disconnects, reopen it with the desktop shortcut and click **Reconnec
 ## What is captured
 
 - The main readable article, its title and source URL, recipe metadata, ingredients, instructions, and supported article context such as storage and serving guidance.
-- Up to 24 article photos, including loaded/lazy image URLs and recipe metadata images. Related posts, navigation, forms, comments, scripts and obvious advertisements are excluded.
+- Up to 80 article-photo candidates, including lazy image URLs, multiple responsive variants and recipe metadata images. Reaching the 80-candidate or 2,500-image inspection limit is reported; it is not a claim to have captured the whole site. The preview shows 12 at a time, independently of the selected import count. Home & Decor still allows at most 12 photos per paid generation. Related posts, navigation, forms, comments, scripts and obvious advertisements are excluded.
 - Actual image files, not just remote links. Each image is limited to 10 MB and 40 megapixels, with a minimum size of 160 × 120. Browser-readable formats such as AVIF are converted to JPEG when needed.
-- Version 2.3 previews the same readable bytes used for import. Black or transparent loading placeholders are rejected by the extension and server. If a photo is unavailable, leave the recipe tab open, scroll to that photograph and let it finish loading, then capture again. A lazy `data-src` alone never proves its pixels have loaded.
+- Preview and import use the same recovered image bytes. A 24 MB encoded-image cache and paged previews bound retained image data. Normal downloads are preferred, then same-origin requests from the original page, then already displayed pixels where Chrome allows canvas access. Download attempts have bounded timeouts. Converted or displayed copies are labeled, and their count is retained in the import notes; these are not claimed to be original files.
+- Black or transparent loading placeholders are rejected. If a photo is unavailable, leave the article tab open, scroll to that photograph and let it finish loading, then use **Retry missing photos**. A lazy `data-src` alone never proves its pixels have loaded.
+- Text extraction has character, node and depth limits; reaching them is reported. Home & Decor retains at most 40,000 characters and reports when more text was available. Successful image transfer alone does not mean the complete article was captured.
 
-The local app stores plain article text and structured recipe facts under `research/browser/` in its selected storage folder. Photos go under `research/references/`. The local app validates files and groups exact duplicates. The app currently generates recipe articles; an article without readable ingredients and instructions can be captured but cannot receive a recipe-writing estimate.
+Recipes store plain article text and structured recipe facts under `research/browser/`, with photos under `research/references/`. Home & Decor stores its own article record and references under `articles/home-decor/`. The app validates files and groups exact duplicates. An article without readable ingredients and instructions cannot receive a recipe-writing estimate; choose Home & Decor for decor articles.
 
-A webpage must be readable in Chrome. The extension does not solve access challenges or retrieve hidden/paywalled content. Some images may still be unavailable. Failed photos are listed; the successfully captured article and images are retained. With no usable source photos, the normal app estimate can include three newly generated images from the recipe facts.
+A webpage must be readable in Chrome. The extension does not solve access challenges or retrieve hidden/paywalled content. No universal success rate is promised. Failed photos are listed and retained for retry; a partial import requires explicit acceptance before an estimate. With no usable source photos, an explicitly continued recipe import may receive the normal text-based image estimate, which still requires generation approval in the app.
 
 ## Connection and permissions
 

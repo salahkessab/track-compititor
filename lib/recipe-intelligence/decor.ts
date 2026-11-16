@@ -16,6 +16,7 @@ import { createZip } from './zip';
 import { DECOR_VERSION } from './decorPrompts';
 import { extractDecor, decorWritingPayload, decorImagePrompt, validateDecorArticle, decorHtml, type DecorSource } from './decorArticle';
 import { refineArticle, REFINEMENT_VERSION, REFINEMENT_INPUT_LIMIT, type RefinementReport } from './refinement';
+import { captureWarnings, captureFinishNotes } from './captureReview';
 
 const now = () => new Date().toISOString();
 const MAX_SELECTED = 12;
@@ -57,6 +58,7 @@ export class DecorStore {
     if (typeof input.url !== 'string' || input.url.length > 4096) throw new Error('Provide the captured article URL.');
     const url = publicUrl(input.url).href;
     if (typeof input.html !== 'string' || !input.html.trim() || Buffer.byteLength(input.html) > 1_500_000) throw new Error('The captured article is empty or too large (1.5 MB maximum).');
+    const warnings=captureWarnings(input,input.html);
     const id = input.captureId, fingerprint = digest(JSON.stringify([url, input.html]));
     return this.store.db.transaction(() => {
       if (this.store.db.prepare('SELECT 1 FROM decor_jobs WHERE id=?').get(id)) {
@@ -65,9 +67,10 @@ export class DecorStore {
       }
       // Parse the captured article directly; no recipe extraction, URL fetch or AI call.
       const source = extractDecor(input.html as string, url); source.photos = [];
+      if(source.textTruncated)warnings.push('The article exceeds the 40,000-character Home & Decor text limit. Only the first part was saved; review the source before generation.');
       const job: Job = { id, state: 'capturing', createdAt: now(), updatedAt: now(), source, photos: [],
         brief: 'Natural daylight, realistic lived-in rooms. Muted sage, warm oak and warm white accents. Keep each room group consistent.',
-        settings: contentSettings(this.store), warnings: [], browserCapture: { fingerprint, uploadedUrls: [] } };
+        settings: contentSettings(this.store), warnings, browserCapture: { fingerprint, uploadedUrls: [] } };
       this.store.db.prepare('INSERT INTO decor_jobs VALUES(?,?,?,?,?)').run(id, job.state, job.createdAt, job.updatedAt, JSON.stringify(job));
       return this.browserDetail(id);
     }).immediate();
@@ -76,14 +79,14 @@ export class DecorStore {
     const job = this.get(id);
     if (!job.browserCapture) throw new Error('This is not a Home & Decor browser import.');
     return { id, status: job.state === 'capturing' ? 'capturing' : 'ready',
-      photos: job.photos.map(p => ({ id: p.id, state: 'ready' })), uploadedUrls: job.browserCapture.uploadedUrls };
+      photos: job.photos.map(p => ({ id: p.id, state: 'ready' })), uploadedUrls: job.browserCapture.uploadedUrls, captureWarnings:job.warnings };
   }
   async uploadBrowser(id: string, bytes: Buffer, source: string, caption: string) {
     const job = this.get(id), url = publicUrl(source).href;
     if (!job.browserCapture) throw new Error('This is not a Home & Decor browser import.');
     if (job.browserCapture.uploadedUrls.includes(url)) return this.browserDetail(id);
     if (job.state !== 'capturing') throw new Error('This browser import is already finished.');
-    if (job.browserCapture.uploadedUrls.length >= 30) throw new Error('Keep up to 30 reference candidates.');
+    if (job.browserCapture.uploadedUrls.length >= 80) throw new Error('Keep up to 80 reference candidates.');
     const revision = digest(JSON.stringify(job));
     const existingPaths = new Set(job.photos.map(p => p.path));
     await this.photo(job, bytes, caption);
@@ -105,9 +108,7 @@ export class DecorStore {
       const job = this.get(id);
       if (!job.browserCapture) throw new Error('This is not a Home & Decor browser import.');
       if (job.state !== 'capturing') return this.browserDetail(id);
-      const missing = Number(input.missingPhotos || 0);
-      if (!Number.isSafeInteger(missing) || missing < 0 || missing > 80) throw new Error('Invalid missing photo count.');
-      if (missing) job.warnings.push(`${missing} source photographs could not be imported from Chrome. You can upload them manually.`);
+      job.warnings.push(...captureFinishNotes(input));
       // Photo selection, estimate and paid approval stay in Home & Decor.
       job.state = 'review'; this.save(job); return this.browserDetail(id);
     }).immediate();
@@ -126,7 +127,7 @@ export class DecorStore {
   }
   async upload(id: string, bytes: Buffer, caption: string) {
     const job = this.get(id); this.editable(job);
-    if (job.photos.length >= 30) throw new Error('Keep up to 30 reference candidates.');
+    if (job.photos.length >= 80) throw new Error('Keep up to 80 reference candidates.');
     await this.photo(job, bytes, caption);
     // An upload can overlap a selection request; never overwrite a newer quote or approval.
     this.store.db.transaction(() => { const current = this.get(id); this.editable(current); if (current.updatedAt !== job.updatedAt) throw new Error('The selection changed during upload. Please upload again.'); delete job.quote; this.save(job); }).immediate();

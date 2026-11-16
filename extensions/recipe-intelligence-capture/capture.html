@@ -13,11 +13,12 @@
     <h2 id="title"></h2><a id="source" target="_blank" rel="noreferrer"></a><p id="counts"></p>
     <label>Save article to<select id="destination"><option value="recipe">Recipes · My articles</option><option value="home-decor">Home &amp; Decor</option></select></label>
     <p class="hint">Choose the article type before saving. Home &amp; Decor imports do not require ingredients or recipe instructions.</p>
-    <div class="actions"><button id="import" disabled>Save to My articles</button><button id="resume" class="secondary" hidden>Resume previous import</button><button id="retry" class="secondary" hidden>Capture page again</button><button id="open" class="secondary" hidden>Review My articles</button></div>
+    <div class="actions"><button id="import" disabled>Save to My articles</button><button id="continue-partial" class="secondary" hidden>Continue with saved photos</button><button id="resume" class="secondary" hidden>Resume previous import</button><button id="retry" class="secondary" hidden>Capture page again</button><button id="open" class="secondary" hidden>Review My articles</button></div>
+    <p id="coverage" role="status" aria-live="polite"></p>
     <p id="next" class="hint" hidden>Keep collecting recipes. When you finish, open My articles to review photos and click Generate for each article.</p>
     <p class="hint">Keep this tab open while importing. Capturing is free. Generation starts only when you click Generate in the app.</p>
     <p id="result"></p><ul id="warnings"></ul>
   </section>
-  <section id="preview" class="card" hidden><details><summary>Captured article text</summary><pre id="text"></pre></details><details open><summary id="photo-count">Photos</summary><p class="hint">All photos are included. Uncheck any you do not want.</p><div id="photos"></div></details></section>
+  <section id="preview" class="card" hidden><details><summary>Captured article text</summary><pre id="text"></pre></details><details open><summary id="photo-count">Photos</summary><p class="hint">All discovered photos are selected initially. Uncheck any you do not want. Preview pages do not limit which selected photos are saved.</p><div class="actions" id="photo-pages" hidden><button id="photos-prev" class="secondary">Previous photos</button><span id="photos-page"></span><button id="photos-next" class="secondary">Next photos</button></div><div id="photos"></div></details></section>
   <footer>Saved to your connected Recipe Intelligence workspace. No API key is stored in this extension.</footer>
 </main><script src="shared.js"></script><script src="connection.js"></script><script src="capture.js"></script></body></html>

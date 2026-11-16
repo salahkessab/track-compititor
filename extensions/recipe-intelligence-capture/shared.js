@@ -26,7 +26,7 @@
         const capability = await api('capabilities');
         if (!capability.enabled || capability.browserCapture !== 1) return {error:'This local app needs the browser capture update.',status:409};
         const snapshot = await api('snapshot'); return { ready:true, root:snapshot.runtime === 'server' ? `workspace:${snapshot.settings.workspaceId}` : snapshot.settings.root,
-          destination:new URLSearchParams(location.search).get('tab') === 'home-decor' ? 'home-decor' : 'recipe', decorBrowserCapture:capability.decorBrowserCapture === 1 };
+          destination:new URLSearchParams(location.search).get('tab') === 'home-decor' ? 'home-decor' : 'recipe', decorBrowserCapture:capability.decorBrowserCapture === 1, captureReview:capability.captureReview===1 };
       }
       const destination = message.destination || 'recipe';
       if (!['recipe','home-decor'].includes(destination)) throw new Error('Choose Recipes or Home & Decor.');
@@ -38,7 +38,7 @@
         const bytes = Uint8Array.from(atob(message.base64), c => c.charCodeAt(0));
         return await api(`${prefix}/${message.id}/browser-photo`, 'POST', bytes, {'Content-Type':message.mime,'X-File-Name':message.name,'X-Source-Url':encodeURIComponent(message.url),'X-Photo-Caption':encodeURIComponent(message.caption || '')});
       }
-      if (message.op === 'finish') return await api(`${prefix}/${message.id}/browser-finish`, 'POST', {missingPhotos:message.missingPhotos});
+      if (message.op === 'finish') return await api(`${prefix}/${message.id}/browser-finish`, 'POST', {missingPhotos:message.missingPhotos,acceptPartial:message.acceptPartial===true,derivedPhotos:message.derivedPhotos||0});
       if (message.op === 'estimate' && destination === 'recipe') return await api(`imports/${message.id}/estimate`, 'POST', {});
       throw new Error('Unsupported import operation.');
     } catch (error) { return { error:error.message || 'The local workspace is unavailable.', status:error.status || 0 }; }
@@ -69,7 +69,7 @@
 
   // Serialized into the original tab: use its ordinary same-origin request
   // context, without transferring cookies or bypassing CORS/access challenges.
-  async function pagePhoto(url, pageUrl) {
+  async function pagePhoto(url, pageUrl, timeoutMs=15000) {
     const current = new URL(location.href), captured = new URL(pageUrl);
     current.hash = ''; captured.hash = '';
     if (current.href !== captured.href) return null;
@@ -80,7 +80,7 @@
         ...(img.getAttribute('srcset') || '').split(',').map(part => part.trim().split(/\s+/)[0])]
         .filter(Boolean).some(value => { try { return new URL(value, location.href).href === target.href; } catch { return false; } }));
     if (!present) return null;
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), Math.max(100,Math.min(15000,timeoutMs)));
     try {
       const response = await fetch(target.href, {credentials:'same-origin', mode:'same-origin', redirect:'error', signal:controller.signal});
       if (!response.ok) return null;
@@ -104,9 +104,9 @@
     } catch { return null; } finally { clearTimeout(timer); }
   }
 
-  async function fetchPhoto(url, fetcher = fetch) {
+  async function fetchPhoto(url, fetcher = fetch, timeoutMs=25000) {
     publicImageUrl(url);
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), Math.max(100,Math.min(25000,timeoutMs)));
     const maximum = 10 * 1024 * 1024;
     try {
       const response = await fetcher(url, {credentials:'omit', referrerPolicy:'no-referrer', redirect:'error', signal:controller.signal});

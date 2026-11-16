@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Recipe Intelligence Capture",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "minimum_chrome_version": "116",
   "description": "Import recipes or Home & Decor articles and photos into your cloud or local Recipe Studio workspace.",
   "permissions": ["activeTab", "scripting", "storage"],

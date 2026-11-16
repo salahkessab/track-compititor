@@ -44,6 +44,7 @@ test('rendered fallback rejects unloaded data-src, transparent and black pixels,
 
 function capture(html) {
   const dom = new JSDOM(html,{url:'https://food.example/blocked/',runScripts:'outside-only'});
+  dom.window.eval(fs.readFileSync(path.join(extension,'page-tools.js'),'utf8'));
   const result = dom.window.eval(fs.readFileSync(path.join(extension,'content.js'),'utf8'));
   dom.window.close();
   return JSON.parse(JSON.stringify(result));
@@ -144,9 +145,10 @@ test('browser import stages safely, survives worker recovery, deduplicates retri
   const bytes = fs.readFileSync(path.join(__dirname,'fixtures/approved-recipe-photos/08-skillet.jpg'));
   await imports.add(imported.id,bytes,'Photo 1','https://cdn.example/soup.jpg');
   await imports.add(imported.id,bytes,'Retry','https://cdn.example/soup.jpg');
-  imported = finishBrowserCapture(imports,imported.id,{missingPhotos:1});
+  assert.throws(()=>finishBrowserCapture(imports,imported.id,{missingPhotos:1}),/Continue with saved/);
+  imported = finishBrowserCapture(imports,imported.id,{missingPhotos:1,acceptPartial:true});
   assert.equal(imported.photos.length,1); assert.equal(imported.photos[0].selected,1); assert.equal(imported.status,'ready');
-  assert.match(imported.recipe.sourceNotes.join(' '),/1 source photographs/);
+  assert.match(imported.recipe.sourceNotes.join(' '),/1 selected source photographs.*continue without/);
   assert.equal(finishBrowserCapture(imports,imported.id,{}).revision,imported.revision);
   assert.equal(imported.selection_confirmed,0,'captured photos require review before a paid estimate');
   imports.select(imported.id,imported.photos.map(photo=>photo.id));
@@ -270,8 +272,9 @@ test('authenticated browser bridge imports text and image bytes, rejects cross-o
   assert.deepEqual((await decorCall({op:'begin',data:decorInput})).uploadedUrls,[decorPhoto.url]);
   const {DecorStore}=require('../.intelligence-build/lib/recipe-intelligence/decor.js');const decor=new DecorStore(store);
   assert.equal(decor.claim(),null);assert.throws(()=>decor.select(decorRow.id,{photos:[],brief:''}),/already been queued/);
-  const finishedDecor=await decorCall({op:'finish',id:decorRow.id,missingPhotos:1});assert.equal(finishedDecor.status,'ready');
-  await decorCall({op:'finish',id:decorRow.id,missingPhotos:1});
+  assert.equal((await decorCall({op:'finish',id:decorRow.id,missingPhotos:1})).status,400);
+  const finishedDecor=await decorCall({op:'finish',id:decorRow.id,missingPhotos:1,acceptPartial:true});assert.equal(finishedDecor.status,'ready');
+  await decorCall({op:'finish',id:decorRow.id,missingPhotos:1,acceptPartial:true});
   const detail=decor.detail(decorRow.id);assert.equal(detail.state,'review');assert.equal(detail.photos[0].selected,false);assert.equal(detail.quote,undefined);assert.equal(detail.warnings.length,1);assert.ok(!detail.source.text.includes('untrusted instructions'));
   assert.equal((await decorCall({...decorPhoto,url:'https://cdn.example/late.jpg'})).status,400);
   assert.match((await decorCall({op:'estimate',id:decorRow.id})).error,/Unsupported/);

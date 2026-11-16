@@ -38,7 +38,7 @@
       const origin = appOrigin(tab.url);
       const result = await bridge({id:tab.id,origin},{op:'probe'});
       if (result.ready !== true || typeof result.root !== 'string' || !result.root || result.root.length > 4096) throw new Error('This tab is not a connected Recipe Intelligence workspace.');
-      return {id:tab.id,origin,root:result.root,...(['recipe','home-decor'].includes(result.destination)?{destination:result.destination}:{}),decorBrowserCapture:result.decorBrowserCapture === true};
+      return {id:tab.id,origin,root:result.root,...(['recipe','home-decor'].includes(result.destination)?{destination:result.destination}:{}),decorBrowserCapture:result.decorBrowserCapture === true,captureReview:result.captureReview===true};
     }
     async function scan(requested) {
       const tabs = await browser.tabs.query({url:['http://127.0.0.1/*','https://*/*']});

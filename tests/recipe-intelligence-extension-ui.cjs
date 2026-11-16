@@ -10,11 +10,12 @@ test('packaged Chrome icons decode as PNG at their declared dimensions',async()=
   }
 });
 async function until(predicate) { for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('Extension UI did not settle'); }
-async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,pageRecovery=false,windowState='normal',offline=false,sourceIsApp=false,destination='recipe',decorSupported=true}={}) {
+async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,pageRecovery=false,windowState='normal',offline=false,sourceIsApp=false,destination='recipe',decorSupported=true,reviewSupported=true,photoCount=1,failedUrls=[],preparation={},renderedRecovery=false}={}) {
   const dom=new JSDOM(fs.readFileSync(path.join(directory,'capture.html'),'utf8'),{url:'https://extension.example/capture.html?sourceTab=11',runScripts:'outside-only'});
   const w=dom.window, calls=[],navigations=[],windowUpdates=[]; let uploads=0,stage='capturing',photos=[];
   const capture={url:'https://food.example/soup/',title:'Carrot soup',html:'<article><h1>Carrot soup</h1><p>The captured article.</p></article>',text:'Carrot soup\nA warm soup made from carrots, water and salt.',words:12,images:[{url:'https://cdn.example/soup.jpg',caption:'Carrot soup',alternatives:[]}],truncated:false};
   if(pageRecovery) capture.images[0].url='https://food.example/soup.jpg';
+  if(photoCount>1)capture.images=Array.from({length:photoCount},(_,i)=>({url:`https://cdn.example/photo-${i}.jpg`,caption:`Photo ${i+1}`,alternatives:[]}));
   const appTab={id:22,url:'http://127.0.0.1:55543/?tab=recipe-intelligence',windowId:77};
   w.chrome={
     runtime:{getManifest:()=>JSON.parse(fs.readFileSync(path.join(directory,'manifest.json'),'utf8'))},
@@ -22,15 +23,15 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
     windows:{get:async id=>{assert.equal(id,77);return {id,state:windowState};},update:async(id,details)=>windowUpdates.push({id,details:JSON.parse(JSON.stringify(details))})},
     storage:{local:{get:async()=>JSON.parse(JSON.stringify(storage)),set:async data=>Object.assign(storage,JSON.parse(JSON.stringify(data)))}},
     scripting:{executeScript:async options=>{
-      if(options.files)return [{result:JSON.parse(JSON.stringify(capture))}];
+      if(options.files)return [{result:JSON.parse(JSON.stringify(options.files.includes('prepare.js')?preparation:capture))}];
       if(options.func.name==='pagePhoto')return [{result:pageRecovery?{base64:'AQID',mime:'image/jpeg'}:null}];
-      if(options.func.name==='renderedPhoto')return [{result:null}];
+      if(options.func.name==='renderedPhoto')return [{result:renderedRecovery?'AQID':null}];
       assert.equal(options.world,'ISOLATED');const m=options.args[0];calls.push(m);
-      if(m.op==='probe')return [{result:{ready:true,root:'E:\\Recipes',destination,decorBrowserCapture:decorSupported}}];
+      if(m.op==='probe')return [{result:{ready:true,root:'E:\\Recipes',destination,decorBrowserCapture:decorSupported,captureReview:reviewSupported}}];
       if(m.op==='begin')return [{result:{id:m.data.captureId,status:stage,photos}}];
       if(m.op==='photo'){
         if(failFirstUpload&&++uploads===1)return [{result:{error:'Local app restarting',status:503}}];
-        photos=[{id:'p1',state:'ready',source_url:m.url}];return [{result:{photos}}];
+        if(!photos.some(p=>p.source_url===m.url))photos.push({id:'p'+(photos.length+1),state:'ready',source_url:m.url});return [{result:{photos}}];
       }
       if(m.op==='finish'){stage='ready';return [{result:{id:m.id,photos,status:stage}}];}
       if(m.op==='estimate')return [{result:{id:batchId,quote:{estimated:.71}}}];
@@ -38,7 +39,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
     }}
   };
   w.navigator.locks={request:async(name,options,callback)=>callback({name})};
-  w.fetch=async()=>downloadFailure?new Response('',{status:403}):new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'image/jpeg'}});
+  w.fetch=async url=>downloadFailure||failedUrls.includes(url)?new Response('',{status:403}):new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'image/jpeg'}});
   w.createImageBitmap=async()=>({width:300,height:250,close(){}});
   w.OffscreenCanvas=class {getContext(){return {drawImage(){},getImageData(){return {data:new Uint8ClampedArray([40,30,20,255])};}};}};
   w.AbortController=AbortController;
@@ -46,15 +47,15 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
   w.eval(fs.readFileSync(path.join(directory,'connection.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(directory,'capture.js'),'utf8'));
   t.after(()=>dom.window.close());
-  await until(()=>w.document.getElementById('status').textContent===(sourceIsApp?'Connected. Open a recipe or Home & Decor article and click the extension to capture it.':'Ready to import.'));
+  await until(()=>w.document.getElementById('status').textContent===(preparation.blocked?'Capture needs your attention.':sourceIsApp?'Connected. Open a recipe or Home & Decor article and click the extension to capture it.':'Ready to import.'));
   await until(()=>!w.document.getElementById('connect').disabled);
   const button=id=>w.document.getElementById(id);
-  const run=async()=>{button('import').click();await until(()=>!button('import').disabled&&(button('status').textContent.startsWith('Imported.')||button('status').textContent.startsWith('Import needs')));};
-  return {w,calls,navigations,windowUpdates,storage,run,button,setOnline:()=>{offline=false;}};
+  const run=async()=>{button('import').click();await until(()=>!button('import').disabled&&(button('status').textContent.startsWith('Imported')||button('status').textContent.startsWith('Import needs')));};
+  return {w,calls,navigations,windowUpdates,storage,run,button,setOnline:()=>{offline=false;},recoverPhotos:()=>{downloadFailure=false;failedUrls=[];}};
 }
 test('extension preview imports image bytes, finishes before estimating, and waits for manual library review',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.5\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.6\.0/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
@@ -69,7 +70,7 @@ test('extension preview imports image bytes, finishes before estimating, and wai
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/No generation has started/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.5.0');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.6.0');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 
@@ -156,9 +157,59 @@ test('unavailable source photo is reported and does not erase readable article c
   await until(()=>screen.button('photos').textContent.includes('Photo unavailable'));
   assert.equal(screen.button('photos').querySelector('img').hasAttribute('src'),false);
   assert.equal(screen.calls.some(c=>c.op==='photo'),false);
-  assert.equal(screen.calls.find(c=>c.op==='finish').missingPhotos,1);
+  assert.ok(!screen.calls.some(c=>c.op==='finish'||c.op==='estimate'));
   assert.match(screen.button('warnings').textContent,/403/);
+  assert.equal(screen.storage.lastCapture.done,undefined);
+  assert.equal(screen.button('import').textContent,'Retry missing photos');
+  screen.button('continue-partial').click();await until(()=>screen.storage.lastCapture.done);
+  assert.equal(screen.calls.find(c=>c.op==='finish').missingPhotos,1);
+  assert.equal(screen.calls.find(c=>c.op==='finish').acceptPartial,true);
+  assert.match(screen.button('status').textContent,/with limitations/);
   assert.equal(screen.storage.lastCapture.done,true);
+});
+
+test('retry saves only missing photos; successful photos and capture ID survive interruption',async t=>{
+  const screen=await ui(t,{photoCount:3,failedUrls:['https://cdn.example/photo-1.jpg'],destination:'home-decor'});
+  await screen.run();const id=screen.storage.lastCapture.id;
+  assert.equal(screen.storage.lastCapture.uploaded.length,2);assert.equal(screen.storage.lastCapture.failed.length,1);
+  assert.match(screen.button('coverage').textContent,/2 of 3.*1 unavailable/);
+  assert.ok(!screen.calls.some(c=>c.op==='finish'||c.op==='estimate'));
+  screen.recoverPhotos();await screen.run();
+  assert.equal(screen.storage.lastCapture.id,id);assert.equal(screen.storage.lastCapture.done,true);
+  assert.equal(screen.calls.filter(c=>c.op==='photo').length,3);
+  assert.equal(screen.calls.filter(c=>c.op==='finish').length,1);
+  assert.ok(!screen.calls.some(c=>c.op==='approve'||c.op==='estimate'));
+});
+
+test('preview pagination retains all 35 selected photos for import',async t=>{
+  const screen=await ui(t,{photoCount:35});
+  assert.equal(screen.button('photos').querySelectorAll('input').length,12);
+  screen.button('photos-next').click();assert.match(screen.button('photos-page').textContent,/13–24 of 35/);
+  screen.button('photos').querySelector('input').click();
+  screen.button('photos-next').click();assert.equal(screen.button('photos').querySelectorAll('input').length,11);
+  await screen.run();assert.equal(screen.calls.filter(c=>c.op==='photo').length,34);
+  assert.equal(screen.storage.lastCapture.selected.length,34);
+});
+
+test('challenge pages cannot be saved or sent through any import operation',async t=>{
+  const screen=await ui(t,{preparation:{blocked:true,reason:'Complete verification in the original tab.'}});
+  assert.equal(screen.button('import').disabled,true);assert.equal(screen.button('preview').hidden,true);
+  assert.equal(screen.button('retry').hidden,false);assert.match(screen.button('error').textContent,/Complete verification/);
+  assert.equal(screen.storage.lastCapture,undefined);assert.ok(screen.calls.every(c=>c.op==='probe'));
+});
+
+test('bounded page loading and rendered image fallbacks are reported without claiming complete originals',async t=>{
+  const screen=await ui(t,{downloadFailure:true,renderedRecovery:true,preparation:{loadingIncomplete:true}});
+  await until(()=>screen.button('photos').textContent.includes('Displayed copy'));
+  await screen.run();assert.match(screen.button('status').textContent,/with limitations/);
+  assert.equal(screen.calls.find(c=>c.op==='begin').data.captureReport.loadingIncomplete,true);
+  assert.equal(screen.calls.find(c=>c.op==='finish').derivedPhotos,1);
+  assert.match(screen.button('warnings').textContent,/time or length limit/);
+});
+
+test('new capture features refuse an old backend before sending article data',async t=>{
+  const screen=await ui(t,{reviewSupported:false});await screen.run();
+  assert.match(screen.button('error').textContent,/latest backend/);assert.ok(screen.calls.every(c=>c.op==='probe'));
 });
 
 test('offline capture is saved before connection and can resume from a new extension tab',async t=>{

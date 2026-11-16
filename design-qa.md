@@ -73,3 +73,12 @@ Extension 2.5.0 adds a destination selector, defaulting to the connected app tab
 - 9 Chrome checks passed with isolated fixtures: destination selection, decor-only operations, locked destination after saving, review deep link, mobile layout and unchecked reference photos. No paid requests or production data changes.
 - Screenshots: work/decor-extension-desktop.png, work/decor-extension-mobile.png and work/decor-import-local.png. The plain green photo is an explicit test fixture, not generated output.
 - Users must replace their unpacked extension files, reload version 2.5.0 in Chrome, and open a fresh capture tab. An older app refuses decor capture rather than falling back to recipes.
+
+## Capture reliability 2.6.0
+
+The extension loads lazy photos with bounded scrolling, restores the source scroll position, and refuses detected website-verification pages. Captures now allow 80 candidates with 12-per-page previews. Failed selected photos keep the import pending until retried or explicitly skipped; acknowledged photos and the capture ID are reused. Capture limits and converted/displayed-copy provenance are retained in import notes. Generation approval remains separate, and decor's 12-photo generation limit is unchanged.
+
+- 489 automated tests passed. Coverage includes source verification screens versus real articles discussing Cloudflare, finite/endless lazy loading, discovery of 35/85 photos, 35 saved decor references, explicit partial acceptance, provenance and destination preservation.
+- 10 real Chrome checks passed on isolated HTTP fixtures using the actual page preparation/extraction scripts. A 35-photo lazy article saved 34 references, kept one HTTP 403 pending, and uploaded only that missing reference after recovery. No estimate or generation ran. Source scroll restoration, paged previews, mobile width and challenge rejection also passed without JavaScript errors.
+- Screenshots: work/capture-26-partial-desktop.png and work/capture-26-mobile.png. Plain green images are test fixtures.
+- No universal extraction guarantee: inaccessible content, verification screens, unsupported images and capture limits are reported. Completing a website challenge still takes place in the original browser tab before retry. Automatic article classification remains a later feature.

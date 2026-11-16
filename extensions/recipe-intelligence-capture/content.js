@@ -1,5 +1,7 @@
 /* Runs once, only in the article tab selected by the user. Returns data, not code. */
 (() => {
+  const pageState=globalThis.RecipeCapturePage?.inspect();
+  if(pageState?.blocked)return pageState;
   const cleanText = value => String(value || '').replace(/\s+/g, ' ').trim();
   const excluded = 'script,style,noscript,nav,aside,footer,form,input,textarea,button,iframe,object,embed,[hidden],[aria-hidden="true"],[role="navigation"],[role="complementary"],.comments,#comments,.comment-list,.related,.related-posts,.related-recipes,.recommended,.author-box,.advertisement,.ad-container,.adsbygoogle,[class*="newsletter"],[class*="share-buttons"],[class*="social-share"],[class*="cookie-banner"]';
   const regionAttributes = ['id','class','aria-label','data-component','data-module','data-block','data-embed','data-testid','data-test','data-nitrous-content-id','data-theme-key','data-id'];
@@ -74,7 +76,7 @@
   doc.querySelectorAll('script').forEach(s => s.remove());
   doc.querySelectorAll('p,h1,h2,h3,h4,li,div,br,figcaption,tr').forEach(el => el.append('\n'));
   const text = doc.querySelector('article').textContent.replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n\n').trim();
-  const images = [], groups = new Set();
+  const images = [], groups = new Set(); let imageScanLimited=false;
   function addImage(raw, caption, alternatives = []) {
     if (typeof raw !== 'string' || !raw.trim()) return;
     try {
@@ -82,8 +84,10 @@
       if (!/^https?:$/.test(url.protocol) || url.username || url.password || /\.(svg|gif)(?:$|\?)/i.test(url.href) || /\b(logo|avatar|gravatar|tracking|advertisement|banner)\b/i.test(url.href)) return;
       const key = new URL(url); key.pathname = key.pathname.replace(/-\d+x\d+(?=\.(jpe?g|png|webp)$)/i, '');
       for (const k of ['w','h','width','height','resize','fit','quality','q','crop']) key.searchParams.delete(k);
-      if (groups.has(key.href) || images.length >= 24) return;
-      groups.add(key.href); images.push({ url: url.href, caption: cleanText(caption).slice(0, 500), alternatives: alternatives.filter(Boolean).slice(0, 4) });
+      if (groups.has(key.href)) return;
+      groups.add(key.href);
+      if(images.length>=80)return;
+      images.push({ url: url.href, caption: cleanText(caption).slice(0, 500), alternatives: alternatives.filter(Boolean).slice(0, 8) });
     } catch { /* Not an image URL. */ }
   }
   function srcset(value) {
@@ -101,7 +105,9 @@
     }
     return candidates;
   }
-  for (const img of root.querySelectorAll('img')) {
+  const articleImages=[...root.querySelectorAll('img')];
+  imageScanLimited=articleImages.length>2500;
+  for (const img of articleImages.slice(0,2500)) {
     if (img.closest(excluded) || linksElsewhere(img.closest('a[href]'))) continue;
     if (/^about\s+[a-z]+(?:\s+[a-z]+)?$/i.test((img.alt || '').trim())) continue;
     const label = [img.alt, img.title, img.id, img.className].join(' ').replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -111,7 +117,7 @@
     if (invisible) continue;
     if (img.naturalWidth && (img.naturalWidth < 160 || img.naturalHeight < 120) && !img.dataset.src && !img.dataset.lazySrc) continue;
     const variants = [img.dataset.srcset, img.srcset, ...[...(img.closest('picture')?.querySelectorAll('source[srcset]') || [])].map(el => el.srcset)].flatMap(srcset).sort((a,b) => b.size - a.size);
-    const sources = [...new Set([variants[0]?.url, img.dataset.lazySrc, img.dataset.src, img.dataset.original, img.currentSrc, img.src].filter(v => v && !v.startsWith('data:')).map(v => { try { return new URL(v, location.href).href; } catch { return ''; } }).filter(Boolean))];
+    const sources = [...new Set([variants[0]?.url, img.dataset.lazySrc, img.dataset.src, img.dataset.original, img.currentSrc, img.src,...variants.slice(1).map(v=>v.url)].filter(v => v && !v.startsWith('data:')).map(v => { try { return new URL(v, location.href).href; } catch { return ''; } }).filter(Boolean))];
     addImage(sources[0], img.closest('figure')?.querySelector('figcaption')?.textContent || img.alt, sources.slice(1));
   }
   // Metadata supplies a hero image when the theme renders it outside <article>.
@@ -125,5 +131,5 @@
     for (const img of [recipe.image].flat()) addImage(typeof img === 'string' ? img : img?.url || img?.contentUrl, recipe.name);
   }
   if (!images.length) addImage(document.querySelector('meta[property="og:image"]')?.content, title);
-  return { url: location.href, title, html, text: text.slice(0, 200000), images, truncated, words: text.split(/\s+/).filter(Boolean).length };
+  return { url: location.href, title, html, text: text.slice(0, 200000), images, truncated:truncated||text.length>200000, imageLimitReached:groups.size>80||imageScanLimited, discoveredPhotos:groups.size, photoLimit:80, words: text.split(/\s+/).filter(Boolean).length };
 })();

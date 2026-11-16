@@ -4,7 +4,7 @@ import { createZip } from "./zip";
 
 // Only distributable files. Never package a workspace, environment file, or saved capture.
 const files = [
-  "background.js", "capture.html", "capture.css", "capture.js", "connection.js", "content.js", "shared.js",
+  "background.js", "capture.html", "capture.css", "capture.js", "connection.js", "content.js", "shared.js", "page-tools.js", "prepare.js",
   "README.md", "icons/icon16.png", "icons/icon48.png", "icons/icon128.png",
 ] as const;
 

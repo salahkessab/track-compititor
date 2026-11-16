@@ -5,7 +5,7 @@ import { escapeHtml } from './artifacts';
 import { DECOR_ARTICLE_SKILL, DECOR_IMAGE_SKILL, DECOR_VERSION } from './decorPrompts';
 import type { ContentSettings } from './settings';
 
-export type DecorSource = { title: string; url: string; text: string; photos: { url: string; caption: string }[] };
+export type DecorSource = { title: string; url: string; text: string; photos: { url: string; caption: string }[]; textTruncated?: boolean };
 const noise = 'script,style,nav,aside,footer,form,.author,.author-box,.related-posts,.related-recipes,.recommended,.advertisement,[class*="newsletter"],[class*="sidebar"],[class*="related"],[class*="recommend"],[class*="author-bio"],[class*="social"],[class*="share"]';
 export function extractDecor(html: string, url: string): DecorSource {
   if (Buffer.byteLength(html) > 5_000_000) throw new Error('Article exceeds the import limit.');
@@ -14,9 +14,10 @@ export function extractDecor(html: string, url: string): DecorSource {
   const photos = discoverPhotos(html, url).slice(0, 30);
   $(noise).remove();
   const body = $('[itemprop="articleBody"],article .entry-content,article .post-content,.entry-content,.post-content,article,main').first();
-  const text = body.find('h2,h3,p,li').map((_i, el) => $(el).text().trim()).get().filter(Boolean).join('\n\n').slice(0, 40000);
+  const fullText = body.find('h2,h3,p,li').map((_i, el) => $(el).text().trim()).get().filter(Boolean).join('\n\n');
+  const text=fullText.slice(0,40000);
   if (!title || text.length < 300) throw new Error('Could not read the article body. Paste its text and upload reference photos below.');
-  return { title: title.slice(0, 300), url: publicUrl(url).href, text, photos };
+  return { title: title.slice(0, 300), url: publicUrl(url).href, text, photos, ...(fullText.length>40000?{textTruncated:true}:{}) };
 }
 export const DECOR_SCHEMA = {
   type: 'object', additionalProperties: false,

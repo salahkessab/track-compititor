@@ -84,7 +84,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     ? json({ enabled: false, phase: 5 }) : json({ error: "Open Recipe Intelligence with the Windows local launcher." }, 503);
   if (!trustedRequest(request)) return json({ error: "Workspace origin check failed." }, 403);
   if (serverMode() && !serverAuthenticated(request)) return json({ error: "Sign in to Recipe Intelligence." }, 401, { "WWW-Authenticate": 'Basic realm="Recipe Intelligence", charset="UTF-8"' });
-  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, decorBrowserCapture: 1, ...(serverMode() ? { mode: "server" } : {}) });
+  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, decorBrowserCapture: 1, captureReview: 1, browserPhotoLimit:80, ...(serverMode() ? { mode: "server" } : {}) });
   const token = process.env.RECIPE_INTELLIGENCE_TOKEN!;
   const cookie = (request.headers.get("cookie") || "").split(";").map(part => part.trim()).find(part => part.startsWith("ri_session="))?.slice(11) || "";
   if (segments[0] === "session" && request.method === "POST") {
