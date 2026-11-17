@@ -17,10 +17,11 @@ import { DECOR_VERSION } from './decorPrompts';
 import { extractDecor, decorWritingPayload, decorImagePrompt, validateDecorArticle, decorHtml, type DecorSource } from './decorArticle';
 import { refineArticle, REFINEMENT_VERSION, REFINEMENT_INPUT_LIMIT, type RefinementReport } from './refinement';
 import { captureWarnings, captureFinishNotes } from './captureReview';
+import { ARTICLE_TITLE_SECTION, photoSourceKey } from './decorSections';
 
 const now = () => new Date().toISOString();
 const MAX_SELECTED = 12;
-type Photo = { id: string; caption: string; group: string; path: string; selected: boolean; width: number; height: number; output?: string; error?: string; phase?: string; preparationId?: string };
+type Photo = { id: string; caption: string; group: string; path: string; selected: boolean; width: number; height: number; sourceSectionId?: string; excluded?: boolean; output?: string; error?: string; phase?: string; preparationId?: string };
 type Job = { id: string; state: string; createdAt: string; updatedAt: string; source: DecorSource; photos: Photo[]; brief: string; settings: ContentSettings; quote?: any; limit?: number; article?: any; refinement?: RefinementReport; error?: string; warnings: string[]; archived?: boolean; browserCapture?: { fingerprint: string; uploadedUrls: string[] } };
 export class DecorStore {
   constructor(public store: IntelligenceStore) {
@@ -40,7 +41,7 @@ export class DecorStore {
   detail(id: string) {
     const job = this.get(id);
     const calls = this.store.db.prepare('SELECT stage,state,reserved,actual,error FROM decor_calls WHERE job_id=?').all(id) as any[];
-    return { ...job, source: { title: job.source.title, url: job.source.url, text: job.source.text }, photos: job.photos.map(({ path, output, ...p }) => ({ ...p, originalUrl: `/api/recipe-intelligence/decor/${id}/photo/${p.id}`, outputUrl: output ? `/api/recipe-intelligence/decor/${id}/output/${p.id}` : null })),
+    return { ...job, source: { title: job.source.title, url: job.source.url, text: job.source.text, sections: job.source.sections || [] }, photos: job.photos.map(({ path, output, ...p }) => ({ ...p, sourceHeading: job.source.sections?.find(s => s.id === p.sourceSectionId)?.heading || (p.sourceSectionId === ARTICLE_TITLE_SECTION ? job.source.title : ''), originalUrl: `/api/recipe-intelligence/decor/${id}/photo/${p.id}`, outputUrl: output ? `/api/recipe-intelligence/decor/${id}/output/${p.id}` : null })),
       calls, actual: calls.reduce((n, c) => n + (c.actual || 0), 0), held: calls.filter(c => c.actual === null && c.state !== 'rejected').reduce((n, c) => n + c.reserved, 0) };
   }
   create(url: unknown, text?: unknown) {
@@ -66,7 +67,7 @@ export class DecorStore {
         return this.browserDetail(id);
       }
       // Parse the captured article directly; no recipe extraction, URL fetch or AI call.
-      const source = extractDecor(input.html as string, url); source.photos = [];
+      const source = extractDecor(input.html as string, url);
       if(source.textTruncated)warnings.push('The article exceeds the 40,000-character Home & Decor text limit. Only the first part was saved; review the source before generation.');
       const job: Job = { id, state: 'capturing', createdAt: now(), updatedAt: now(), source, photos: [],
         brief: 'Natural daylight, realistic lived-in rooms. Muted sage, warm oak and warm white accents. Keep each room group consistent.',
@@ -89,7 +90,7 @@ export class DecorStore {
     if (job.browserCapture.uploadedUrls.length >= 80) throw new Error('Keep up to 80 reference candidates.');
     const revision = digest(JSON.stringify(job));
     const existingPaths = new Set(job.photos.map(p => p.path));
-    await this.photo(job, bytes, caption);
+    await this.photo(job, bytes, caption, url);
     try { return this.store.db.transaction(() => {
       const current = this.get(id);
       if (current.browserCapture?.uploadedUrls.includes(url)) return this.browserDetail(id);
@@ -120,10 +121,11 @@ export class DecorStore {
     if (!['jpeg', 'png', 'webp'].includes(meta.format || '') || !meta.width || !meta.height || meta.width < 160 || meta.height < 120 || (meta.pages || 1) > 1) throw new Error('Use a still JPEG, PNG or WebP of at least 160 × 120 pixels.');
     const data = await input.rotate().resize({ width: 1536, height: 1536, fit: 'inside', withoutEnlargement: true }).png().toBuffer({ resolveWithObject: true });
     const hash = digest(data.data);
-    if (job.photos.some(p => p.path.endsWith(`-${hash}.png`))) return;
+    const sourceSectionId = sourceUrl ? job.source.photos.find(p => photoSourceKey(p.url, job.source.url) === photoSourceKey(sourceUrl, job.source.url))?.sourceSectionId : undefined;
+    if (job.photos.some(p => p.path.endsWith(`-${hash}.png`) && p.sourceSectionId === sourceSectionId)) return;
     const id = randomUUID(), path = `articles/home-decor/${job.id}/reference-${id}-${hash}.png`;
     atomicWrite(this.store.root, path, data.data);
-    job.photos.push({ id, caption: caption.slice(0, 1000), group: 'room-1', path, selected: false, width: data.info.width, height: data.info.height });
+    job.photos.push({ id, caption: caption.slice(0, 1000), group: 'room-1', path, selected: false, width: data.info.width, height: data.info.height, ...(sourceSectionId ? { sourceSectionId } : {}) });
   }
   async upload(id: string, bytes: Buffer, caption: string) {
     const job = this.get(id); this.editable(job);
@@ -138,6 +140,13 @@ export class DecorStore {
       const job = this.get(id); this.editable(job);
       if (!Array.isArray(input.photos) || input.photos.length > MAX_SELECTED || new Set(input.photos.map((p: any) => p.id)).size !== input.photos.length || input.photos.some((p: any) => !job.photos.some(photo => photo.id === p.id) || typeof p.group !== 'string' || !/^[a-zA-Z0-9 _-]{1,40}$/.test(p.group))) throw new Error('Choose up to 12 original photos and valid room groups.');
       if (typeof input.brief !== 'string' || input.brief.length > 2000) throw new Error('Use a design brief of up to 2,000 characters.');
+      const validSections = new Set([ARTICLE_TITLE_SECTION, ...(job.source.sections || []).map(s => s.id)]);
+      for (const selection of input.photos) {
+        const photo = job.photos.find(p => p.id === selection.id)!;
+        const linked = selection.sourceSectionId === undefined ? photo.sourceSectionId : selection.sourceSectionId;
+        if ((linked !== undefined && !validSections.has(linked)) || (job.source.sections?.length && !linked)) throw new Error('Choose the matching article heading for every selected photo.');
+        if (linked !== undefined) photo.sourceSectionId = linked;
+      }
       job.brief = input.brief.trim();
       job.photos.forEach(p => { const selected = input.photos.find((s: any) => s.id === p.id); p.selected = !!selected; if (selected) p.group = selected.group; });
       const settings = contentSettings(this.store);
@@ -147,7 +156,7 @@ export class DecorStore {
       const payload = decorWritingPayload(job.source, photos.map(p => ({ ...p, dataUrl: '' })), job.settings, job.brief);
       const lines: any[] = [{ stage: 'article', ...stageEstimate('article', job.settings, Buffer.byteLength(JSON.stringify(payload)) + photos.length * 10000) }];
       lines.push({ stage: 'refinement', profile: REFINEMENT_VERSION, ...stageEstimate('refinement', job.settings, REFINEMENT_INPUT_LIMIT) });
-      for (const photo of photos) lines.push({ stage: photo.id, ...referenceImageEstimate(job.settings, decorImagePrompt({ subject: ' '.repeat(3000) }, job.brief, photo.group), 12000) });
+      for (const photo of photos) lines.push({ stage: photo.id, ...referenceImageEstimate(job.settings, decorImagePrompt({ subject: ' '.repeat(3000) }, job.brief, photo.group) + ' '.repeat(12500), 12000) });
       job.quote = { version: randomUUID(), profile: DECOR_VERSION, lines, estimated: lines.reduce((n, l) => n + l.estimated, 0), limit: Math.ceil(lines.reduce((n, l) => n + l.reservation, 0) * 100) / 100 };
       this.save(job); return this.detail(id);
     }).immediate();
@@ -160,6 +169,15 @@ export class DecorStore {
     }).immediate();
   }
   archive(id: string, value: unknown) { const job = this.get(id); if (typeof value !== 'boolean') throw new Error('Choose Archive or Restore.'); if (['queued', 'running', 'importing', 'import_queued', 'capturing'].includes(job.state)) throw new Error('Wait for the current work before archiving.'); job.archived = value; this.save(job); return this.detail(id); }
+  setImageIncluded(id: string, photoId: string, included: unknown) {
+    return this.store.db.transaction(() => {
+      const job = this.get(id), photo = job.photos.find(p => p.id === photoId);
+      if (!job.article || !photo || !photo.selected || typeof included !== 'boolean') throw new Error('Choose an article image to remove or restore.');
+      if (['queued','running','importing','import_queued','capturing'].includes(job.state)) throw new Error('Wait for the current request before changing article images.');
+      // Keep the article, source, plan IDs and files unchanged. Only inclusion changes.
+      photo.excluded = !included; this.save(job); return this.detail(id);
+    }).immediate();
+  }
   remove(id: string) {
     return this.store.db.transaction(() => {
     const job = this.get(id);
@@ -182,14 +200,19 @@ export class DecorStore {
   async retryPreparation(id: string, photoId: string) {
     const job = this.get(id), photo = job.photos.find(p => p.id === photoId);
     if (!photo?.preparationId) throw new Error('This photo has no saved preparation to retry.');
+    if (photo.excluded || ['queued','running'].includes(job.state)) throw new Error('Restore the image and wait for the current work before retrying.');
     const ready = await retryImage(photo.preparationId, this.store.root), image = readVerifiedImage(ready.variants.webp!, this.store.root);
-    photo.output = `articles/home-decor/${id}/generated-${photo.id}.webp`;
-    atomicWrite(this.store.root, photo.output, image.data); delete photo.error; delete photo.preparationId; photo.phase = 'ready';
-    job.state = 'queued'; delete job.error; this.save(job); return this.detail(id);
+    return this.store.db.transaction(() => {
+      const current = this.get(id), saved = current.photos.find(p => p.id === photoId);
+      if (!saved || saved.excluded || saved.preparationId !== photo.preparationId || ['queued','running'].includes(current.state)) throw new Error('The article changed during image preparation. Review it before retrying.');
+      saved.output = `articles/home-decor/${id}/generated-${saved.id}.webp`;
+      atomicWrite(this.store.root, saved.output, image.data); delete saved.error; delete saved.preparationId; saved.phase = 'ready';
+      current.state = 'queued'; delete current.error; this.save(current); return this.detail(id);
+    }).immediate();
   }
   async document(id: string, zip = false) {
     const job = this.get(id); if (!job.article) throw new Error('The article is not ready.');
-    const images = job.photos.filter(p => p.output);
+    const images = job.photos.filter(p => p.output && !p.excluded);
     const html = decorHtml(job.article, images.map(p => ({ id: p.id, url: zip ? `image-${p.id}.webp` : `/api/recipe-intelligence/decor/${id}/output/${p.id}` })));
     const files = await Promise.all(images.map(async p => ({ name: `image-${p.id}.webp`, data: await this.exportedFile(id, p.id) })));
     return zip ? createZip([{ name: 'article.html', data: Buffer.from(html) }, ...files]) : Buffer.from(html);
@@ -226,7 +249,7 @@ export class DecorStore {
       if (!job.article) {
         const references = photos.map(p => ({ ...p, dataUrl: `data:image/png;base64,${this.file(id, p.id, false).toString('base64')}` }));
         const result = await this.call(job, 'article', 'text', decorWritingPayload(job.source, references, job.settings, job.brief), provider, signal);
-        const canonical = { article: validateDecorArticle(JSON.parse(outputText(result)), photos.map(p => p.id)) };
+        const canonical = { article: validateDecorArticle(JSON.parse(outputText(result)), photos.map(p => p.id), job.source, photos) };
         atomicWrite(this.store.root, `articles/home-decor/${id}/article-canonical.json`, JSON.stringify(canonical));
         const refined = await refineArticle(canonical, 'decor', job.settings.textModel, payload => this.call(job, 'refinement', 'text', payload, provider, signal));
         job.article = refined.article; job.refinement = refined.report;
@@ -239,12 +262,12 @@ export class DecorStore {
         if (signal?.aborted) throw new Error('Generation interrupted. Completed files are saved.');
         const plan = job.article.imagePlans.find((p: any) => p.id === photo.id);
         if (!plan.relevant || plan.kitchen || /\bkitchen\b/i.test(plan.subject)) { photo.error = plan.kitchen || /\bkitchen\b/i.test(plan.subject) ? 'Kitchen images require local Blender modeling; no paid image call was made.' : plan.reason || 'Not relevant to this article; skipped.'; this.save(job); continue; }
-        if (photo.output) continue;
+        if (photo.output || photo.excluded) continue;
         const { partial_images, complexity, ...options } = job.settings.imageSettings;
         const sameRoom = photos.find(p => p.group === photo.group && p.output);
         const references = [`data:image/png;base64,${this.file(id, photo.id, false).toString('base64')}`, ...(sameRoom ? [`data:image/webp;base64,${this.file(id, sameRoom.id, true).toString('base64')}`] : [])];
         photo.phase = 'generating'; this.save(job);
-        const result = await this.call(job, photo.id, 'image', { model: job.settings.imageModel, n: 1, ...options, ...(complexity && complexity !== 'default' ? { complexity } : {}), prompt: decorImagePrompt(plan, job.brief, photo.group), references }, provider, signal);
+        const result = await this.call(job, photo.id, 'image', { model: job.settings.imageModel, n: 1, ...options, ...(complexity && complexity !== 'default' ? { complexity } : {}), prompt: decorImagePrompt(plan, job.brief, photo.group, job.article), references }, provider, signal);
         const b64 = result.data?.[0]?.b64_json;
         if (typeof b64 !== 'string' || !b64.length || b64.length > 55_000_000) throw new Error('Image response has no usable image. The receipt was saved.');
         photo.phase = 'preparing'; this.save(job);

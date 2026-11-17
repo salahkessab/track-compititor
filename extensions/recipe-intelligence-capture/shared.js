@@ -26,7 +26,7 @@
         const capability = await api('capabilities');
         if (!capability.enabled || capability.browserCapture !== 1) return {error:'This local app needs the browser capture update.',status:409};
         const snapshot = await api('snapshot'); return { ready:true, root:snapshot.runtime === 'server' ? `workspace:${snapshot.settings.workspaceId}` : snapshot.settings.root,
-          destination:new URLSearchParams(location.search).get('tab') === 'home-decor' ? 'home-decor' : 'recipe', decorBrowserCapture:capability.decorBrowserCapture === 1, captureReview:capability.captureReview===1 };
+          destination:new URLSearchParams(location.search).get('tab') === 'home-decor' ? 'home-decor' : 'recipe', decorBrowserCapture:capability.decorBrowserCapture === 1, captureReview:capability.captureReview===1, photoSectionLinks:capability.photoSectionLinks===1 };
       }
       const destination = message.destination || 'recipe';
       if (!['recipe','home-decor'].includes(destination)) throw new Error('Choose Recipes or Home & Decor.');

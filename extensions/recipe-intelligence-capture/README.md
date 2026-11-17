@@ -1,8 +1,10 @@
-# Recipe Intelligence Capture 2.6.0
+# Recipe Intelligence Capture 2.7.0
 
 Capture a recipe or Home & Decor article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
 
-Version 2.6.0 loads lazy photos with bounded scrolling, detects verification pages, previews candidates in pages of 12, and supports up to 80 reference candidates. It stops before finalizing an import with missing selected photos: **Retry missing photos** reuses acknowledged uploads; **Continue with saved photos** explicitly accepts the missing photos. Truncated text, discovery limits, incomplete loading and converted/displayed image copies are reported. Update the backend as well as the extension; an older backend is refused before data transfer.
+Version 2.7.0 retains each photo's source heading and shows it in the capture preview. Home & Decor stores stable section identities and keeps text-only sections when photos are unchecked. Review the linked heading below each reference; uploaded or older references without a source association can be assigned there. Generated-image removal affects only that image in the article preview and ZIP, preserves all prose and other placements, and can be undone without generation. Output placement is validated by identity, not the remaining photo count. The writing model still evaluates visual relevance; an uncertain reference must be excluded rather than assigned to a different topic. This is not a guarantee of perfect visual understanding.
+
+Version 2.6.0 added bounded lazy-photo scrolling, verification-page detection, previews in pages of 12, and up to 80 reference candidates. It stops before finalizing an import with missing selected photos: **Retry missing photos** reuses acknowledged uploads; **Continue with saved photos** explicitly accepts the missing photos. Truncated text, discovery limits, incomplete loading and converted/displayed image copies are reported. Update the backend as well as the extension; an older backend is refused before data transfer.
 
 Version 2.5.0 added **Save article to → Home & Decor**. The connected app's Home & Decor tab selects this destination automatically for a new capture; you can change it before saving. Decor imports use the decor article reader, never recipe ingredient validation. Select photos and room groups and review the estimate in Home & Decor before approving generation. Interrupted imports retain their original destination. If a decor article was previously submitted as a recipe, start a fresh capture and choose Home & Decor. Automatic classification and other article-writing niches are not part of this update.
 
@@ -21,7 +23,7 @@ Download the ZIP from **Settings → Chrome extension**, or use this repository 
 
 After updating files in this folder, click **Reload** on the extension's card and close old capture tabs before starting a new capture.
 
-Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.6.0** at the top. Old capture tabs and resumed imports keep their previously captured photos and destination. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
+Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.7.0** at the top. Old capture tabs and resumed imports keep their previously captured photos and destination. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
 
 ## Use
 

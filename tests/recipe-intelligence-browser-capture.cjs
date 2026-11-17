@@ -61,7 +61,10 @@ test('Chrome capture preserves recipe facts and article context without scripts,
   assert.equal(result.images.length,1);
   assert.equal(result.title,'Carrot soup');
   assert.match(result.html,/recipeIngredient/); assert.match(result.html,/Storage/);
-  assert.doesNotMatch(result.html,/secret|Private draft|steal|Invisible text|Hidden private text|private@example|<input|<img|<form/);
+  assert.doesNotMatch(result.html,/secret|Private draft|steal|Invisible text|Hidden private text|private@example|<input|<form/);
+  const markers=new JSDOM(result.html);const imageMarkers=[...markers.window.document.querySelectorAll('img')];
+  assert.equal(imageMarkers.length,1);assert.deepEqual([...imageMarkers[0].attributes].map(a=>a.name),['src','alt']);
+  assert.equal(imageMarkers[0].getAttribute('src'),result.images[0].url);markers.window.close();
   assert.doesNotMatch(result.text,/recipeIngredient|Account secret/);
 });
 

@@ -86,6 +86,7 @@ function render() {
     const span = document.createElement('span'), checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = job.selected.includes(index); checkbox.disabled = !!job.started || busy;
     checkbox.onchange = () => { job.selected = checkbox.checked ? [...job.selected,index].sort((a,b)=>a-b) : job.selected.filter(i=>i!==index); $('counts').textContent=`${capture.words.toLocaleString()} words · ${capture.discoveredPhotos || capture.images.length} photos discovered · ${job.selected.length} selected`; };
     span.append(checkbox,document.createTextNode(photo.caption || `Photo ${index+1}`)); label.append(img,notice,span); $('photos').append(label);
+    if(photo.sourceHeading){const heading=document.createElement('p');heading.textContent=`Linked heading: ${photo.sourceHeading}`;label.append(heading);}
   });
   $('warnings').replaceChildren();
   if (job.extensionVersion !== extensionVersion) warn('This saved capture comes from an earlier extension version. Its photo selection is preserved. Start a fresh capture from the article page to use the current filter.');
@@ -193,6 +194,7 @@ async function importRecipe(allowMissing=false) {
       status('Connecting to your workspace…'); await findApp();
       if (job.workspaceRoot && job.workspaceRoot !== app.root) throw new Error('This capture belongs to another storage folder. Open the original workspace to resume it.');
       if (job.destination === 'home-decor' && !app.decorBrowserCapture) throw new Error('Update the app to support Home & Decor browser imports. This article has not been sent to the recipe importer.');
+      if (job.destination === 'home-decor' && !app.photoSectionLinks) throw new Error('Update the app to preserve photo-to-heading links before importing. Your capture has been kept.');
       if(!app.captureReview)throw new Error('Update the app before using this extension version. Photo retries and capture-limit reporting need the latest backend. Your capture has been kept.');
       // Save before the first request, so any interrupted import can be resumed.
       job.started = true; job.workspaceRoot = app.root; await save(); render(); $('import').disabled = true;

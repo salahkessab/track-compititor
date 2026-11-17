@@ -84,7 +84,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
     ? json({ enabled: false, phase: 5 }) : json({ error: "Open Recipe Intelligence with the Windows local launcher." }, 503);
   if (!trustedRequest(request)) return json({ error: "Workspace origin check failed." }, 403);
   if (serverMode() && !serverAuthenticated(request)) return json({ error: "Sign in to Recipe Intelligence." }, 401, { "WWW-Authenticate": 'Basic realm="Recipe Intelligence", charset="UTF-8"' });
-  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, decorBrowserCapture: 1, captureReview: 1, browserPhotoLimit:80, ...(serverMode() ? { mode: "server" } : {}) });
+  if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, decorBrowserCapture: 1, captureReview: 1, browserPhotoLimit:80, photoSectionLinks:1, ...(serverMode() ? { mode: "server" } : {}) });
   const token = process.env.RECIPE_INTELLIGENCE_TOKEN!;
   const cookie = (request.headers.get("cookie") || "").split(";").map(part => part.trim()).find(part => part.startsWith("ri_session="))?.slice(11) || "";
   if (segments[0] === "session" && request.method === "POST") {
@@ -130,6 +130,7 @@ export async function handleIntelligence(request: Request): Promise<Response> {
       if (id && child === 'selection' && request.method === 'POST') return json(decor.select(id, await body(request)));
       if (id && child === 'approve' && request.method === 'POST') return json(decor.approve(id, (await body(request)).version));
       if (id && child === 'retry-image' && request.method === 'POST') return json(await decor.retryPreparation(id, String((await body(request)).photoId)));
+      if (id && child === 'image-inclusion' && request.method === 'POST') { const data = await body(request); return json(decor.setImageIncluded(id, String(data.photoId), data.included)); }
       if (id && child === 'archive' && request.method === 'POST') return json(decor.archive(id, (await body(request)).archived));
       if (id && ['upload', 'browser-photo'].includes(child) && request.method === 'POST') {
         const reader = request.body?.getReader(); if (!reader) throw new Error('Upload is empty.');

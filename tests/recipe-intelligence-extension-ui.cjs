@@ -27,7 +27,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
       if(options.func.name==='pagePhoto')return [{result:pageRecovery?{base64:'AQID',mime:'image/jpeg'}:null}];
       if(options.func.name==='renderedPhoto')return [{result:renderedRecovery?'AQID':null}];
       assert.equal(options.world,'ISOLATED');const m=options.args[0];calls.push(m);
-      if(m.op==='probe')return [{result:{ready:true,root:'E:\\Recipes',destination,decorBrowserCapture:decorSupported,captureReview:reviewSupported}}];
+      if(m.op==='probe')return [{result:{ready:true,root:'E:\\Recipes',destination,decorBrowserCapture:decorSupported,captureReview:reviewSupported,photoSectionLinks:true}}];
       if(m.op==='begin')return [{result:{id:m.data.captureId,status:stage,photos}}];
       if(m.op==='photo'){
         if(failFirstUpload&&++uploads===1)return [{result:{error:'Local app restarting',status:503}}];
@@ -55,7 +55,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
 }
 test('extension preview imports image bytes, finishes before estimating, and waits for manual library review',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.6\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.7\.0/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
@@ -70,7 +70,7 @@ test('extension preview imports image bytes, finishes before estimating, and wai
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/No generation has started/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.6.0');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.7.0');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 
