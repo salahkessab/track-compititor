@@ -86,11 +86,18 @@ export async function handleIntelligence(request: Request): Promise<Response> {
   if (serverMode() && !serverAuthenticated(request)) return json({ error: "Sign in to Recipe Intelligence." }, 401, { "WWW-Authenticate": 'Basic realm="Recipe Intelligence", charset="UTF-8"' });
   if (segments[0] === "capabilities" && request.method === "GET") return json({ enabled: true, phase: 5, browserCapture: 1, decorBrowserCapture: 1, captureReview: 1, browserPhotoLimit:80, photoSectionLinks:1, ...(serverMode() ? { mode: "server" } : {}) });
   const token = process.env.RECIPE_INTELLIGENCE_TOKEN!;
-  const cookie = (request.headers.get("cookie") || "").split(";").map(part => part.trim()).find(part => part.startsWith("ri_session="))?.slice(11) || "";
+  // Browser cookies are shared across ports. Give each local launcher its own
+  // cookie so opening a test copy cannot disconnect the main workspace.
+  const cookieName = `ri_session_${new URL(process.env.RECIPE_INTELLIGENCE_ORIGIN!).port || "80"}`;
+  const cookies = (request.headers.get("cookie") || "").split(";").map(part => part.trim());
+  const readCookie = (name: string) => cookies.find(part => part.startsWith(`${name}=`))?.slice(name.length + 1);
+  // Existing sessions remain usable until the next launcher sign-in. An
+  // explicitly supplied scoped cookie takes precedence, even when invalid.
+  const cookie = readCookie(cookieName) ?? readCookie("ri_session") ?? "";
   if (segments[0] === "session" && request.method === "POST") {
     if (serverMode()) return json({ connected: true });
     if (!equal(request.headers.get("x-ri-key"), token)) return json({ error: "Open the local workspace from its launcher to connect." }, 401);
-    return json({ connected: true }, 200, { "Set-Cookie": `ri_session=${token}; Path=/api/recipe-intelligence; HttpOnly; SameSite=Strict` });
+    return json({ connected: true }, 200, { "Set-Cookie": `${cookieName}=${token}; Path=/api/recipe-intelligence; HttpOnly; SameSite=Strict` });
   }
   if (!serverMode() && !equal(cookie, token) && !equal(request.headers.get("x-ri-key"), token)) return json({ error: "Launch Recipe Intelligence to connect this browser to local storage." }, 401);
   if (process.env.RECIPE_INTELLIGENCE_READ_ONLY === "1" && request.method !== "GET") return json({ error: "Recovery view: saved recipes and downloads are available. Generation and changes are paused while the local worker is being reviewed." }, 423);

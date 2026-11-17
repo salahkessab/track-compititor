@@ -28,6 +28,7 @@ test('local API requires launcher credentials, exact loopback origin and CSRF he
   assert.equal(fs.existsSync(path.join(root, 'database')), false);
   const session = await request('session', 'POST', {}, { 'X-RI-Key': 'test-session-secret' });
   assert.equal(session.status, 200); assert.match(session.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+  assert.match(session.headers.get('set-cookie'), /^ri_session_34567=test-session-secret; Path=\/api\/recipe-intelligence;/);
   const auth = { Cookie: 'ri_session=test-session-secret' };
   assert.equal((await request('article-storage')).status, 401);
   assert.equal((await request('article-storage', 'DELETE', { confirmed: true }, { ...auth, Origin: 'https://attacker.example' })).status, 403);
@@ -65,6 +66,41 @@ test('local API requires launcher credentials, exact loopback origin and CSRF he
   assert.equal((await request('settings', 'PATCH', { timezone: 'made-up' }, auth)).status, 400);
   assert.equal((await request('sites', 'POST', { name: 'x'.repeat(17000), url: 'https://huge.example' }, auth)).status, 400);
   process.env.VERCEL = '1'; assert.equal((await request('snapshot', 'GET', undefined, auth)).status, 503);
+});
+
+test('local sessions stay connected across launcher ports and accept legacy cookies only without a scoped cookie', async t => {
+  const keys = ['RECIPE_INTELLIGENCE_ROOT', 'RECIPE_INTELLIGENCE_LOCAL', 'RECIPE_INTELLIGENCE_TOKEN', 'RECIPE_INTELLIGENCE_ORIGIN', 'RECIPE_INTELLIGENCE_READ_ONLY', 'RECIPE_INTELLIGENCE_MODE', 'VERCEL'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  t.after(async () => {
+    for (const promise of globalThis.recipeIntelligenceStores?.values() || []) (await promise).close();
+    globalThis.recipeIntelligenceStores?.clear();
+    for (const key of keys) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+  });
+  const main = { root: temporary(t), port: 34567, token: 'main-session-secret' };
+  const experiment = { root: temporary(t), port: 34568, token: 'experiment-session-secret' };
+  const jar = new Map();
+  async function request(instance, route, { signIn = false, cookie = [...jar].map(([k,v]) => `${k}=${v}`).join('; ') } = {}) {
+    const origin = `http://127.0.0.1:${instance.port}`;
+    Object.assign(process.env, { RECIPE_INTELLIGENCE_ROOT: instance.root, RECIPE_INTELLIGENCE_LOCAL: '1', RECIPE_INTELLIGENCE_TOKEN: instance.token, RECIPE_INTELLIGENCE_ORIGIN: origin });
+    delete process.env.RECIPE_INTELLIGENCE_MODE; delete process.env.RECIPE_INTELLIGENCE_READ_ONLY; delete process.env.VERCEL;
+    const response = await handleIntelligence(new Request(`${origin}/api/recipe-intelligence/${route}`, {
+      method: signIn ? 'POST' : 'GET', headers: { Host: `127.0.0.1:${instance.port}`, Origin: origin, 'X-Recipe-Intelligence': '1', Cookie: cookie, ...(signIn ? { 'X-RI-Key': instance.token } : {}) }
+    }));
+    const setCookie = response.headers.get('set-cookie');
+    if (setCookie) { const [name,value] = setCookie.split(';')[0].split('='); jar.set(name,value); }
+    return response;
+  }
+  assert.equal((await request(main, 'snapshot')).status, 401);
+  assert.equal((await request(main, 'session', { signIn: true })).status, 200);
+  assert.equal((await request(experiment, 'session', { signIn: true })).status, 200);
+  assert.equal(jar.size, 2);
+  jar.set('ri_session', 'an-older-copy-overwrote-the-legacy-cookie');
+  for (const instance of [main, experiment]) assert.equal((await request(instance, 'snapshot')).status, 200);
+  assert.equal((await request(main, 'snapshot', { cookie: 'ri_session_34568=experiment-session-secret' })).status, 401);
+  assert.equal((await request(main, 'snapshot', { cookie: 'ri_session_34567=experiment-session-secret' })).status, 401);
+  assert.equal((await request(main, 'snapshot', { cookie: 'ri_session=main-session-secret' })).status, 200);
+  assert.equal((await request(main, 'snapshot', { cookie: 'ri_session_34567=wrong; ri_session=main-session-secret' })).status, 401);
+  assert.equal((await request(main, 'snapshot', { cookie: 'ri_session=experiment-session-secret' })).status, 401);
 });
 
 test('reports and batches share local authorization; downloads have sandboxed previews and paid approval checks', async t => {
