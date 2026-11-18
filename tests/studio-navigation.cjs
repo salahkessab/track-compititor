@@ -14,6 +14,7 @@ function loadPage(file, mocks, cache = new Map()) {
   }).outputText;
   const localRequire = id => {
     if (mocks[id]) return mocks[id];
+    if (id.endsWith('.module.css')) return {default: {root: 'root'}};
     if (id.startsWith('@/')) return loadPage(path.resolve(__dirname, '..', id.slice(2) + '.ts'), mocks, cache);
     if (id.startsWith('.')) {
       const base = path.resolve(path.dirname(file), id);
