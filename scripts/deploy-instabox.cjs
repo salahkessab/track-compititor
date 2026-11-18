@@ -40,6 +40,13 @@ async function ready(expected,deadline){
 }
 async function verify(sha){
  const image=imageFor(sha);console.log('Building commit '+sha);
+ // This dedicated runner retains tagged releases for rollback. BuildKit's
+ // unused cache is disposable and can fill the root disk between releases.
+ const disk=fs.statfsSync('/var/lib/docker');
+ if(disk.bavail*disk.bsize<3*1024**3){
+   console.log('Low Docker disk space; releasing unused build cache before verification.');
+   docker(['builder','prune','--all','--force']);
+ }
  docker(['build','--build-arg','APP_REVISION='+sha,'--tag',image,'.']);
  // No host mounts, provider environment, cache/artifact billing, or network.
  docker(['run','--rm','--network','none','--memory','4g','--cpus','2','--user','0','-e','NODE_ENV=test','--entrypoint','sh',image,'-c','npm test && npx tsc --noEmit && node scripts/smoke-recipe-intelligence-server.cjs']);
