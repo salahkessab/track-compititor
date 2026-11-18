@@ -2,10 +2,19 @@
 // clicks page controls, changes credentials, or navigates to another page.
 (function(root) {
   const excluded='nav,aside,footer,form,[hidden],[aria-hidden="true"],.related,.related-posts,.recommended,[class*="newsletter"],[class*="sidebar"]';
-  function articleRoot() {
+  function articleRoot(isExcluded = el => !!el.closest(excluded)) {
     const heading=document.querySelector('h1');
-    const candidates=[...document.querySelectorAll('article,.article-container,.entry-content,.post-content,[itemprop~="articleBody"]')].filter(el=>!el.closest(excluded));
-    return candidates.sort((a,b)=>Number(b.contains(heading))-Number(a.contains(heading))||b.textContent.length-a.textContent.length)[0] || document.querySelector('main,[role="main"]') || document.body;
+    const candidates=[...document.querySelectorAll('article,.article-container,.entry-content,.post-content,[itemprop~="articleBody"]')].filter(el=>!isExcluded(el));
+    const best = candidates.sort((a,b)=>Number(b.contains(heading))-Number(a.contains(heading))||b.textContent.length-a.textContent.length)[0];
+    // Some themes wrap just the headline in <article>, followed by the actual body.
+    if (best && heading && best.contains(heading) && !best.querySelector('p,li,h2,figure')) {
+      const scope = best.closest('main,[role="main"]') || best.parentElement;
+      const bodies = candidates.filter(el => el !== best && scope?.contains(el) &&
+        (best.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        el.matches('.entry-content,.post-content,[itemprop~="articleBody"]') && el.querySelector('p,li'));
+      if (bodies.length === 1) return bodies[0];
+    }
+    return best || document.querySelector('main,[role="main"]') || document.body;
   }
   function inspect() {
     const title=(document.title||'').trim(), body=(document.body?.innerText||document.body?.textContent||'').replace(/\s+/g,' ').trim();
@@ -40,5 +49,39 @@
       return {...inspect(),loadingIncomplete:!complete,scrollSteps:steps+1};
     } finally {if(location.href===href)window.scrollTo({left:x,top:y,behavior:'instant'});}
   }
-  root.RecipeCapturePage={inspect,prepare};
+  const blocks = 'h1,h2,h3,h4,h5,h6,p,li,figure,img,blockquote,td';
+  function boundaryPath(element) {
+    const path = [];
+    while (element && element !== document.body) {
+      const tag = element.localName;
+      const siblings = [...element.parentElement.children].filter(node => node.localName === tag);
+      const position = siblings.indexOf(element);
+      path.unshift(tag + (position === siblings.length-1 ? ':last-of-type' : ':nth-of-type('+(position+1)+')'));
+      if (['article','main'].includes(tag) && document.querySelectorAll(tag).length === 1) { path[0]=tag; break; }
+      element = element.parentElement;
+    }
+    return path.join(' > ');
+  }
+  function selectionRule() {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || selection.isCollapsed) throw new Error('Highlight text from the first heading through the last paragraph in the original tab, then try again.');
+    const range = selection.getRangeAt(0);
+    const matches = [...document.body.querySelectorAll(blocks)].filter(el =>
+      !el.closest(excluded+',header nav,script,style') && range.intersectsNode(el));
+    if (!matches.length) throw new Error('Select article headings or paragraphs in the source page.');
+    return {first:boundaryPath(matches[0]), last:boundaryPath(matches.at(-1)),
+      firstContext:boundaryContext(matches[0]),lastContext:boundaryContext(matches.at(-1))};
+  }
+  function boundaryContext(el) {
+    return [el.parentElement.localName,el.previousElementSibling?.localName||'',el.nextElementSibling?.localName||''].join('/');
+  }
+  function resolveRule(rule) {
+    const start = document.querySelectorAll(rule.first), end = document.querySelectorAll(rule.last);
+    if (start.length!==1 || end.length!==1) return null;
+    if (boundaryContext(start[0])!==rule.firstContext || boundaryContext(end[0])!==rule.lastContext) return null;
+    if (start[0]!==end[0] && !(start[0].compareDocumentPosition(end[0]) & Node.DOCUMENT_POSITION_FOLLOWING)) return null;
+    const range=document.createRange(); range.setStartBefore(start[0]); range.setEndAfter(end[0]);
+    return range;
+  }
+  root.RecipeCapturePage={inspect,prepare,articleRoot,selectionRule,resolveRule};
 })(globalThis);

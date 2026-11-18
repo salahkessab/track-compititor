@@ -103,6 +103,12 @@ test('capture uses the recipe article container instead of sibling recommendatio
   assert.doesNotMatch(nested.text,/Other recipe text/);
 });
 
+test('a headline-only article wrapper does not hide its separate article body', () => {
+  const result = capture('<main><article><h1>Garden</h1></article><div class="entry-content"><h2>Patio</h2><p>Place a bench near the tree.</p><img src="/bench.jpg"></div></main>');
+  assert.match(result.text,/Place a bench/);
+  assert.equal(result.images[0].sourceHeading,'Patio');
+});
+
 test('capture excludes app badges and author avatars inside the article', () => {
   const result=capture(`<article><h1>Chicken</h1><img src="https://cdn.example/chicken.jpg" alt="Chicken on a plate">
     <img src="https://cdn.example/badge.png" alt="Get it on Google Play"><img src="https://cdn.example/badge2.png" alt="Download on the App Store">
@@ -123,6 +129,17 @@ test('capture preserves comma-containing CDN srcsets, picture sources and lazy p
     'https://food.example/lazy-chicken.jpg','https://cdn.example/large.jpg'
   ]);
   assert.deepEqual(result.images[1].alternatives,['https://cdn.example/steps.jpg']);
+});
+
+test('lazy picture sources and full-size links survive one-pixel placeholders and retain their headings', () => {
+  const dom = new JSDOM('<article><h1>Living room</h1><h2>Shelves</h2><picture><source data-lazy-srcset="/shelf-small.webp 320w, /shelf.webp 960w"><img src="/pixel.gif"></picture><h2>Lighting</h2><a href="/lamp.jpg"><img src="/pixel.gif"></a><img src="/pixel.gif"></article>', {url:'https://decor.example/room',runScripts:'outside-only'});
+  try {
+    for (const img of dom.window.document.images) Object.defineProperties(img,{naturalWidth:{value:1},naturalHeight:{value:1}});
+    const result = dom.window.eval(fs.readFileSync(path.join(extension,'content.js'),'utf8'));
+    assert.deepEqual(Array.from(result.images,p=>[p.url,p.sourceHeading]), [
+      ['https://decor.example/shelf.webp','Shelves'], ['https://decor.example/lamp.jpg','Lighting']
+    ]);
+  } finally { dom.window.close(); }
 });
 
 test('capture deduplicates metadata crop variants and rejects images belonging to another recipe', () => {

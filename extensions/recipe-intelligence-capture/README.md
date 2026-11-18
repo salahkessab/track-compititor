@@ -1,6 +1,10 @@
-# Recipe Intelligence Capture 2.7.0
+# Recipe Intelligence Capture 2.8.0
 
 Capture a recipe or Home & Decor article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
+
+Version 2.8.0 adds reviewed multipart drafts, highlighted boundaries, per-site range preferences and measured photo dimensions. Save a draft before opening another page, then use Add part / rescan to review and apply the changes. One draft per website is retained in this browser.
+
+Version 2.7.1 reads deferred picture sources and full-size photo links. If an image fails, choose a saved copy for that specific photo in the import notes.
 
 Version 2.7.0 retains each photo's source heading and shows it in the capture preview. Home & Decor stores stable section identities and keeps text-only sections when photos are unchecked. Review the linked heading below each reference; uploaded or older references without a source association can be assigned there. Generated-image removal affects only that image in the article preview and ZIP, preserves all prose and other placements, and can be undone without generation. Output placement is validated by identity, not the remaining photo count. The writing model still evaluates visual relevance; an uncertain reference must be excluded rather than assigned to a different topic. This is not a guarantee of perfect visual understanding.
 
@@ -23,7 +27,7 @@ Download the ZIP from **Settings → Chrome extension**, or use this repository 
 
 After updating files in this folder, click **Reload** on the extension's card and close old capture tabs before starting a new capture.
 
-Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.7.0** at the top. Old capture tabs and resumed imports keep their previously captured photos and destination. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
+Chrome uses the exact folder selected during **Load unpacked**, which may be a Desktop or Downloads copy rather than this repository. Replace files in that installed folder, then reload the extension. A fresh capture should show **Capture v2.8.0** at the top. Old capture tabs and resumed imports keep their previously captured photos and destination. The download contains flat icon paths; replace the complete package, including its manifest, when updating a ZIP installation.
 
 ## Use
 

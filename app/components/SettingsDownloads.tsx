@@ -3,7 +3,7 @@ export function SettingsDownloads() {
   return <section aria-label="Extensions and plugins" className="grid gap-4 md:grid-cols-2">
     <article className="studio-panel space-y-3 rounded-2xl border p-5">
       <h2 className="text-lg font-semibold">Chrome extension</h2>
-      <p className="text-sm text-gray-600">Import recipes or Home &amp; Decor articles with their photos. Choose the destination in the extension before saving.</p>
+      <p className="text-sm text-gray-600">Import recipes or Home &amp; Decor articles with their photos. For a long article, save a capture draft and add the next part from the extension.</p>
       <a className={button} href="/api/recipe-capture-extension" download="recipe-intelligence-capture.zip">Download Chrome extension</a>
       <p className="text-xs text-gray-600">Extract the ZIP, then open chrome://extensions → Developer mode → Load unpacked. Select the extracted folder, open this app and click the extension to connect.</p>
     </article>

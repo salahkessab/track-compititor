@@ -5,6 +5,7 @@ const extensionVersion = chrome.runtime.getManifest().version;
 $('version').textContent = `Capture v${extensionVersion} · Recipes and Home & Decor`;
 const sourceTab = Number(new URLSearchParams(location.search).get('sourceTab'));
 let job, previous, app, busy = false, capturing = false, photoPage = 0;
+let proposal, currentRule, savedRule;
 const photoCache = new Map();
 const previewQueues = Array.from({length:3}, () => Promise.resolve());
 function readablePhoto(photo, captureJob = job) {
@@ -51,6 +52,20 @@ async function findApp(options={}) {
 }
 function render() {
   const capture = job.capture;
+  $('parts').hidden=!!job.started || !!job.done;
+  for(const id of ['append','range','keep','remember','forget','accept-part','discard-part']) $(id).disabled=busy||capturing;
+  $('part-review').hidden=!proposal;
+  $('remember').hidden=!currentRule || !!proposal;
+  $('forget').hidden=!savedRule;
+  $('outline').hidden=false;
+  $('outline-list').replaceChildren();
+  for(const section of CaptureHelpers.sectionsOf(proposal?.capture || capture).sections){
+    if(!section.heading && !section.blocks.length)continue;
+    const row=document.createElement('li');
+    const count=section.blocks.reduce((n,b)=>n+(b.nodeName==='IMG'?1:b.querySelectorAll?.('img').length||0),0);
+    row.textContent=(section.heading||capture.title)+' · '+count+' photos · '+section.blocks.map(b=>b.textContent.trim()).filter(Boolean).join(' ').slice(0,120);
+    $('outline-list').append(row);
+  }
   job.destination ||= 'recipe';
   $('destination').value=job.destination; $('destination').disabled=!!job.started || busy || capturing;
   $('title').textContent = capture.title;
@@ -72,10 +87,16 @@ function render() {
     const lane = index % previewQueues.length;
     previewQueues[lane] = previewQueues[lane].then(async () => {
       if (!label.isConnected) return;
+      if (captureJob.fileCopies?.[index]) { notice.textContent = 'Saved from your file for this article photo.'; return; }
       try {
         const data = await readablePhoto(photo, captureJob);
         img.src = `data:${data.mime};base64,${data.base64}`;
         img.hidden = false;
+        const dimensions=document.createElement('small');
+        img.after(dimensions);
+        const showSize=()=>{const width=data.width||img.naturalWidth,height=data.height||img.naturalHeight;
+          if(width&&height)dimensions.textContent=width+' × '+height+(data.upgraded?' · larger source selected':Math.min(width,height)<400?' · low resolution':'');};
+        img.onload=showSize; showSize();
         if(data.method==='rendered')notice.textContent='Displayed copy · the original file could not be downloaded.';
         else if(data.method==='converted')notice.textContent='Converted reference · normalized from a browser-readable format.';
         else notice.remove();
@@ -95,8 +116,23 @@ function render() {
   if (capture.loadingIncomplete) warn('Automatic scrolling reached its time or length limit. More content may still be unloaded. Check the original page; this capture may be incomplete.');
   for(const warning of job.serverWarnings || [])warn(warning);
   if (!capture.images.length) warn(job.destination === 'home-decor' ? 'No source photos were found. You can upload reference photos in Home & Decor before reviewing the estimate.' : 'No source photos were found. The app can estimate new images from the recipe text.');
-  for (const failed of job.failed || []) warn(`Photo ${failed.index+1}: ${failed.message}`);
-  $('import').disabled = busy || capturing;
+  for (const failed of job.failed || []) {
+    const photo = capture.images[failed.index];
+    const row = warn(`Photo ${failed.index+1}: ${failed.message}`);
+    if (job.done || !photo) continue;
+    const label = document.createElement('label');
+    label.textContent = `Use a saved copy of photo ${failed.index+1}${photo.sourceHeading ? ' · '+photo.sourceHeading : ''}`;
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/jpeg,image/png,image/webp,image/avif'; input.disabled = busy;
+    input.onchange = () => {
+      const file = input.files[0];
+      if (!file || busy) return;
+      if (file.size > 10*1024*1024) { showError(new Error('Choose a photo up to 10 MB.')); return; }
+      void importRecipe(false, {index:failed.index,file});
+    };
+    label.append(input); row.append(label);
+  }
+  $('import').disabled = busy || capturing || !!proposal;
   $('import').hidden = !!job.done; $('open').hidden = !job.done; $('next').hidden = !job.done;
   $('import').textContent = job.failed?.length && !job.done ? 'Retry missing photos' : job.started ? 'Resume saving' : job.destination === 'home-decor' ? 'Save to Home & Decor' : 'Save to My articles';
   $('continue-partial').hidden=!!job.done || !job.failed?.length;
@@ -105,7 +141,24 @@ function render() {
   $('open').textContent = job.destination === 'home-decor' ? 'Review Home & Decor' : 'Review My articles';
   $('next').textContent = job.destination === 'home-decor' ? 'Open Home & Decor to choose photos and room groups, review the estimate, and approve generation.' : 'Keep collecting recipes. When you finish, open My articles to review photos and click Generate for each article.';
 }
-function warn(message) { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); }
+function warn(message) { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); return li; }
+const ruleKey = url => 'captureRange:'+new URL(url).origin;
+async function readPart(tab,rule) {
+    publicImageUrl(tab.url);
+    const [prepared]=await chrome.scripting.executeScript({target:{tabId:sourceTab},files:['page-tools.js','prepare.js']});
+    if(prepared?.result?.blocked)throw new Error(prepared.result.reason);
+    if(rule)await chrome.scripting.executeScript({target:{tabId:sourceTab},func:(url,rule)=>{globalThis.recipeCaptureBounds={url,rule};},args:[tab.url,rule]});
+    const [result]=await chrome.scripting.executeScript({target:{tabId:sourceTab},files:['content.js']});
+    const capture=result?.result;
+    if(capture?.boundsMismatch)throw new Error('The website layout changed. Choose a new range or forget the saved range.');
+    if(capture?.blocked)throw new Error(capture.reason);
+    if (!capture || capture.text.length < 40) throw new Error('No readable article found. Open the article itself, let it load, then capture it again.');
+    if (capture.url!==tab.url) throw new Error('The source page changed. Read it again.');
+    if (new Blob([capture.html]).size > 1500000) throw new Error('This page is too large. Choose a smaller part.');
+    capture.loadingIncomplete=prepared?.result?.loadingIncomplete===true;
+    capture.images = capture.images.filter(p => { try { p.url = publicImageUrl(p.url); p.alternatives = (p.alternatives||[]).map(u => new URL(u,capture.url).href).filter(u => {try {publicImageUrl(u);return true;}catch{return false;}}); return true; } catch { return false; } });
+    return capture;
+}
 async function capturePage() {
   if(capturing || busy)return;
   capturing=true; job=null; photoPage=0;
@@ -122,18 +175,14 @@ async function capturePage() {
     publicImageUrl(tab.url);
     $('source').textContent='Open original article'; $('source').href=tab.url;
     status('Loading article photos… Scrolling the original page, then restoring its position.');
-    const [prepared]=await chrome.scripting.executeScript({target:{tabId:sourceTab},files:['page-tools.js','prepare.js']});
-    if(prepared?.result?.blocked)throw new Error(prepared.result.reason);
-    const [result] = await chrome.scripting.executeScript({target:{tabId:sourceTab}, files:['content.js']});
-    const capture = result?.result;
-    if(capture?.blocked)throw new Error(capture.reason);
-    if (!capture || capture.text.length < 40) throw new Error('No readable article found. Open the article itself, let it load, then capture it again.');
-    publicImageUrl(capture.url);
-    if (new Blob([capture.html]).size > 1500000) throw new Error('This page is too large. Open the individual article page and try again.');
-    capture.loadingIncomplete=prepared?.result?.loadingIncomplete===true;
-    capture.images = capture.images.filter(p => { try { p.url = publicImageUrl(p.url); p.alternatives = (p.alternatives||[]).map(u => new URL(u,capture.url).href).filter(u => {try {publicImageUrl(u);return true;}catch{return false;}}); return true; } catch { return false; } });
+    savedRule=(await chrome.storage.local.get(ruleKey(tab.url)))[ruleKey(tab.url)];
+    let capture;
+    try {capture=await readPart(tab,savedRule);}
+    catch(e){if(!savedRule || !e.message.includes('website layout changed'))throw e;
+      capture=await readPart(tab,null);capture.rangeNotice='Saved range did not match. Review the full page or choose new boundaries.';}
+    currentRule=null;proposal=null;
     job = {id:crypto.randomUUID(),extensionVersion,capture,sourceTab,destination:savedConnection?.destination || 'recipe',selected:capture.images.map((_,i)=>i),uploaded:[],failed:[],started:false};
-    status('Ready to import.');
+    status(capture.rangeNotice || (savedRule?'Saved website range applied. Review the sections.':'Ready to import.'));
   } catch (e) { status('Capture needs your attention.'); showError(e); $('retry').hidden = false; }
   finally {capturing=false;if(job)render();}
 }
@@ -155,23 +204,31 @@ async function normalizedPhoto(blob) {
       blob = await canvas.convertToBlob({type:'image/jpeg',quality:.94});
     }
     if (blob.size > 10*1024*1024) throw new Error('Photo exceeds 10 MB.');
-    return {base64:await base64(blob),mime:blob.type,method:converted?'converted':'original'};
+    return {base64:await base64(blob),mime:blob.type,width:bitmap.width,height:bitmap.height,method:converted?'converted':'original'};
   } finally { bitmap.close(); }
 }
 async function getPhoto(photo, captureJob = job) {
   let failure; const started=Date.now(), urls=[...new Set([photo.url,...photo.alternatives])].slice(0,6);
   for (const url of urls) {
     if(Date.now()-started>=30000)break;
-    try { return await normalizedPhoto(await fetchPhoto(url,fetch,Math.min(10000,30000-(Date.now()-started)))); } catch (e) { failure = e; }
+    try {
+      const data=await normalizedPhoto(await fetchPhoto(url,fetch,Math.min(10000,30000-(Date.now()-started))));
+      if(photo.fullSize && photo.fullSize!==url && Math.min(data.width,data.height)<400){
+        try { const larger=await normalizedPhoto(await fetchPhoto(publicImageUrl(photo.fullSize),fetch,6500));
+          if(larger.width>=data.width && larger.height>=data.height && larger.width*larger.height>data.width*data.height)return {...larger,upgraded:true};
+        }catch { /* Keep the readable version. */ }
+      }
+      return data;
+    } catch (e) { failure = e; }
   }
   try {
     const source = await chrome.tabs.get(captureJob.sourceTab);
-    const current = new URL(source.url), captured = new URL(captureJob.capture.url); current.hash = ''; captured.hash = '';
+    const current = new URL(source.url), captured = new URL(photo.pageUrl || captureJob.capture.url); current.hash = ''; captured.hash = '';
     if (current.href !== captured.href) throw new Error('The source tab has navigated away from this article.');
     for (const url of urls) {
       if(Date.now()-started>=50000)break;
       if (new URL(url).origin !== captured.origin) continue;
-      const [pageResult] = await chrome.scripting.executeScript({target:{tabId:captureJob.sourceTab},func:pagePhoto,args:[url,captureJob.capture.url,Math.min(10000,50000-(Date.now()-started))]});
+      const [pageResult] = await chrome.scripting.executeScript({target:{tabId:captureJob.sourceTab},func:pagePhoto,args:[url,captured.href,Math.min(10000,50000-(Date.now()-started))]});
       const data = pageResult?.result;
       if (data?.base64 && data.base64.length <= 14000000) {
         try { return await normalizedPhoto(new Blob([Uint8Array.from(atob(data.base64), c => c.charCodeAt(0))], {type:data.mime})); }
@@ -183,7 +240,7 @@ async function getPhoto(photo, captureJob = job) {
   } catch { /* Source tab closed or pixels are unavailable. */ }
   throw failure || new Error('This photograph could not be read.');
 }
-async function importRecipe(allowMissing=false) {
+async function importRecipe(allowMissing=false, replacement=null) {
   if (busy || !job) return;
   busy = true; clearError(); $('import').disabled = true; $('resume').disabled = true;
   try {
@@ -203,15 +260,18 @@ async function importRecipe(allowMissing=false) {
       job.serverWarnings=imported.captureWarnings || imported.warnings || [];
       if (imported.status === 'capturing') {
         job.uploaded = job.selected.filter(index => job.uploaded.includes(index) || imported.uploadedUrls?.includes(job.capture.images[index].url) || imported.photos.some(p => p.state === 'ready' && p.source_url === job.capture.images[index].url));
-        if(!allowMissing)job.failed = [];
+        if(!allowMissing)job.failed = replacement ? job.failed.filter(f=>f.index!==replacement.index) : [];
         for (const index of job.selected) {
           if (job.uploaded.includes(index)) continue;
+          if (replacement && job.failed.some(f=>f.index===index)) continue;
           if(allowMissing && job.failed.some(f=>f.index===index))continue;
           status(`Importing photo ${job.selected.indexOf(index)+1} of ${job.selected.length}…`);
           const photo = job.capture.images[index]; let data;
-          try { data = await readablePhoto(photo); } catch (e) { job.failed.push({index,message:e.message}); await save(); continue; }
+          const fromFile = replacement?.index === index;
+          try { data = fromFile ? await normalizedPhoto(replacement.file) : await readablePhoto(photo); } catch (e) { job.failed.push({index,message:e.message}); await save(); continue; }
           try {
             await bridge(app,{op:'photo',destination,id:job.id,...data,url:photo.url,caption:photo.caption,name:`Photo ${index+1}`}); job.uploaded.push(index); (job.photoMethods ||= {})[index]=data.method || 'original';
+            if (fromFile) (job.fileCopies ||= {})[index] = true;
           } catch (e) { if (e.status !== 400) throw e; job.failed.push({index,message:e.message}); }
           await save();
         }
@@ -245,7 +305,62 @@ $('import').onclick = () => void importRecipe();
 $('continue-partial').onclick = () => void importRecipe(true);
 $('photos-prev').onclick = () => {photoPage--;render();};
 $('photos-next').onclick = () => {photoPage++;render();};
+const draftKey=url=>'captureDraft:'+new URL(url).origin;
+async function reviewPart(highlighted) {
+  if(!job || job.started || capturing || busy)return;
+  capturing=true; clearError(); proposal=null; render();
+  try {
+    const tab=await chrome.tabs.get(sourceTab);
+    if(new URL(tab.url).origin!==new URL(job.capture.url).origin)throw new Error('Use the same website for all parts of this article.');
+    let rule=savedRule;
+    if(highlighted){
+      await chrome.scripting.executeScript({target:{tabId:sourceTab},files:['page-tools.js']});
+      const [picked]=await chrome.scripting.executeScript({target:{tabId:sourceTab},func:()=>globalThis.RecipeCapturePage.selectionRule()});
+      rule=picked.result;
+    }
+    const part=await readPart(tab,rule);
+    const replace=highlighted && !job.multipart && tab.url===job.capture.url;
+    const merged=replace?{capture:part}:CaptureHelpers.mergePart(job.capture,part);
+    const delta=merged.capture.images.length-job.capture.images.length;
+    proposal={capture:merged.capture,rule:highlighted?rule:null,replace};
+    $('part-description').textContent=(replace?'Replace the current capture with the highlighted range':merged.added||delta?'Merge this part':'Already captured')+
+      ' · '+part.title+' · '+merged.capture.words+' words · '+merged.capture.images.length+' photos total ('+(delta>=0?'+':'')+delta+'). Review the section list below.';
+    status('Review the changes, then apply them to your draft.');
+  }catch(e){showError(e);}finally{capturing=false;render();}
+}
+$('append').onclick=()=>void reviewPart(false);
+$('range').onclick=()=>void reviewPart(true);
+$('accept-part').onclick=async()=>{
+  if(!proposal || busy || capturing)return;
+  const next=proposal.capture;
+  const skipped=new Set(job.capture.images.filter((_,i)=>!job.selected.includes(i)).map(p=>p.url));
+  const updated={...job,capture:next,multipart:job.multipart||!proposal.replace,
+    selected:next.images.flatMap((photo,i)=>skipped.has(photo.url)?[]:[i])};
+  const rule=proposal.rule;
+  capturing=true;render();
+  try{
+    await chrome.storage.local.set({[draftKey(updated.capture.url)]:updated});
+    job=updated;currentRule=rule;proposal=null;photoPage=0;status('Draft saved. Add another part or save to the app.');
+  }catch(e){showError(e);}finally{capturing=false;render();}
+};
+$('discard-part').onclick=()=>{proposal=null;status('Current draft kept.');render();};
+$('keep').onclick=()=>chrome.storage.local.set({[draftKey(job.capture.url)]:job}).then(()=>status('Draft saved for this website. Open the next part and click Add part.')).catch(showError);
+$('remember').onclick=async()=>{
+  try{await chrome.storage.local.set({[ruleKey(job.capture.url)]:currentRule});savedRule=currentRule;status('Range remembered for this website.');render();}catch(e){showError(e);}
+};
+$('forget').onclick=async()=>{
+  try{await chrome.storage.local.remove(ruleKey(job.capture.url));savedRule=null;status('Website range forgotten.');render();}catch(e){showError(e);}
+};
 $('retry').onclick = () => void capturePage();
+$('source').onclick = async event => {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  try {
+    const tab = await chrome.tabs.get(sourceTab);
+    await chrome.tabs.update(tab.id, {active:true});
+    if (Number.isInteger(tab.windowId)) await chrome.windows.update(tab.windowId,{focused:true});
+  } catch { showError(new Error('The original tab is no longer open. Open the article again and click the extension there.')); }
+};
 $('open').onclick = () => void openEstimate().catch(showError);
 $('resume').onclick = () => { if(busy||capturing)return;job = previous;photoPage=0;render(); $('resume').hidden = true; status('Previous capture restored. Click Resume saving or Retry missing photos to continue.'); };
 (async () => {
@@ -253,5 +368,12 @@ $('resume').onclick = () => { if(busy||capturing)return;job = previous;photoPage
   if (previous?.capture && (previous.started || previous.pending) && !previous.done) $('resume').hidden = false;
   const saved=await connection.readSaved(); if (saved) $('app-url').value=saved.origin;
   await capturePage();
+  const key=job && draftKey(job.capture.url);
+  const draft=key && (await chrome.storage.local.get(key))[key];
+  if(draft && job && new URL(draft.capture.url).origin===new URL(job.capture.url).origin && previous?.id!==draft.id){
+    const restore=document.createElement('button');restore.textContent='Restore draft · '+draft.capture.title;
+    restore.className='secondary';$('parts').prepend(restore);
+    restore.onclick=()=>{if(busy||capturing||job.started)return;job={...draft,sourceTab};currentRule=null;proposal=null;photoPage=0;restore.remove();render();status('Draft restored. Add the next part or save to the app.');};
+  }
   if (!app) await findApp({allowOpen:false}).catch(()=>{});
 })();

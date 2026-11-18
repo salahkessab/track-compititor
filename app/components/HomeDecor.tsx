@@ -47,7 +47,7 @@ export function HomeDecor({ active }: { active: boolean }) {
   const job = jobs.find(j => j.id === current);
   return <div className="space-y-5 text-gray-900">
 
-    <section className={panel}><h1 className="font-serif text-3xl">Home &amp; Decor</h1><p>Import an article, choose its original reference photos, review the cost, then create your article and images.</p><p className="text-sm text-gray-600">Using the Chrome extension? Choose <strong>Home &amp; Decor</strong> in its “Save article to” menu. <a className="text-blue-700 underline" href="/api/recipe-capture-extension" download>Download the updated extension</a> (v2.7.0 or newer), replace its files and reload it in Chrome.</p></section>
+    <section className={panel}><h1 className="font-serif text-3xl">Home &amp; Decor</h1><p>Import an article, choose its original reference photos, review the cost, then create your article and images.</p><p className="text-sm text-gray-600">Using the Chrome extension? Choose <strong>Home &amp; Decor</strong> in its “Save article to” menu. <a className="text-blue-700 underline" href="/api/recipe-capture-extension" download>Download the updated extension</a> (v2.8.0 or newer), replace its files and reload it in Chrome.</p></section>
     {connected && <ArticleStorage compact />}
     {(error || connectionError) && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800"><WorkspaceError message={error || connectionError} /> {connectionError && <button className={button} onClick={() => void act(reload)}>Reconnect</button>}</div>}
     {!online && <p role="status" className="rounded-xl bg-amber-50 p-4">The local worker is offline. Open the workspace launcher to continue queued work.</p>}

@@ -121,7 +121,77 @@
       return new Blob(chunks, {type:response.headers.get('content-type')?.split(';')[0] || 'application/octet-stream'});
     } finally { clearTimeout(timer); }
   }
-  const helpers = {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto};
+  // Work only on the allow-listed HTML produced by content.js. Keep lists,
+  // tables and inline formatting together when combining article sections.
+  function sectionsOf(capture) {
+    const doc = new DOMParser().parseFromString(capture.html,'text/html');
+    const sections = [{heading:'',tag:'',blocks:[]}];
+    function visit(node) {
+      if (node.nodeType === 3 && !node.textContent.trim()) return;
+      if (node.nodeType === 1) {
+        if (node.matches('h1,script,style')) return;
+        if (node.matches('h2,h3,h4,h5,h6')) {
+          sections.push({heading:node.textContent.trim(),tag:node.localName,blocks:[]}); return;
+        }
+        if (node.localName === 'div') { node.childNodes.forEach(visit); return; }
+      }
+      sections.at(-1).blocks.push(node);
+    }
+    doc.querySelector('article')?.childNodes.forEach(visit);
+    return {doc,sections};
+  }
+  function mergePart(base, part) {
+    if (new URL(base.url).origin !== new URL(part.url).origin) throw new Error('Open the next part on the same website.');
+    const {doc,sections} = sectionsOf(base), incoming=sectionsOf(part).sections;
+    const blockKey = node => node.nodeType===3 ? node.textContent.trim() : node.outerHTML;
+    const used = new Set();
+    let added=0;
+    for (const [position,section] of incoming.entries()) {
+      if (!section.blocks.length && !section.heading) continue;
+      const keys=section.blocks.map(blockKey);
+      let target=sections.find(s=>!used.has(s) && s.heading===section.heading &&
+        (base.url===part.url || (s.blocks.some(node=>keys.includes(blockKey(node))))));
+      if (!target && !section.heading) target=sections.at(-1);
+      if (!target) {
+        const next=base.url===part.url && incoming.slice(position+1).map(later=>
+          sections.find(s=>!used.has(s) && s.heading===later.heading)).find(Boolean);
+        sections.splice(next?sections.indexOf(next):sections.length,0,section);
+        used.add(section); added+=1+keys.length; continue;
+      }
+      used.add(target);
+      const positions=new Map();
+      target.blocks.forEach((block,i)=>{
+        const key=blockKey(block);
+        if(!positions.has(key))positions.set(key,[]);
+        positions.get(key).push(i);
+      });
+      const combined=[], pending=[];
+      let cursor=0;
+      for (const [i,key] of keys.entries()) {
+        const found=positions.get(key)?.find(index=>index>=cursor);
+        if(found===undefined){pending.push(section.blocks[i]);added++;continue;}
+        combined.push(...target.blocks.slice(cursor,found),...pending,target.blocks[found]);
+        pending.length=0;cursor=found+1;
+      }
+      target.blocks=combined.concat(target.blocks.slice(cursor),pending);
+    }
+    const article=doc.querySelector('article'), title=doc.createElement('h1');title.textContent=base.title;
+    article.replaceChildren(title);
+    for (const section of sections) {
+      if(section.tag){const h=doc.createElement(section.tag);h.textContent=section.heading;article.append(h);}
+      for(const block of section.blocks)article.append(block);
+    }
+    const photos=new Map(base.images.map(p=>[p.url,p]));
+    for(const p of part.images)if(!photos.has(p.url))photos.set(p.url,{...p,pageUrl:part.url});
+    const images=[...photos.values()],html=doc.documentElement.outerHTML;
+    const text=[base.title,...sections.flatMap(s=>[s.heading,...s.blocks.map(n=>n.textContent.trim())])].filter(Boolean).join('\n\n');
+    if(images.length>80 || text.length>200000 || new Blob([html]).size>1500000)
+      throw new Error('This part exceeds the capture limit. Use a smaller range or import it separately.');
+    return {added,capture:{...base,html,text,words:text.split(/\s+/).length,images,discoveredPhotos:images.length,
+      truncated:base.truncated||part.truncated,loadingIncomplete:base.loadingIncomplete||part.loadingIncomplete,
+      imageLimitReached:base.imageLimitReached||part.imageLimitReached}};
+  }
+  const helpers = {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto,sectionsOf,mergePart};
   root.CaptureHelpers = helpers;
   if (typeof module !== 'undefined') module.exports = helpers;
 })(globalThis);

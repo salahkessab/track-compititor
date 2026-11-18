@@ -18,7 +18,14 @@
     <p id="next" class="hint" hidden>Keep collecting recipes. When you finish, open My articles to review photos and click Generate for each article.</p>
     <p class="hint">Keep this tab open while importing. Capturing is free. Generation starts only when you click Generate in the app.</p>
     <p id="result"></p><ul id="warnings"></ul>
+    <section id="parts" hidden><h2>Article capture</h2>
+      <div class="actions"><button id="append" class="secondary">Add part / rescan</button><button id="range" class="secondary">Use highlighted range</button><button id="keep" class="secondary">Save capture draft</button></div>
+      <p class="hint">Save one draft per website. Open the next part in the original tab, or highlight from the first heading through the last paragraph there. Review the sections before saving to the app.</p>
+      <button id="remember" class="secondary" hidden>Remember range for this website</button> <button id="forget" class="secondary" hidden>Forget website range</button>
+      <div id="part-review" hidden><p id="part-description"></p><button id="accept-part">Apply to draft</button> <button id="discard-part" class="secondary">Discard changes</button></div>
+    </section>
   </section>
   <section id="preview" class="card" hidden><details><summary>Captured article text</summary><pre id="text"></pre></details><details open><summary id="photo-count">Photos</summary><p class="hint">All discovered photos are selected initially. Uncheck any you do not want. Preview pages do not limit which selected photos are saved.</p><div class="actions" id="photo-pages" hidden><button id="photos-prev" class="secondary">Previous photos</button><span id="photos-page"></span><button id="photos-next" class="secondary">Next photos</button></div><div id="photos"></div></details></section>
+  <details id="outline" hidden><summary>Sections and photo counts</summary><ol id="outline-list"></ol></details>
   <footer>Saved to your connected Recipe Intelligence workspace. No API key is stored in this extension.</footer>
 </main><script src="shared.js"></script><script src="connection.js"></script><script src="capture.js"></script></body></html>

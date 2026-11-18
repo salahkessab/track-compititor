@@ -18,6 +18,12 @@
   });
   let root = roots.sort((a, b) => Number(b.contains(heading)) - Number(a.contains(heading)) || b.textContent.length - a.textContent.length)[0];
   root ||= document.querySelector('main,[role="main"]') || document.body;
+  if (globalThis.RecipeCapturePage?.articleRoot) root = globalThis.RecipeCapturePage.articleRoot(el => !roots.includes(el));
+  const bounds = globalThis.recipeCaptureBounds;
+  delete globalThis.recipeCaptureBounds;
+  const range = bounds?.url === location.href && globalThis.RecipeCapturePage.resolveRule(bounds.rule);
+  if (bounds && !range) return {boundsMismatch:true};
+  if (range) root = document.body;
   function pageKey(raw) {
     try {
       const url = new URL(raw, location.href);
@@ -44,6 +50,7 @@
   const capturedNodes = new Map();
   const allowed = new Set(['P','H2','H3','H4','H5','H6','UL','OL','LI','TABLE','TBODY','THEAD','TR','TD','TH','BLOCKQUOTE','STRONG','EM','B','I','BR','FIGCAPTION','DL','DT','DD']);
   function serialize(node, depth = 0) {
+    if (range && !range.intersectsNode(node)) return '';
     if (++visited > 40000 || characters > 180000 || depth > 60) { truncated = true; return ''; }
     if (node.nodeType === Node.TEXT_NODE) { characters += node.textContent.length; return escape(node.textContent); }
     if (node.nodeType !== Node.ELEMENT_NODE || hidden(node) || node.tagName === 'H1') return '';
@@ -100,9 +107,9 @@
     }
     return candidates;
   }
-  const articleImages=[...root.querySelectorAll('img')];
+  const articleImages=[...root.querySelectorAll('img')].filter(el=>!range||range.intersectsNode(el));
   const articleHeadings=[...root.querySelectorAll('h2,h3,h4,h5,h6')].filter(el => {
-    if (!cleanText(el.textContent)) return false;
+    if (!cleanText(el.textContent) || range && !range.intersectsNode(el)) return false;
     for(let ancestor=el;ancestor && ancestor!==root.parentElement;ancestor=ancestor.parentElement)if(hidden(ancestor))return false;
     return true;
   });
@@ -115,15 +122,37 @@
     let invisible = false;
     for (let ancestor = img; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) { if (hidden(ancestor)) { invisible = true; break; } }
     if (invisible) continue;
-    if (img.naturalWidth && (img.naturalWidth < 160 || img.naturalHeight < 120) && !img.dataset.src && !img.dataset.lazySrc) continue;
-    const variants = [img.dataset.srcset, img.srcset, ...[...(img.closest('picture')?.querySelectorAll('source[srcset]') || [])].map(el => el.srcset)].flatMap(srcset).sort((a,b) => b.size - a.size);
-    const sources = [...new Set([variants[0]?.url, img.dataset.lazySrc, img.dataset.src, img.dataset.original, img.currentSrc, img.src,...variants.slice(1).map(v=>v.url)].filter(v => v && !v.startsWith('data:')).map(v => { try { return new URL(v, location.href).href; } catch { return ''; } }).filter(Boolean))];
+    const pictureSources = [...(img.closest('picture')?.querySelectorAll('source') || [])];
+    const variants = [img, ...pictureSources].flatMap(el =>
+      [el.dataset.lazySrcset, el.dataset.srcset, el.srcset].flatMap(srcset)
+    ).sort((a,b) => b.size - a.size);
+    const lazy = [img.dataset.lazySrc, img.dataset.src, img.dataset.original,
+      ...pictureSources.map(el => el.dataset.src)].filter(Boolean);
+    const linked = img.closest('a[href]')?.href;
+    let fullSize;
+    try { if (linked && /\.(?:jpe?g|png|webp|avif)$/i.test(new URL(linked).pathname)) fullSize = linked; } catch { /* Malformed lightbox link. */ }
+    const candidates = [variants[0]?.url, ...lazy, img.currentSrc, img.src, fullSize, ...variants.slice(1).map(v=>v.url)];
+    const sources = [...new Set(candidates.flatMap(value => {
+      if (!value) return [];
+      try {
+        const url = new URL(value, document.baseURI);
+        return /^https?:$/.test(url.protocol) && !url.username && !url.password ? [url.href] : [];
+      } catch { return []; }
+    }))];
+    if (img.naturalWidth && (img.naturalWidth < 160 || img.naturalHeight < 120)) {
+      const tiny = img.currentSrc || img.src;
+      const index = sources.indexOf(tiny);
+      if (index >= 0) sources.splice(index, 1);
+    }
     const linkedHeading=articleHeadings.filter(h=>h.compareDocumentPosition(img)&Node.DOCUMENT_POSITION_FOLLOWING).at(-1)?.textContent || title;
     const photo=addImage(sources[0], img.closest('figure')?.querySelector('figcaption')?.textContent || img.alt, sources.slice(1), linkedHeading);
-    if(photo)capturedNodes.set(img,photo);
+    if(photo) {
+      if (fullSize && photo.url !== fullSize) photo.fullSize = fullSize;
+      capturedNodes.set(img,photo);
+    }
   }
   // Metadata supplies a hero image when the theme renders it outside <article>.
-  for (const recipe of recipes) {
+  for (const recipe of range ? [] : recipes) {
     const name = cleanText(recipe.name).toLowerCase();
     if (name && !title.toLowerCase().includes(name) && !name.includes(title.toLowerCase())) continue;
     const owner = recipe.url || recipe.mainEntityOfPage;
@@ -132,7 +161,7 @@
     if (!name && !pageUrls.has(pageKey(ownerUrl || 'about:blank'))) continue;
     for (const img of [recipe.image].flat()) addImage(typeof img === 'string' ? img : img?.url || img?.contentUrl, recipe.name);
   }
-  if (!images.length) addImage(document.querySelector('meta[property="og:image"]')?.content, title);
+  if (!range && !images.length) addImage(document.querySelector('meta[property="og:image"]')?.content, title);
   // Keep image markers in their original DOM locations even when a photo is
   // unchecked. The backend derives stable heading links from this complete body.
   const body = serialize(root);

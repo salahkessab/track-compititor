@@ -55,7 +55,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
 }
 test('extension preview imports image bytes, finishes before estimating, and waits for manual library review',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.7\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.8\.0/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
@@ -70,7 +70,7 @@ test('extension preview imports image bytes, finishes before estimating, and wai
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/No generation has started/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.7.0');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.8.0');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 
@@ -109,6 +109,43 @@ test('resuming a decor capture keeps its destination even if the app tab changes
   await next.run();assert.equal(next.storage.lastCapture.done,true);
   assert.ok(next.calls.filter(m=>m.op!=='probe').every(m=>m.destination==='home-decor'));
   assert.ok(!next.calls.some(m=>m.op==='estimate'));
+});
+
+test('opening the source for verification focuses the tab used for recapture', async t=>{
+  const screen=await ui(t,{preparation:{blocked:true,reason:'Complete verification in the original tab.'}});
+  screen.button('source').click();
+  await until(()=>screen.navigations.length===1);
+  assert.equal(screen.navigations[0].id,11);
+  assert.equal(screen.navigations[0].details.active,true);
+});
+
+test('rescan previews duplicates and saves the reviewed draft without importing',async t=>{
+  const screen=await ui(t);
+  screen.button('append').click();
+  await until(()=>!screen.button('part-review').hidden);
+  assert.match(screen.button('part-description').textContent,/Already captured/);
+  assert.equal(screen.button('import').disabled,true);
+  screen.button('accept-part').click();
+  await until(()=>screen.storage['captureDraft:https://food.example']);
+  assert.equal(screen.storage['captureDraft:https://food.example'].capture.images.length,1);
+  assert.ok(!screen.calls.some(c=>c.op==='begin'));
+});
+
+test('saved files fill missing slots without moving other photos or finishing a partial article', async t=>{
+  const urls=[0,1,2].map(i=>'https://cdn.example/photo-'+i+'.jpg');
+  const screen=await ui(t,{photoCount:3,failedUrls:urls.slice(1),destination:'home-decor'});
+  await screen.run();
+  assert.equal(screen.storage.lastCapture.failed.length,2);
+  for(const [i,index] of [2,1].entries()){
+    const input=screen.button('warnings').querySelectorAll('input[type=file]')[i===0?1:0];
+    Object.defineProperty(input,'files',{value:[new screen.w.File(['replacement'],'copy.png',{type:'image/png'})]});
+    input.dispatchEvent(new screen.w.Event('change'));
+    await until(()=>screen.storage.lastCapture.uploaded.includes(index)&&!screen.button('import').disabled);
+    if(i===0)assert.ok(!screen.calls.some(c=>c.op==='finish'));
+  }
+  assert.equal(screen.storage.lastCapture.done,true);
+  assert.deepEqual(screen.calls.filter(c=>c.op==='photo').map(c=>c.url),[urls[0],urls[2],urls[1]]);
+  assert.equal(screen.calls.filter(c=>c.op==='finish').length,1);
 });
 
 test('a direct 403 can recover from the source tab and uses those same bytes for preview and import',async t=>{
