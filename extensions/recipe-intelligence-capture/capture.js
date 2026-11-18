@@ -4,6 +4,9 @@ const $ = id => document.getElementById(id);
 const extensionVersion = chrome.runtime.getManifest().version;
 $('version').textContent = `Capture v${extensionVersion} · Recipes and Home & Decor`;
 const sourceTab = Number(new URLSearchParams(location.search).get('sourceTab'));
+const manualPage = new URLSearchParams(location.search).get('manual') === '1';
+const manualKey = url => 'manualDraft:'+CaptureHelpers.articleAddress(url);
+let manualItem, manualLoading=false, previewVersion=0;
 let job, previous, app, busy = false, capturing = false, photoPage = 0;
 let proposal, currentRule, savedRule;
 const photoCache = new Map();
@@ -25,7 +28,7 @@ function readablePhoto(photo, captureJob = job) {
 const status = text => { $('status').textContent = text; };
 const showError = error => { $('error').hidden = false; $('error').textContent = error.message || String(error); };
 const clearError = () => { $('error').hidden = true; $('error').textContent = ''; };
-const save = () => chrome.storage.local.set({lastCapture:job});
+const save = () => chrome.storage.local.set(manualPage ? {lastCapture:job,[manualKey(job.capture.url)]:job} : {lastCapture:job});
 const bridge = (target,message) => connection.bridge(target,message);
 function connectionControls(disabled) {
   for (const id of ['connect','open-app','save-connection','workspace','app-url']) $(id).disabled=disabled;
@@ -52,7 +55,9 @@ async function findApp(options={}) {
 }
 function render() {
   const capture = job.capture;
-  $('parts').hidden=!!job.started || !!job.done;
+  $('parts').hidden=manualPage || !!job.started || !!job.done;
+  $('manual-open').hidden=manualPage || !!job.started || !!job.done;
+  $('manual-editor').hidden=!manualPage || !!job.started || !!job.done;
   for(const id of ['append','range','keep','remember','forget','accept-part','discard-part']) $(id).disabled=busy||capturing;
   $('part-review').hidden=!proposal;
   $('remember').hidden=!currentRule || !!proposal;
@@ -133,6 +138,7 @@ function render() {
     label.append(input); row.append(label);
   }
   $('import').disabled = busy || capturing || !!proposal;
+  if(manualPage && !job.started)manualControls();
   $('import').hidden = !!job.done; $('open').hidden = !job.done; $('next').hidden = !job.done;
   $('import').textContent = job.failed?.length && !job.done ? 'Retry missing photos' : job.started ? 'Resume saving' : job.destination === 'home-decor' ? 'Save to Home & Decor' : 'Save to My articles';
   $('continue-partial').hidden=!!job.done || !job.failed?.length;
@@ -174,6 +180,7 @@ async function capturePage() {
     }
     publicImageUrl(tab.url);
     $('source').textContent='Open original article'; $('source').href=tab.url;
+    $('manual-open').hidden=false;
     status('Loading article photos… Scrolling the original page, then restoring its position.');
     savedRule=(await chrome.storage.local.get(ruleKey(tab.url)))[ruleKey(tab.url)];
     let capture;
@@ -241,13 +248,22 @@ async function getPhoto(photo, captureJob = job) {
   throw failure || new Error('This photograph could not be read.');
 }
 async function importRecipe(allowMissing=false, replacement=null) {
-  if (busy || !job) return;
+  if (busy || capturing || !job || (manualPage && !job.started && $('import').disabled)) return;
   busy = true; clearError(); $('import').disabled = true; $('resume').disabled = true;
   try {
     await navigator.locks.request('recipe-intelligence-import',{ifAvailable:true},async lock => {
       if (!lock) throw new Error('Another capture tab is importing. Let it finish first.');
       // Persist even when the app is offline, before trying any connection.
-      job.pending = true; await save();
+      if(manualPage && !job.started){
+        const key=manualKey(job.capture.url);
+        await navigator.locks.request(key,async()=>{
+          const latest=(await chrome.storage.local.get(key))[key];
+          if(!latest || latest.id!==job.id || latest.manualRevision!==job.manualRevision || latest.started)
+            throw new Error('This draft changed in another tab. Reload before importing.');
+          job.pending=true;
+          await save();
+        });
+      }else{job.pending = true; await save();}
       status('Connecting to your workspace…'); await findApp();
       if (job.workspaceRoot && job.workspaceRoot !== app.root) throw new Error('This capture belongs to another storage folder. Open the original workspace to resume it.');
       if (job.destination === 'home-decor' && !app.decorBrowserCapture) throw new Error('Update the app to support Home & Decor browser imports. This article has not been sent to the recipe importer.');
@@ -306,6 +322,125 @@ $('continue-partial').onclick = () => void importRecipe(true);
 $('photos-prev').onclick = () => {photoPage--;render();};
 $('photos-next').onclick = () => {photoPage++;render();};
 const draftKey=url=>'captureDraft:'+new URL(url).origin;
+async function openManual() {
+  const tab=await chrome.tabs.get(sourceTab);
+  const page=CaptureHelpers.articleAddress(tab.url), key=manualKey(page);
+  // Seed the editor with the current reviewed capture, including its selection.
+  if (job && !job.started && CaptureHelpers.articleAddress(job.capture.url)===page) {
+    await navigator.locks.request(key,async()=>{
+      if (!(await chrome.storage.local.get(key))[key]) {
+        const seed={...job,id:crypto.randomUUID(),manualRevision:0};
+        await chrome.storage.local.set({[key]:seed});
+      }
+    });
+  }
+  await CaptureHelpers.openManualReview(tab,page);
+}
+$('manual-open').onclick=()=>void openManual().catch(showError);
+function manualSections(selected) {
+  const select=$('manual-section');
+  select.replaceChildren(new Option('Article introduction','0'));
+  const {sections}=CaptureHelpers.sectionsOf(job.capture);
+  for(const [i,s] of sections.entries()) if(i) select.add(new Option(s.heading,String(i)));
+  select.add(new Option('Add a new heading…','new'));
+  select.value=String(selected ?? 0);
+  $('manual-heading').hidden=select.value!=='new';
+}
+function manualControls() {
+  const photo=$('manual-kind').value==='image';
+  $('manual-recipe-tip').hidden=photo || job?.destination!=='recipe';
+  $('manual-label').textContent=photo?'Photo URL':'Article text';
+  $('manual-value').placeholder=photo?'https://…':'Paste the selected paragraphs here';
+  $('manual-add').disabled=busy||capturing||!$('manual-value').value.trim();
+  $('manual-discard').disabled=busy||capturing;
+  for(const id of ['manual-section','manual-title','manual-heading','manual-kind','manual-value'])$(id).disabled=busy||capturing;
+  $('import').disabled=busy||capturing||!!manualItem||!!$('manual-value').value.trim()||job?.capture.hasArticleText===false||!job||job.capture.text.length<40||$('manual-title').value.trim()!==job.capture.title;
+}
+async function manualPreview() {
+  const version=++previewVersion;
+  $('manual-photo').hidden=true;
+  if($('manual-kind').value!=='image'||!$('manual-value').value.trim())return;
+  try{
+    const url=publicImageUrl($('manual-value').value.trim());
+    const data=await readablePhoto({url,alternatives:[]});
+    if(version!==previewVersion)return;
+    $('manual-photo').src='data:'+data.mime+';base64,'+data.base64;
+    $('manual-photo').hidden=false;
+  }catch(e){if(version===previewVersion)$('manual-notice').textContent='Photo preview unavailable. '+e.message;}
+}
+async function nextManualItem() {
+  if(manualLoading||manualItem||!manualPage||!job||job.started||$('manual-value').value.trim())return;
+  manualLoading=true;
+  try{
+    const items=Object.entries(await chrome.storage.session.get(null))
+      .filter(([k,v])=>k.startsWith('manualItem:')&&v.sourceTab===sourceTab&&v.page===CaptureHelpers.articleAddress(job.capture.url))
+      .sort((a,b)=>a[1].time-b[1].time);
+    if(!items.length||$('manual-value').value.trim())return;
+    const [key,item]=items[0];
+    manualItem=key;
+    $('manual-kind').value=item.kind;
+    $('manual-value').value=item.value||'';
+    $('manual-notice').textContent=item.error||'Review the selection and choose its section.';
+    manualControls();void manualPreview();
+  }finally{manualLoading=false;}
+}
+async function finishManual(add) {
+  if(busy||capturing||!job||job.started)return;
+  clearError();capturing=true;manualControls();
+  const key=manualKey(job.capture.url);
+  try{
+    let section=$('manual-section').value;
+    if(add){
+      await navigator.locks.request(key,async()=>{
+        const latest=(await chrome.storage.local.get(key))[key];
+        if(latest && (latest.started || latest.pending && !job.pending || latest.id!==job.id || latest.manualRevision!==job.manualRevision))
+          throw new Error('This draft changed in another tab. Reload to review the latest version.');
+        // A pending menu item may be replayed if the browser closed immediately after saving.
+        if(manualItem && latest?.lastManualItem===manualItem)return;
+        const next=CaptureHelpers.addManualItem(job.capture,{title:$('manual-title').value,kind:$('manual-kind').value,recipe:job.destination==='recipe',
+          value:$('manual-value').value,section:section==='new'?'new':Number(section),newHeading:$('manual-heading').value});
+        const selected=new Set(job.selected);
+        if($('manual-kind').value==='image')selected.add(next.images.findIndex(p=>p.url===publicImageUrl($('manual-value').value.trim())));
+        const updated={...job,capture:next,selected:[...selected].sort((a,b)=>a-b),manualRevision:(job.manualRevision||0)+1,lastManualItem:manualItem};
+        await chrome.storage.local.set({[key]:updated});
+        job=updated;
+      });
+      if(section==='new')section=CaptureHelpers.sectionsOf(job.capture).sections.length-1;
+      manualSections(section);
+    }
+    if(manualItem)await chrome.storage.session.remove(manualItem);
+    manualItem=null;
+    $('manual-value').value='';$('manual-heading').value='';
+    $('manual-photo').hidden=true;previewVersion++;
+    $('manual-notice').textContent=add?'Saved to this article draft.':'Selection cleared.';
+  }catch(e){showError(e);}finally{capturing=false;render();manualControls();}
+  await nextManualItem();
+}
+async function initManual(saved) {
+  const page=CaptureHelpers.articleAddress(new URLSearchParams(location.search).get('article'));
+  const key=manualKey(page);
+  const tab=await chrome.tabs.get(sourceTab).catch(()=>null);
+  const existing=(await chrome.storage.local.get(key))[key];
+  const title=tab?.url?.split('#')[0]===page ? tab.title || '' : '';
+  job=existing?{...existing,sourceTab}:{id:crypto.randomUUID(),sourceTab,extensionVersion,destination:saved?.destination||'recipe',
+    selected:[],uploaded:[],failed:[],manualRevision:0,capture:{url:page,title:title.slice(0,300),html:'<html><head></head><body><article><h1></h1></article></body></html>',
+      text:'',words:0,images:[],hasArticleText:false}};
+  $('manual-title').value=job.capture.title;
+  manualSections();render();manualControls();
+  if(job.started){render();status(job.done?'This draft was imported.':'Resume this import.');return;}
+  status('Review your manual draft before saving it to the app.');
+  $('manual-section').onchange=()=>{$('manual-heading').hidden=$('manual-section').value!=='new';};
+  $('manual-title').oninput=manualControls;
+  $('manual-kind').onchange=()=>{manualControls();void manualPreview();};
+  $('manual-value').oninput=()=>{previewVersion++;$('manual-photo').hidden=true;manualControls();};
+  $('manual-value').onchange=()=>void manualPreview();
+  $('manual-add').onclick=()=>void finishManual(true).catch(showError);
+  $('manual-discard').onclick=()=>void finishManual(false).catch(showError);
+  chrome.storage.onChanged.addListener((changes,area)=>{
+    if(area==='session'&&Object.keys(changes).some(k=>k.startsWith('manualItem:')))void nextManualItem().catch(showError);
+  });
+  await nextManualItem();
+}
 async function reviewPart(highlighted) {
   if(!job || job.started || capturing || busy)return;
   capturing=true; clearError(); proposal=null; render();
@@ -367,6 +502,12 @@ $('resume').onclick = () => { if(busy||capturing)return;job = previous;photoPage
   previous = (await chrome.storage.local.get('lastCapture')).lastCapture;
   if (previous?.capture && (previous.started || previous.pending) && !previous.done) $('resume').hidden = false;
   const saved=await connection.readSaved(); if (saved) $('app-url').value=saved.origin;
+  if(manualPage){
+    $('resume').hidden=true;
+    try{await initManual(saved);}catch(e){showError(e);status('Manual draft needs your attention.');}
+    if(job)await findApp({allowOpen:false}).catch(()=>{});
+    return;
+  }
   await capturePage();
   const key=job && draftKey(job.capture.url);
   const draft=key && (await chrome.storage.local.get(key))[key];

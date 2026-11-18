@@ -191,7 +191,93 @@
       truncated:base.truncated||part.truncated,loadingIncomplete:base.loadingIncomplete||part.loadingIncomplete,
       imageLimitReached:base.imageLimitReached||part.imageLimitReached}};
   }
-  const helpers = {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto,sectionsOf,mergePart};
+  function articleAddress(raw) {
+    const url = new URL(publicImageUrl(raw));
+    url.hash = '';
+    return url.href;
+  }
+
+  function addManualItem(base,{kind,value,title,section,newHeading,recipe=false}) {
+    const doc = new DOMParser().parseFromString(base.html,'text/html');
+    const article = doc.querySelector('article');
+    const headings = [...article.querySelectorAll('h2,h3,h4,h5,h6')];
+    const name = title.trim();
+    if (!name || name.length > 300) throw new Error('Enter an article title up to 300 characters.');
+    article.querySelector('h1').textContent = name;
+    doc.title = name;
+    let heading;
+    if (section === 'new') {
+      const label = newHeading.trim();
+      if (!label || label.length > 300) throw new Error('Enter a section heading up to 300 characters.');
+      heading = doc.createElement('h2');
+      heading.textContent = label;
+      article.append(heading);
+    } else {
+      if (!Number.isInteger(section) || section < 0 || section > headings.length) throw new Error('Choose a section.');
+      heading = headings[section-1];
+    }
+    const before = headings[section];
+    const insert = node => before ? before.before(node) : article.append(node);
+    const images = base.images.map(p=>({...p}));
+    if (kind === 'text') {
+      if (!value.trim() || value.length > 200000) throw new Error('Enter article text up to 200,000 characters.');
+      const listTag = label => {
+        if(!recipe)return '';
+        const key=label.trim().toLowerCase().replace(/:$/,'');
+        if(['ingredients','ingredients list'].includes(key))return 'ul';
+        if(['instructions','directions','method','steps','preparation'].includes(key))return 'ol';
+        return '';
+      };
+      let tag=listTag(heading?.textContent || '');
+      const prior=before?before.previousElementSibling:article.lastElementChild;
+      let list=tag && prior?.localName===tag ? prior : null;
+      for (const line of value.trim().split(/\r?\n+/).filter(l=>l.trim())) {
+        const nextTag=listTag(line);
+        if(nextTag){
+          const label=doc.createElement('h2');label.textContent=line.trim();insert(label);
+          tag=nextTag;list=null;continue;
+        }
+        const block=doc.createElement(tag?'li':'p');
+        block.textContent=line.trim();
+        if(tag){
+          if(!list){list=doc.createElement(tag);insert(list);}
+          list.append(block);
+        }else insert(block);
+      }
+    } else if (kind === 'image') {
+      const url = publicImageUrl(value.trim());
+      const photo = images.find(p=>p.url===url);
+      const sourceHeading = heading?.textContent || name;
+      // Relinking a photo moves just that image. Its previous paragraph stays in place.
+      for (const img of article.querySelectorAll('img')) if (img.getAttribute('src')===url) img.remove();
+      if (photo) photo.sourceHeading = sourceHeading;
+      else images.push({url,caption:'',sourceHeading,alternatives:[],pageUrl:base.url});
+      const img = doc.createElement('img');
+      img.setAttribute('src',url);
+      img.alt = photo?.caption || '';
+      insert(img);
+    } else throw new Error('Choose text or photo.');
+    const html = doc.documentElement.outerHTML;
+    const {sections} = sectionsOf({html});
+    const text = [name,...sections.flatMap(s=>[s.heading,...s.blocks.map(n=>n.textContent.trim())])].filter(Boolean).join('\n\n');
+    if (images.length > 80 || text.length > 200000 || new Blob([html]).size > 1500000)
+      throw new Error('The draft exceeds the article or photo limit. Choose a smaller selection.');
+    const hasArticleText=sections.some(s=>s.blocks.some(b=>b.textContent.trim()));
+    return {...base,title:name,html,text,hasArticleText,words:text.split(/\s+/).length,images,discoveredPhotos:images.length};
+  }
+  async function openManualReview(tab,page) {
+    const url = chrome.runtime.getURL('capture.html?'+new URLSearchParams({sourceTab:tab.id,manual:'1',article:page}));
+    await navigator.locks.request('manual-review:'+tab.id,async()=>{
+      const contexts=()=>chrome.runtime.getContexts({contextTypes:['TAB'],documentUrls:[url]});
+      const [open]=await contexts();
+      if(open){await chrome.tabs.update(open.tabId,{active:true});return;}
+      await chrome.tabs.create({windowId:tab.windowId,url});
+      // A second click can arrive while Chrome is still creating the review document.
+      for(let attempt=0;attempt<20 && !(await contexts()).length;attempt++)
+        await new Promise(resolve=>setTimeout(resolve,100));
+    });
+  }
+  const helpers = {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto,sectionsOf,mergePart,articleAddress,addManualItem,openManualReview};
   root.CaptureHelpers = helpers;
   if (typeof module !== 'undefined') module.exports = helpers;
 })(globalThis);

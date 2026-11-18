@@ -1,6 +1,8 @@
-# Recipe Intelligence Capture 2.8.0
+# Recipe Intelligence Capture 2.9.0
 
 Capture a recipe or Home & Decor article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
+
+Right-click selected article text or a photo on a public page and choose **Add selected text to article draft** or **Add image to article draft**. Choose an existing section or create a heading, then click **Add to draft**. Further selections on that article open the same editor. You can also paste paragraphs or a public photo URL. To supplement an automatic capture, choose **Add text or photos manually** in its review first. Manual drafts are saved per article in this browser. Select Recipes or Home & Decor before sending the reviewed draft to the app.
 
 Version 2.8.0 adds reviewed multipart drafts, highlighted boundaries, per-site range preferences and measured photo dimensions. Save a draft before opening another page, then use Add part / rescan to review and apply the changes. One draft per website is retained in this browser.
 

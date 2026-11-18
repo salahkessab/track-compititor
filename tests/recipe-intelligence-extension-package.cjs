@@ -15,7 +15,7 @@ test('extension download contains only installable source files, with valid flat
   const archive=await buildCaptureExtensionPackage(),entries=readStoredEntries(archive.bytes);
   const expected=['manifest.json','background.js','capture.html','capture.css','capture.js','connection.js','content.js','shared.js','page-tools.js','prepare.js','readme.md','icon16.png','icon48.png','icon128.png'];
   assert.deepEqual([...entries.keys()].sort(),expected.sort());
-  assert.equal(archive.version,'2.8.0');assert.equal(archive.filename,'recipe-intelligence-capture.zip');
+  assert.equal(archive.version,'2.9.0');assert.equal(archive.filename,'recipe-intelligence-capture.zip');
   const manifest=JSON.parse(entries.get('manifest.json').toString());assert.equal(manifest.version,archive.version);
   assert.equal(manifest.content_scripts,undefined);assert.equal(manifest.externally_connectable,undefined);
   for(const [size,name] of Object.entries(manifest.icons)){

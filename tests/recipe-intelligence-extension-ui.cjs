@@ -2,6 +2,32 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {JSDOM}=require('jsdom');
 const directory=path.join(__dirname,'../extensions/recipe-intelligence-capture');
 const batchId='d9913fb3-cfa3-4d08-9840-3efc042ce14a';
+test('manual review queues text and photo, retains the section, and sends only on import',async t=>{
+  const page='https://food.example/soup/', key='manualDraft:'+page;
+  const item={page,sourceTab:11,time:1};
+  const inbox={'manualItem:1':{...item,kind:'text',value:'Simmer the soup over low heat and stir gently until the carrots are tender.'},
+    'manualItem:2':{...item,time:2,kind:'image',value:'https://cdn.example/carrot.jpg'},
+    'manualItem:other':{...item,page:page+'other',kind:'text',value:'Another article'}};
+  const {button,storage,run,calls}=await ui(t,{manual:true,inbox});
+  assert.equal(button('import').disabled,true);assert.equal(button('manual-editor').hidden,false);
+  button('manual-title').value='Carrot soup';button('manual-section').value='new';button('manual-heading').value='Cooking method';
+  button('manual-add').click();
+  await until(()=>button('manual-kind').value==='image');
+  assert.equal(button('manual-section').value,'1');
+  assert.equal(button('import').disabled,true);
+  await until(()=>!button('manual-photo').hidden);
+  button('manual-add').click();
+  await until(()=>!button('import').disabled);
+  assert.equal(storage[key].capture.images[0].sourceHeading,'Cooking method');
+  assert.deepEqual(Object.keys(inbox),['manualItem:other']);
+  const reopened=await ui(t,{manual:true,storage,inbox});
+  assert.equal(reopened.button('title').textContent,'Carrot soup');
+  assert.equal(reopened.button('manual-value').value,'');
+  assert.ok(!calls.some(m=>m.op==='begin'));
+  await run();
+  assert.match(calls.find(m=>m.op==='begin').data.html,/<h2>Cooking method<\/h2><p>Simmer.*<\/p><img src="https:\/\/cdn.example\/carrot.jpg"/);
+  assert.equal(calls.filter(m=>m.op==='photo').length,1);
+});
 test('packaged Chrome icons decode as PNG at their declared dimensions',async()=>{
   const manifest=JSON.parse(fs.readFileSync(path.join(directory,'manifest.json'),'utf8'));
   for(const [size,file] of Object.entries(manifest.icons)){
@@ -10,8 +36,8 @@ test('packaged Chrome icons decode as PNG at their declared dimensions',async()=
   }
 });
 async function until(predicate) { for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('Extension UI did not settle'); }
-async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,pageRecovery=false,windowState='normal',offline=false,sourceIsApp=false,destination='recipe',decorSupported=true,reviewSupported=true,photoCount=1,failedUrls=[],preparation={},renderedRecovery=false}={}) {
-  const dom=new JSDOM(fs.readFileSync(path.join(directory,'capture.html'),'utf8'),{url:'https://extension.example/capture.html?sourceTab=11',runScripts:'outside-only'});
+async function ui(t,{storage={},manual=false,inbox={},failFirstUpload=false,downloadFailure=false,pageRecovery=false,windowState='normal',offline=false,sourceIsApp=false,destination='recipe',decorSupported=true,reviewSupported=true,photoCount=1,failedUrls=[],preparation={},renderedRecovery=false}={}) {
+  const dom=new JSDOM(fs.readFileSync(path.join(directory,'capture.html'),'utf8'),{url:'https://extension.example/capture.html?sourceTab=11'+(manual?'&manual=1&article=https%3A%2F%2Ffood.example%2Fsoup%2F':''),runScripts:'outside-only'});
   const w=dom.window, calls=[],navigations=[],windowUpdates=[]; let uploads=0,stage='capturing',photos=[];
   const capture={url:'https://food.example/soup/',title:'Carrot soup',html:'<article><h1>Carrot soup</h1><p>The captured article.</p></article>',text:'Carrot soup\nA warm soup made from carrots, water and salt.',words:12,images:[{url:'https://cdn.example/soup.jpg',caption:'Carrot soup',alternatives:[]}],truncated:false};
   if(pageRecovery) capture.images[0].url='https://food.example/soup.jpg';
@@ -38,7 +64,9 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
       throw new Error(`Unexpected operation ${m.op}`);
     }}
   };
-  w.navigator.locks={request:async(name,options,callback)=>callback({name})};
+  w.chrome.storage.session={get:async()=>({...inbox}),remove:async key=>{delete inbox[key];}};
+  w.chrome.storage.onChanged={addListener(){}};
+  w.navigator.locks={request:async(name,options,callback)=>(callback||options)({name})};
   w.fetch=async url=>downloadFailure||failedUrls.includes(url)?new Response('',{status:403}):new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'image/jpeg'}});
   w.createImageBitmap=async()=>({width:300,height:250,close(){}});
   w.OffscreenCanvas=class {getContext(){return {drawImage(){},getImageData(){return {data:new Uint8ClampedArray([40,30,20,255])};}};}};
@@ -47,7 +75,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
   w.eval(fs.readFileSync(path.join(directory,'connection.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(directory,'capture.js'),'utf8'));
   t.after(()=>dom.window.close());
-  await until(()=>w.document.getElementById('status').textContent===(preparation.blocked?'Capture needs your attention.':sourceIsApp?'Connected. Open a recipe or Home & Decor article and click the extension to capture it.':'Ready to import.'));
+  await until(()=>w.document.getElementById('status').textContent===(manual?'Review your manual draft before saving it to the app.':preparation.blocked?'Capture needs your attention.':sourceIsApp?'Connected. Open a recipe or Home & Decor article and click the extension to capture it.':'Ready to import.'));
   await until(()=>!w.document.getElementById('connect').disabled);
   const button=id=>w.document.getElementById(id);
   const run=async()=>{button('import').click();await until(()=>!button('import').disabled&&(button('status').textContent.startsWith('Imported')||button('status').textContent.startsWith('Import needs')));};
@@ -55,7 +83,7 @@ async function ui(t,{storage={},failFirstUpload=false,downloadFailure=false,page
 }
 test('extension preview imports image bytes, finishes before estimating, and waits for manual library review',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.8\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.9\.0/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
@@ -70,7 +98,7 @@ test('extension preview imports image bytes, finishes before estimating, and wai
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/No generation has started/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.8.0');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.9.0');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 

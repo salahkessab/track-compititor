@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Recipe Intelligence Capture",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "minimum_chrome_version": "116",
   "description": "Import recipes or Home & Decor articles and photos into your cloud or local Recipe Studio workspace.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
   "action": {"default_title": "Capture this article", "default_icon": {"16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png"}},

@@ -18,6 +18,21 @@
     <p id="next" class="hint" hidden>Keep collecting recipes. When you finish, open My articles to review photos and click Generate for each article.</p>
     <p class="hint">Keep this tab open while importing. Capturing is free. Generation starts only when you click Generate in the app.</p>
     <p id="result"></p><ul id="warnings"></ul>
+    <button id="manual-open" class="secondary" hidden>Add text or photos manually</button>
+    <section id="manual-editor" hidden>
+      <h2>Manual article draft</h2>
+      <p class="hint">Paste article text or a photo URL. You can also right-click highlighted text or a photo on the original page.</p>
+      <label>Article title<input id="manual-title" maxlength="300"></label>
+      <label>Add to section<select id="manual-section"></select></label>
+      <input id="manual-heading" aria-label="New section heading" placeholder="New section heading" maxlength="300" hidden>
+      <label>Content type<select id="manual-kind"><option value="text">Article text</option><option value="image">Photo URL</option></select></label>
+      <label id="manual-label" for="manual-value">Article text</label>
+      <textarea id="manual-value" rows="5" maxlength="200000"></textarea>
+      <p id="manual-recipe-tip" class="hint">For recipes, paste Ingredients and Instructions as separate headings, with one ingredient or step per line.</p>
+      <img id="manual-photo" alt="Selected photo preview" hidden>
+      <p id="manual-notice" role="status"></p>
+      <div class="actions"><button id="manual-add">Add to draft</button><button id="manual-discard" class="secondary">Clear selection</button></div>
+    </section>
     <section id="parts" hidden><h2>Article capture</h2>
       <div class="actions"><button id="append" class="secondary">Add part / rescan</button><button id="range" class="secondary">Use highlighted range</button><button id="keep" class="secondary">Save capture draft</button></div>
       <p class="hint">Save one draft per website. Open the next part in the original tab, or highlight from the first heading through the last paragraph there. Review the sections before saving to the app.</p>
