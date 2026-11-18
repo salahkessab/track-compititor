@@ -197,6 +197,65 @@
     return url.href;
   }
 
+  // Import photo positions and heading identities from the source without copying its prose.
+  function addArticlePhotos(base,source,title) {
+    if(articleAddress(base.url)!==articleAddress(source.url))throw new Error('Reopen this article in the original tab.');
+    const name=title.trim() || source.title;
+    if(!name)throw new Error('Enter the article title first.');
+    const {doc}=sectionsOf(base), article=doc.querySelector('article');
+    article.querySelector('h1').textContent=name;doc.title=name;
+    const headingSelector='h2,h3,h4,h5,h6';
+    const sourceDoc=new DOMParser().parseFromString(source.html,'text/html');
+    const sourceArticle=sourceDoc.querySelector('article');
+    const sourceHeadings=[...sourceArticle.querySelectorAll(headingSelector)];
+    const targetsByName=new Map();
+    for(const h of article.querySelectorAll(headingSelector)){
+      const key=h.textContent.trim();
+      if(!targetsByName.has(key))targetsByName.set(key,[]);
+      targetsByName.get(key).push(h);
+    }
+    const positions=new Map();
+    const targets=sourceHeadings.map(h=>{
+      const key=h.textContent.trim(), n=positions.get(key)||0;
+      positions.set(key,n+1);
+      return targetsByName.get(key)?.[n];
+    });
+    const locationByUrl=new Map();
+    let index=-1;
+    for(const node of sourceArticle.querySelectorAll(headingSelector+',img')){
+      if(node.localName!=='img'){index++;continue;}
+      const url=node.getAttribute('src');
+      if(!locationByUrl.has(url))locationByUrl.set(url,index);
+    }
+    const images=[...base.images], known=new Set(images.map(p=>p.url));
+    for(const photo of source.images){
+      const url=publicImageUrl(photo.url);
+      if(known.has(url))continue;
+      const i=locationByUrl.get(url) ?? -1;
+      if(i>=0 && !targets[i]){
+        const newHeading=doc.createElement(sourceHeadings[i].localName);
+        newHeading.textContent=sourceHeadings[i].textContent;
+        const later=targets.slice(i+1).find(Boolean);
+        if(later)later.before(newHeading);else article.append(newHeading);
+        targets[i]=newHeading;
+      }
+      const headings=[...article.querySelectorAll(headingSelector)];
+      const next=headings[i<0?0:headings.indexOf(targets[i])+1];
+      const img=doc.createElement('img');img.setAttribute('src',url);img.alt=photo.caption||'';
+      if(next)next.before(img);else article.append(img);
+      images.push({...photo,url,sourceHeading:i<0?name:targets[i].textContent.trim()});known.add(url);
+    }
+    const html=doc.documentElement.outerHTML;
+    if(images.length>80 || new Blob([html]).size>1500000)throw new Error('The combined draft exceeds the capture limit. Your draft was kept.');
+    const {sections}=sectionsOf({html});
+    const text=[name,...sections.flatMap(s=>[s.heading,...s.blocks.map(b=>b.textContent.trim())])].filter(Boolean).join('\n\n');
+    if(text.length>200000)throw new Error('The combined draft exceeds the article text limit.');
+    return {...base,title:name,html,text,words:text.split(/\s+/).length,images,
+      hasArticleText:sections.some(s=>s.blocks.some(b=>b.textContent.trim())),
+      discoveredPhotos:Math.max(images.length,source.discoveredPhotos||0,base.discoveredPhotos||0),
+      loadingIncomplete:!!(source.loadingIncomplete||base.loadingIncomplete),imageLimitReached:!!(source.imageLimitReached||base.imageLimitReached)};
+  }
+
   function addManualItem(base,{kind,value,title,section,newHeading,recipe=false}) {
     const doc = new DOMParser().parseFromString(base.html,'text/html');
     const article = doc.querySelector('article');
@@ -277,7 +336,7 @@
         await new Promise(resolve=>setTimeout(resolve,100));
     });
   }
-  const helpers = {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto,sectionsOf,mergePart,articleAddress,addManualItem,openManualReview};
+  const helpers = {publicImageUrl,appBridge,renderedPhoto,pagePhoto,fetchPhoto,sectionsOf,mergePart,articleAddress,addManualItem,addArticlePhotos,openManualReview};
   root.CaptureHelpers = helpers;
   if (typeof module !== 'undefined') module.exports = helpers;
 })(globalThis);

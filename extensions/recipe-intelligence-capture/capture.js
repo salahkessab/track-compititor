@@ -149,7 +149,7 @@ function render() {
 }
 function warn(message) { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); return li; }
 const ruleKey = url => 'captureRange:'+new URL(url).origin;
-async function readPart(tab,rule) {
+async function readPart(tab,rule,photosOnly=false) {
     publicImageUrl(tab.url);
     const [prepared]=await chrome.scripting.executeScript({target:{tabId:sourceTab},files:['page-tools.js','prepare.js']});
     if(prepared?.result?.blocked)throw new Error(prepared.result.reason);
@@ -158,7 +158,7 @@ async function readPart(tab,rule) {
     const capture=result?.result;
     if(capture?.boundsMismatch)throw new Error('The website layout changed. Choose a new range or forget the saved range.');
     if(capture?.blocked)throw new Error(capture.reason);
-    if (!capture || capture.text.length < 40) throw new Error('No readable article found. Open the article itself, let it load, then capture it again.');
+    if (!capture || (!photosOnly && capture.text.length < 40)) throw new Error('No readable article found. Open the article itself, let it load, then capture it again.');
     if (capture.url!==tab.url) throw new Error('The source page changed. Read it again.');
     if (new Blob([capture.html]).size > 1500000) throw new Error('This page is too large. Choose a smaller part.');
     capture.loadingIncomplete=prepared?.result?.loadingIncomplete===true;
@@ -347,6 +347,7 @@ function manualSections(selected) {
   $('manual-heading').hidden=select.value!=='new';
 }
 function manualControls() {
+  $('manual-add-photos').disabled=busy||capturing||!!job?.started;
   const photo=$('manual-kind').value==='image';
   $('manual-recipe-tip').hidden=photo || job?.destination!=='recipe';
   $('manual-label').textContent=photo?'Photo URL':'Article text';
@@ -367,6 +368,42 @@ async function manualPreview() {
     $('manual-photo').src='data:'+data.mime+';base64,'+data.base64;
     $('manual-photo').hidden=false;
   }catch(e){if(version===previewVersion)$('manual-notice').textContent='Photo preview unavailable. '+e.message;}
+}
+async function addAllArticlePhotos() {
+  if(!job || job.started || busy || capturing)return;
+  const priorSection=$('manual-section').value;
+  const priorHeadings=CaptureHelpers.sectionsOf(job.capture).sections;
+  capturing=true;clearError();manualControls();
+  $('manual-notice').textContent='Reading photos from the original article…';
+  try{
+    const tab=await chrome.tabs.get(sourceTab);
+    if(CaptureHelpers.articleAddress(tab.url)!==CaptureHelpers.articleAddress(job.capture.url))
+      throw new Error('Reopen this article in its original tab before adding photos.');
+    const source=await readPart(tab,null,true);
+    if(!source.images.length)throw new Error('No article photos found. Open the article, let the photos load and try again.');
+    const key=manualKey(job.capture.url);
+    await navigator.locks.request(key,async()=>{
+      const latest=(await chrome.storage.local.get(key))[key];
+      if(latest && (latest.id!==job.id || latest.manualRevision!==job.manualRevision || latest.started || latest.pending && !job.pending))
+        throw new Error('This draft changed in another tab. Reload to see the latest version.');
+      const capture=CaptureHelpers.addArticlePhotos(job.capture,source,$('manual-title').value);
+      const wanted=new Set(source.images.map(p=>p.url));
+      const selected=capture.images.flatMap((p,i)=>wanted.has(p.url)||job.selected.includes(i)?[i]:[]);
+      const updated={...job,capture,selected,manualRevision:(job.manualRevision||0)+1};
+      await chrome.storage.local.set({[key]:updated});job=updated;
+    });
+    $('manual-title').value=job.capture.title;
+    let choice=priorSection;
+    if(Number(priorSection)>0){
+      const label=priorHeadings[Number(priorSection)].heading;
+      const occurrence=priorHeadings.slice(1,Number(priorSection)).filter(s=>s.heading===label).length;
+      choice=CaptureHelpers.sectionsOf(job.capture).sections.flatMap((s,i)=>s.heading===label?[i]:[])[occurrence];
+    }
+    manualSections(choice);
+    $('manual-notice').textContent=source.images.length+' article photos selected in the draft.'+
+      (source.loadingIncomplete||source.imageLimitReached?' Capture was partial. Review the warnings below.':'');
+  }catch(e){$('manual-notice').textContent='Photos were not added.';showError(e);}
+  finally{capturing=false;render();}
 }
 async function nextManualItem() {
   if(manualLoading||manualItem||!manualPage||!job||job.started||$('manual-value').value.trim())return;
@@ -435,6 +472,7 @@ async function initManual(saved) {
   $('manual-value').oninput=()=>{previewVersion++;$('manual-photo').hidden=true;manualControls();};
   $('manual-value').onchange=()=>void manualPreview();
   $('manual-add').onclick=()=>void finishManual(true).catch(showError);
+  $('manual-add-photos').onclick=()=>void addAllArticlePhotos().catch(showError);
   $('manual-discard').onclick=()=>void finishManual(false).catch(showError);
   chrome.storage.onChanged.addListener((changes,area)=>{
     if(area==='session'&&Object.keys(changes).some(k=>k.startsWith('manualItem:')))void nextManualItem().catch(showError);

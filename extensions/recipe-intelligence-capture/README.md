@@ -1,4 +1,6 @@
-# Recipe Intelligence Capture 2.9.0
+# Recipe Intelligence Capture 2.9.1
+
+In a manual draft, **Add all article photos** collects the photos detected in the open article in one click. Review the selected photos before importing. Rescanning reuses existing photos. The capture reports incomplete loading and the existing 80-photo discovery limit.
 
 Capture a recipe or Home & Decor article and its photographs from the page you have open in Chrome, including pages that reject the app's server-side URL fetch.
 

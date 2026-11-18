@@ -28,6 +28,21 @@ test('manual review queues text and photo, retains the section, and sends only o
   assert.match(calls.find(m=>m.op==='begin').data.html,/<h2>Cooking method<\/h2><p>Simmer.*<\/p><img src="https:\/\/cdn.example\/carrot.jpg"/);
   assert.equal(calls.filter(m=>m.op==='photo').length,1);
 });
+test('one click adds photos across preview pages, preserving pending text and deduplicating rescans',async t=>{
+  const {button,storage,calls}=await ui(t,{manual:true,photoCount:19});
+  button('manual-value').value='My unsaved paragraph';
+  button('manual-add-photos').click();
+  const draft=()=>storage['manualDraft:https://food.example/soup/'];
+  await until(()=>draft()?.selected.length===19 && !button('manual-add-photos').disabled);
+  assert.equal(button('manual-value').value,'My unsaved paragraph');
+  assert.equal(button('photos').querySelectorAll('input').length,12);
+  assert.equal(button('import').disabled,true);
+  button('manual-add-photos').click();
+  await until(()=>draft()?.manualRevision===2);
+  assert.equal(draft().capture.images.length,19);
+  assert.equal(draft().capture.hasArticleText,false);
+  assert.ok(!calls.some(c=>c.op==='begin'));
+});
 test('packaged Chrome icons decode as PNG at their declared dimensions',async()=>{
   const manifest=JSON.parse(fs.readFileSync(path.join(directory,'manifest.json'),'utf8'));
   for(const [size,file] of Object.entries(manifest.icons)){
@@ -83,7 +98,7 @@ async function ui(t,{storage={},manual=false,inbox={},failFirstUpload=false,down
 }
 test('extension preview imports image bytes, finishes before estimating, and waits for manual library review',async t=>{
   const screen=await ui(t);assert.equal(screen.button('title').textContent,'Carrot soup');
-  assert.match(screen.button('version').textContent,/Capture v2\.9\.0/);
+  assert.match(screen.button('version').textContent,/Capture v2\.9\.1/);
   assert.match(screen.button('connection-status').textContent,/Connected.*E:/);
   await screen.run();
   await until(()=>screen.button('photos').querySelector('img').src.startsWith('data:image/jpeg;base64,'));
@@ -98,7 +113,7 @@ test('extension preview imports image bytes, finishes before estimating, and wai
   assert.deepEqual(screen.windowUpdates,[{id:77,details:{focused:true}}]);
   assert.equal(screen.button('next').hidden,false);
   assert.equal(screen.storage.lastCapture.done,true);assert.match(screen.button('result').textContent,/No generation has started/);
-  assert.equal(screen.storage.lastCapture.extensionVersion,'2.9.0');
+  assert.equal(screen.storage.lastCapture.extensionVersion,'2.9.1');
   assert.ok(!screen.calls.some(c=>c.op==='approve'));
 });
 

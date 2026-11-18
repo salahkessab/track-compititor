@@ -7,6 +7,18 @@ function page(html,url='https://decor.example/ideas'){
   for(const name of ['page-tools.js','shared.js'])w.eval(script(name));
   return w;
 }
+test('bulk article photos keep distinct repeated headings and manual prose across rescans',t=>{
+  const w=page('<article><h1>Ideas</h1><p>Source paragraph</p><h2>Office</h2><img src="/a.jpg"><h2>Office</h2><img src="/b.jpg"></article>');t.after(()=>w.close());
+  const source=w.eval(script('content.js'));
+  const base={...source,html:'<article><h1>Ideas</h1><p>My own introduction.</p></article>',images:[]};
+  const {addArticlePhotos,sectionsOf}=w.CaptureHelpers;
+  const result=addArticlePhotos(base,source,'Ideas');
+  const sections=sectionsOf(result).sections;
+  assert.match(sections[1].blocks[0].src,/a\.jpg$/);
+  assert.match(sections[2].blocks[0].src,/b\.jpg$/);
+  assert.equal(addArticlePhotos(result,source,'Ideas').html,result.html);
+  assert.match(result.text,/My own introduction/);assert.doesNotMatch(result.text,/Source paragraph/);
+});
 test('context menus stage only explicit top-level text and image selections for their article',async()=>{
   let clicked,installed,reviewed=0;
   const items=[],menus=[],tab={id:11,windowId:1,url:'https://decor.example/ideas#rooms'};
