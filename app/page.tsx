@@ -157,6 +157,8 @@ const DEFAULT_RECIPE_MODES: string[] = [];
 const DEFAULT_FASHION_MODES: string[] = [];
 
 type Item = {
+  workspace?: ContentType;
+  captionError?: string;
   idea: string;
   prompt: string;
   description: string;
@@ -524,6 +526,8 @@ export default function Page() {
       idea:          data.idea,
       prompt:        data.prompt,
       description:   data.description,
+      workspace: contentType,
+      captionError: data.captionError,
       firstComment:  data.firstComment,
       title:         data.title,
       location:      data.location,
@@ -662,6 +666,8 @@ export default function Page() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           captionOnly: true,
+          captionImage: (item.workspace ?? contentType)==="horses" ? item.imageUrl : undefined,
+          avoid: {openers:items.map(p=>p.description.split(/\s+/).slice(0,4).join(" ")).filter(Boolean)},
           workflow,
           model: activeModel,
           idea: item.idea,
@@ -670,7 +676,7 @@ export default function Page() {
           tone: item.seed?.tone,
           captionLength,
           firstComment: wantFirstComment,
-          contentType,
+          contentType: item.workspace ?? contentType,
         }),
       });
       const data = await r.json();
@@ -681,6 +687,7 @@ export default function Page() {
             ? {
                 ...p,
                 description: data.description ?? p.description,
+                captionError: undefined,
                 firstComment: data.firstComment,
                 cost: p.cost + Number(data.cost ?? 0),
                 textCost: (p.textCost ?? 0) + Number(data.textCost ?? 0),
@@ -1087,6 +1094,7 @@ export default function Page() {
         )}
 
         <Field label="Caption length">
+          {contentType==="horses" ? <span className="text-sm">Facebook · 200–400 characters</span> :
           <select
             value={captionLength}
             onChange={(e) => { setCaptionLength(e.target.value); }}
@@ -1094,7 +1102,7 @@ export default function Page() {
           >
             <option value="fb">Facebook optimized (200-400 chars)</option>
             <option value="story">Long storytelling (by scene)</option>
-          </select>
+          </select>}
         </Field>
 
         {contentType !== "recipes" && (
@@ -1401,7 +1409,7 @@ export default function Page() {
 
                       <div className="min-w-0 flex-1">
                         <p className="whitespace-pre-wrap text-sm text-gray-900">
-                          {i.description || i.idea || "Untitled"}
+                          {i.captionError || i.description || i.idea || "Untitled"}
                         </p>
                         <div className="mt-1.5 flex flex-wrap gap-2">
                           <button
@@ -1510,6 +1518,7 @@ export default function Page() {
                     <div className="flex shrink-0 flex-wrap gap-2 sm:ml-auto">
                       <button
                         onClick={() => copyCaption(i)}
+                        disabled={!i.description}
                         className="flex-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-black hover:bg-emerald-400 sm:flex-none"
                       >
                         {copied === `${i.imageUrl}:cap` ? "Copied ✓" : "Copy caption"}

@@ -8,13 +8,14 @@ RUN npm ci --ignore-scripts && npm rebuild canvas
 COPY . .
 RUN npm run build:recipe-intelligence && npm run build
 
-FROM node:24-bookworm-slim AS runtime
+# Reuse the built app and dependency layers across releases on the free runner.
+# Copying all of /app into a new layer duplicated node_modules for every SHA.
+FROM build AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends perl && rm -rf /var/lib/apt/lists/*
 ARG APP_REVISION=""
 LABEL org.opencontainers.image.revision=$APP_REVISION
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 APP_REVISION=$APP_REVISION
-COPY --from=build --chown=node:node /app /app
 RUN mkdir -p /var/lib/recipe-intelligence && chown node:node /var/lib/recipe-intelligence
 USER node
 EXPOSE 3000

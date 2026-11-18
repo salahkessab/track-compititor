@@ -303,7 +303,8 @@ test('client ignores unverified fragmented previews and returns the final result
 });
 
 // Exercise the actual route with fake text/storage providers; no network or API spend.
-function loadRoute(planOverrides = {}) {
+const horseCaptionFixture = "The smaller horse reaches the other one without taking another step.\n\nTheir muzzles meet and the taller horse stands still, leaving room for that last little stretch. Neither one seems in a hurry to move on.\n\nOne dark ear tips toward the other horse.";
+function loadRoute(planOverrides = {}, caption = horseCaptionFixture) {
   const fs = require('node:fs'), path = require('node:path'), ts = require('typescript');
   const cache = new Map();
   let textCalls = 0;
@@ -317,6 +318,9 @@ function loadRoute(planOverrides = {}) {
     chat = { completions: { create: async (request) => {
       textCalls++;
       textRequests.push(request);
+      if(request.messages[0].content?.startsWith?.('You write Facebook captions for a horse page.')){
+        return {choices:[{message:{content:JSON.stringify({description:caption})}}],usage:{prompt_tokens:10,completion_tokens:20}};
+      }
       return { choices: [{ message: { content: JSON.stringify({ idea: 'A horse', prompt: 'Realistic subject', description: 'Warm afternoon light.', title: 'Homemade Soup', ingredients: ['carrots'], instructions: ['Cook gently.'], referenceStrategy: 'Reference 1 leads; Reference 2 supplies light.', viralScore: 'medium', viralReason: 'Natural light', ...planOverrides }) } }], usage: { prompt_tokens: 10, completion_tokens: 20 } };
     } } };
   }
@@ -380,12 +384,35 @@ test('route includes actual image, planning, vision, and recipe search usage', a
       assert.equal(result.imageCostIncluded, true);
       assert.equal(result.costIncomplete, false);
       assert.ok(Math.abs(result.imageCost - 0.16526) < 1e-10);
-      const textCost = contentType === 'recipes' ? 0.0002355 : 0.000195;
+      const textCost = contentType === 'recipes' ? 0.0002355 : contentType === 'horses' ? 0.0002925 : 0.000195;
       assert.ok(Math.abs(result.textCost - textCost) < 1e-10, `${contentType} ${result.textCost}`);
       assert.equal(result.searchCost, contentType === 'recipes' ? 0.01 : 0);
       assert.ok(Math.abs(result.cost - result.imageCost - result.textCost - result.searchCost) < 1e-10);
     }
   } finally { if (oldFal === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = oldFal; }
+});
+
+test('horse captions follow the rendered image and retries use its saved bytes and selected writer',async()=>{
+  process.env.OPENAI_API_KEY='unit-test-placeholder';
+  const png='iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwCauAIwacHADoywwZPAAaBAAAAABJRU5ErkJggg==';
+  let renders=0;
+  global.fetch=async()=>{renders++;return Response.json({data:[{b64_json:png}]});};
+  const post=(route,body)=>route.POST(new Request('http://localhost/api/generate',{method:'POST',body:JSON.stringify({contentType:'horses',...body})}));
+  const first=loadRoute();
+  const row=await (await post(first.route,{model:'gpt-4.1-mini',imageSettings:{output_format:'png'}})).json();
+  assert.equal(row.description,horseCaptionFixture);
+  const writer=first.requests.filter(r=>r.messages[0].content?.startsWith?.('You write Facebook captions'));
+  assert.equal(writer.length,1);
+  assert.equal(writer[0].model,'gpt-4.1-mini');
+  assert.deepEqual(writer[0].messages[1].content.filter(c=>c.type==='image_url').map(c=>c.image_url.url),['data:image/png;base64,'+png]);
+  const again=loadRoute();
+  assert.equal((await (await post(again.route,{model:'gpt-5.4',captionOnly:true,captionImage:row.imageUrl})).json()).description,horseCaptionFixture);
+  assert.equal(again.requests.length,1);assert.equal(again.requests[0].model,'gpt-5.4');
+  assert.match(again.requests[0].messages[1].content[1].image_url.url,/^data:image\/png;base64,/);
+  assert.equal(renders,1);
+  const bad=loadRoute({},'The shot says everything.');
+  const failed=await (await post(bad.route,{})).json();
+  assert.equal(failed.description,'');assert.ok(failed.captionError);assert.match(failed.imageUrl,/^\/api\/image-assets\//);
 });
 test('all 36 UI scene options have a specific direction and a valid scene seed', () => {
   const fs = require('node:fs');
@@ -657,7 +684,7 @@ test('mural close crops and transparent pairs reach the planner without forcing 
     assert.match(result.seed.setting,/fully transparent background without scenery/);
     assert.match(sent.prompt,/Background: fully transparent/);
     assert.doesNotMatch(sent.prompt,/in a spring meadow/);
-    assert.match(requests[requests.length-2].messages[0].content,/do not describe a surrounding scene/);
+    assert.ok(requests.some(req=>typeof req.messages[0].content==='string' && req.messages[0].content.includes('do not describe a surrounding scene')));
   } finally { if (oldFal === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = oldFal; }
 });
 

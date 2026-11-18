@@ -1,4 +1,5 @@
 import { horseSceneGuidance, isHorseWallPaintingSceneType } from "@/lib/horseSceneGuidance";
+import { savedHorseImage, writeHorseCaption } from "@/lib/horseCaption";
 import { buildOpenAIImagePrompt, pairDirection, visualDirection, openAIPlannerSystem } from "@/lib/openaiPrompt";
 import { generateOpenAIImage, type PartialImageHandler } from "@/lib/openaiImages";
 import { withCostLedger, recordTextUsage, recordOpenAIImage, markCostIncomplete, costSummary } from "@/lib/costLedger";
@@ -1172,6 +1173,7 @@ async function handleGenerateWithLedger(req: Request, onPartial?: PartialImageHa
       captionLength,
       firstComment,
       captionOnly,
+      captionImage,
       contentType = "horses" as "horses" | "recipes" | "fashion",
       designPin = false,
       recipePinStyle = DEFAULT_RECIPE_PIN_STYLE,
@@ -1199,6 +1201,7 @@ async function handleGenerateWithLedger(req: Request, onPartial?: PartialImageHa
       captionLength?: string;
       firstComment?: boolean;
       captionOnly?: boolean;
+      captionImage?: string;
       contentType?: "horses" | "recipes" | "fashion";
       designPin?: boolean;
       recipePinStyle?: RecipePinStyle;
@@ -1290,6 +1293,10 @@ async function handleGenerateWithLedger(req: Request, onPartial?: PartialImageHa
 
     // Regenerate just the caption for an existing image (no new render).
     if (captionOnly) {
+      if(contentType==='horses'){
+        const caption=await writeHorseCaption(savedHorseImage(captionImage),model,avoid?.openers,firstComment);
+        return NextResponse.json({...caption,...costSummary()});
+      }
       const sys = isRecipe ? RECIPE_SYSTEM : isFashion ? FASHION_SYSTEM : horseSystemForScene(clientSceneType);
       const scene = { idea: clientIdea ?? "", prompt: clientPrompt ?? "", sceneType: clientSceneType, tone: clientTone };
       const opts: CaptionOpts = { captionLength, firstComment };
@@ -1522,14 +1529,16 @@ async function handleGenerateWithLedger(req: Request, onPartial?: PartialImageHa
         })()
       : render(plan.prompt, seed.sceneType, framingNegative, "horses", false, imageModel, plan.referenceStrategy, plan.visualMedium);
 
-    // Render the image and fix any rule-of-three in the caption in parallel.
-    const [imageUrl, descFix, fcFix] = await Promise.all([
-      renderImagePromise,
-      fixCaption(plan.description, workflow, model),
-      fixCaption(plan.firstComment, workflow, model),
-    ]);
-    plan.description = descFix.text ?? plan.description;
-    plan.firstComment = fcFix.text;
+    const imageUrl = await renderImagePromise;
+    let captionError: string | undefined;
+    try {
+      Object.assign(plan,await writeHorseCaption(imageUrl,model,avoidPayload.openers,firstComment));
+    } catch {
+      markCostIncomplete();
+      plan.description = "";
+      plan.firstComment = undefined;
+      captionError = "Caption unavailable. Use Regenerate caption to retry with this saved image.";
+    }
     // Viral potential analysis — vision-based, falls back to keyword scoring
     const viral = (await analyzeViral(imageUrl, workflow, model)) ?? scoreByKeywords(plan);
 
@@ -1540,6 +1549,7 @@ async function handleGenerateWithLedger(req: Request, onPartial?: PartialImageHa
       provider: workflow,
       model,
       falModel: falModelUsed,
+      captionError,
       ...costSummary(falModelUsed),
       imageSettings: settings,
       renderedPrompt,
