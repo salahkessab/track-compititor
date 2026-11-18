@@ -8,6 +8,7 @@ import { RecipeImageToImage } from "./components/RecipeImageToImage";
 import { RecipeTwoInOne } from "./components/RecipeTwoInOne";
 import { RecipeDesigns } from "./components/RecipeDesigns";
 import { HomeDecor } from "./components/HomeDecor";
+import { PinterestDesigns } from "./components/PinterestDesigns";
 import { StudioOverview, StudioIcon } from "./components/StudioOverview";
 import { ThemeToggle } from './components/ThemeToggle';
 import { prepareClientImage } from "@/lib/preparedImageClient";
@@ -110,6 +111,7 @@ const MAIN_TABS = [
   { id: "two-in-one", label: "2 in one image", contentType: "recipes", workflow: "twoInOne" },
   { id: "recipe-intelligence", label: "Recipe Intelligence", contentType: "recipes", workflow: "intelligence" },
   { id: "home-decor", label: "Home & Decor", contentType: "recipes", workflow: "decor" },
+  { id: "pinterest-design", label: "Pinterest Design", contentType: "recipes", workflow: "pinterest" },
 ] as const;
 const RECIPE_MODES: { value: string; label: string }[] = [
   { value: "dessert", label: "Desserts & sweets" },
@@ -283,7 +285,7 @@ export default function Page() {
   const [count, setCount] = useState<number>(1);
   const [countRaw, setCountRaw] = useState<string>("1");
   const [contentType, setContentType] = useState<ContentType>("horses");
-  const [recipeWorkflow, setRecipeWorkflow] = useState<"designs" | "imageToImage" | "twoInOne" | "intelligence" | "decor">("designs");
+  const [recipeWorkflow, setRecipeWorkflow] = useState<"designs" | "imageToImage" | "twoInOne" | "intelligence" | "decor" | "pinterest">("designs");
   const showRecipeImageToImage = contentType === "recipes" && recipeWorkflow === "imageToImage";
   const [modes, setModes] = useState<Set<string>>(new Set(DEFAULT_HORSE_MODES));
   const [customSubject, setCustomSubject] = useState<string>("");
@@ -929,6 +931,7 @@ export default function Page() {
         <RecipeDesigns />
       </div>
       <HomeDecor active={!overview && contentType === "recipes" && recipeWorkflow === "decor"} />
+      <div hidden={contentType!=="recipes" || recipeWorkflow!=="pinterest"}><PinterestDesigns/></div>
       <div hidden={contentType !== "recipes" || recipeWorkflow !== "intelligence"}>
         <RecipeIntelligence active={!overview && contentType === "recipes" && recipeWorkflow === "intelligence"} />
       </div>

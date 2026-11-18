@@ -2,6 +2,7 @@
 import { ArticleStorage } from "./ArticleStorage";
 import { WorkspaceError } from "./WorkspaceError";
 import { VerifiedImage } from "./VerifiedImage";
+import { sendToPinStudio } from '@/lib/pinterestDesign';
 import { useEffect, useState } from 'react';
 
 const button = 'rounded-xl bg-purple-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed';
@@ -79,11 +80,17 @@ function LinkedDecorPhoto({ job, photo: p, busy, act }: { job: any; photo: any; 
   const plan = job.article.imagePlans.find((item: any) => item.id === p.id);
   const section = plan?.sectionId ? job.article.sections.find((item: any) => item.id === plan.sectionId) : job.article.sections[plan?.section];
   const heading = section?.heading || job.article.title;
+  const [verified,setVerified]=useState(false);
   const pending = ['queued','running','importing','import_queued','capturing'].includes(job.state);
   return <div className="rounded-xl border p-3 space-y-2">
     <p className="text-sm font-medium">Linked heading: {heading}</p>
     <p className="text-xs text-gray-600">{p.group} · {p.caption || 'Reference photo'}</p>
-    {p.excluded ? <p className="text-sm text-gray-600">Image removed from article. Its heading and paragraphs are kept.</p> : p.outputUrl ? <VerifiedImage source={p.outputUrl} alt={plan?.alt || 'Generated decor'} className="w-full rounded-lg" /> : <p className="text-sm text-amber-800">{p.error || (p.phase === 'preparing' ? 'Preparing image…' : 'Generating image…')}</p>}
+    {p.excluded ? <p className="text-sm text-gray-600">Image removed from article. Its heading and paragraphs are kept.</p> : p.outputUrl ? <VerifiedImage source={p.outputUrl} onVerified={()=>setVerified(true)} alt={plan?.alt || 'Generated decor'} className="w-full rounded-lg" /> : <p className="text-sm text-amber-800">{p.error || (p.phase === 'preparing' ? 'Preparing image…' : 'Generating image…')}</p>}
+    {verified && p.outputUrl && !p.excluded && <button className={button} onClick={()=>{
+      const photos=job.photos.filter((v:any)=>v.selected&&!v.excluded&&v.outputUrl).map((v:any)=>({url:v.outputUrl,label:job.article.imagePlans.find((i:any)=>i.id===v.id)?.alt||v.caption||'Article photo'}));
+      const text=[heading,...(section?.paragraphs||[]),job.article.introduction,...job.article.sections.flatMap((s:any)=>[s.heading,...s.paragraphs])].join('\n\n');
+      sendToPinStudio({title:job.article.title,text:text.slice(0,40000),link:'',photos,first:Math.max(0,photos.findIndex((v:any)=>v.url===p.outputUrl))});
+    }}>Send to Pinterest Design</button>}
     {p.preparationId && !p.excluded && <button className={button} disabled={busy || pending} onClick={() => void act(() => request(`decor/${job.id}/retry-image`, 'POST', {photoId:p.id}))}>Retry</button>}
     <button className={p.excluded ? button : 'rounded-xl border border-red-300 px-3 py-2 text-sm text-red-700 disabled:opacity-40'} disabled={busy || pending} onClick={() => void act(() => request(`decor/${job.id}/image-inclusion`, 'POST', {photoId:p.id, included:!!p.excluded}))}>{p.excluded ? 'Restore image' : 'Remove from article'}</button>
     <details><summary className="text-sm">Original reference</summary><img src={p.originalUrl} alt={p.caption} className="w-full" /></details>

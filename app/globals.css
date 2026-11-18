@@ -574,3 +574,10 @@ html[data-theme="dark"]
   font-size: 9px;
   line-height: 1;
 }
+.pin-swatch{width:2.4rem;height:3.6rem;display:grid;overflow:hidden;gap:2px;margin-bottom:.4rem;border-radius:3px;border:1px solid #7777}
+.pin-swatch i{background:#838d81}.pin-swatch i+ i{background:#bcc1ae}
+.pin-retro,.pin-steps{grid-template-columns:1fr 1fr;grid-template-rows:1.4fr .65fr 1fr}.pin-retro i:first-child{grid-column:span 2}.pin-retro i+i{grid-row:3}
+.pin-stack{grid-template-rows:1fr .55fr 1fr}.pin-stack i:nth-child(2){grid-row:3}.pin-stack i:last-child,.pin-pair i:last-child{display:none}
+.pin-pair{grid-template-columns:1fr 1fr;grid-template-rows:.6fr 2fr}.pin-pair i{grid-row:2}
+.pin-detail{position:relative}.pin-detail i:first-child{height:76%}.pin-detail i:nth-child(2){position:absolute;top:40%;right:5%;width:38%;height:26%;border:1px solid white}.pin-detail i:last-child{display:none}
+.pin-steps i:last-child{grid-column:span 2;grid-row:3}
